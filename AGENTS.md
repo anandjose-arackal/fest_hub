@@ -14,7 +14,7 @@ Unlike the source app this was extracted from, **nothing here is hardcoded to on
 
 - `npm run dev` — dev server
 - `npm run build` — production build (the real correctness gate — run before considering a feature done)
-- `npm run lint`
+- `npm run lint` — note: `react-hooks/set-state-in-effect` fires on `auth-context.tsx`'s synchronous `setState` inside `onAuthStateChange`'s effect. This is intentional (see the comment there — deferring it would deadlock GoTrue's `initialize()`); it fails `lint`, not `build`. Don't "fix" it by removing the sync call.
 - `npx tsc --noEmit`
 
 ## Data model summary
