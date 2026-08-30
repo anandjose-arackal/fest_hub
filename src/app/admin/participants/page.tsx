@@ -29,6 +29,30 @@ function categoryPill(catName: string | undefined, gender: string | null) {
   return { label, color };
 }
 
+// Ticket-stub reg-no badge — matches cml-mission-hub's admin/participants table.
+function RegNoBadge({ regNo }: { regNo: string | null }) {
+  if (!regNo) return <span className="text-sm font-bold" style={{ color: "#6B7280" }}>—</span>;
+  return (
+    <span
+      className="relative inline-flex items-center px-2.5 py-1 text-[12px] tracking-wide"
+      style={{
+        background: "#FCD34D",
+        color: "#451A03",
+        fontFamily: "var(--font-anek), sans-serif",
+        fontWeight: 800,
+        WebkitTextStroke: "0.3px #451A03",
+        borderRadius: "5px",
+        border: "1px dashed rgba(120,53,15,0.4)",
+        boxShadow: "0 1px 3px rgba(120,53,15,0.25)",
+      }}
+    >
+      <span className="absolute -left-[5px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ background: "#fff", boxShadow: "0 0 0 1px rgba(120,53,15,0.2)" }} aria-hidden="true" />
+      {regNo}
+      <span className="absolute -right-[5px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ background: "#fff", boxShadow: "0 0 0 1px rgba(120,53,15,0.2)" }} aria-hidden="true" />
+    </span>
+  );
+}
+
 export default function ParticipantsPage() {
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
@@ -423,39 +447,40 @@ export default function ParticipantsPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white sm:block">
+          <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white shadow-md sm:block">
             <table className="min-w-[680px] w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs font-semibold uppercase text-neutral-500" style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
-                  <th className="px-3 py-2">Reg No</th>
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">House</th>
-                  <th className="px-3 py-2">Shakha</th>
-                  <th className="px-3 py-2">Category</th>
-                  <th className="px-3 py-2">Events</th>
-                  <th className="px-3 py-2" />
+              <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
+                <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
+                  {["Reg No", "Name", "House", "Shakha", "Category", "Events", ""].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((p, i) => {
                   const cat = categories.find((c) => c.id === p.competition_category_id);
                   const pill = categoryPill(cat?.name, p.gender);
+                  const isEven = i % 2 === 0;
                   return (
-                    <tr key={p.id} className={`border-t border-neutral-100 hover:bg-[#ede9fe] ${i % 2 === 0 ? "bg-white" : "bg-[#f8f7ff]"}`}>
-                      <td className="px-3 py-2 font-semibold" style={{ fontFamily: "var(--font-anek), sans-serif", color: "#92400E", background: "#FCD34D22" }}>
-                        {p.registration_number}
+                    <tr
+                      key={p.id}
+                      className="border-b transition-colors"
+                      style={{ borderColor: "#e5e7eb", background: isEven ? "#fff" : "#f8f7ff" }}
+                      onMouseEnter={(ev) => (ev.currentTarget.style.background = "#ede9fe")}
+                      onMouseLeave={(ev) => (ev.currentTarget.style.background = isEven ? "#fff" : "#f8f7ff")}
+                    >
+                      <td className="whitespace-nowrap px-3 py-3"><RegNoBadge regNo={p.registration_number} /></td>
+                      <td className="px-3 py-3"><p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{p.name}</p></td>
+                      <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{p.house_name || "—"}</span></td>
+                      <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span></td>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <span className="inline-block rounded-lg px-2.5 py-1 text-[12px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
                       </td>
-                      <td className="px-3 py-2 font-bold text-[#1e1b4b]">{p.name}</td>
-                      <td className="px-3 py-2 text-[#5B21B6]">{p.house_name}</td>
-                      <td className="px-3 py-2 text-neutral-700">{p.shakha?.name}</td>
-                      <td className="px-3 py-2">
-                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: pill.color }}>{pill.label}</span>
+                      <td className="px-3 py-3 text-center">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-xs font-black text-white">{p.events}</span>
                       </td>
-                      <td className="px-3 py-2">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-[11px] font-bold text-white">{p.events}</span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button onClick={() => openEdit(p)} className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-4 w-4" /></button>
+                      <td className="px-3 py-3">
+                        <button onClick={() => openEdit(p)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
                       </td>
                     </tr>
                   );
@@ -465,24 +490,28 @@ export default function ParticipantsPage() {
           </div>
 
           {/* Mobile cards */}
-          <div className="space-y-2 sm:hidden">
+          <div className="space-y-2.5 sm:hidden">
             {pageRows.map((p) => {
               const cat = categories.find((c) => c.id === p.competition_category_id);
               const pill = categoryPill(cat?.name, p.gender);
               return (
-                <div key={p.id} className="rounded-xl border-[1.5px] p-3" style={{ borderColor: "#ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-bold text-[#1e1b4b]">{p.name}</p>
-                      <p className="font-semibold" style={{ fontFamily: "var(--font-anek), sans-serif", color: "#92400E" }}>{p.registration_number}</p>
+                <div key={p.id} className="overflow-hidden rounded-xl bg-white" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
+                  <div className="px-3.5 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-black leading-tight" style={{ color: "#1e1b4b" }}>{p.name}</p>
+                        {p.house_name && <p className="mt-0.5 text-[12px] font-black" style={{ color: "#5B21B6" }}>{p.house_name}</p>}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-[11px] font-black text-white">{p.events}</span>
+                        <button onClick={() => openEdit(p)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
+                      </div>
                     </div>
-                    <button onClick={() => openEdit(p)} className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-4 w-4" /></button>
-                  </div>
-                  <p className="mt-1 text-xs text-[#5B21B6]">{p.house_name}</p>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <span className="text-xs text-neutral-600">{p.shakha?.name}</span>
-                    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: pill.color }}>{pill.label}</span>
-                    <span className="ml-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#4C1D95] text-[10px] font-bold text-white">{p.events}</span>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <RegNoBadge regNo={p.registration_number} />
+                      <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span>
+                      <span className="rounded-lg px-2 py-1 text-[11px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
+                    </div>
                   </div>
                 </div>
               );
@@ -511,45 +540,54 @@ export default function ParticipantsPage() {
           </select>
         </div>
 
-        <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white sm:block">
+        <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white shadow-md sm:block">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs font-semibold uppercase text-neutral-500" style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
-                <th className="px-3 py-2">Team</th>
-                <th className="px-3 py-2">Shakha</th>
-                <th className="px-3 py-2">Competition</th>
-                <th className="px-3 py-2">Members</th>
-                <th className="px-3 py-2" />
+            <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
+              <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
+                {["Team", "Shakha", "Competition", "Members", ""].map((h) => (
+                  <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {filteredTeams.map((t) => (
-                <tr key={t.id} className="border-t border-neutral-100">
-                  <td className="px-3 py-2 font-semibold">{t.teamName}</td>
-                  <td className="px-3 py-2">{t.shakhaName}</td>
-                  <td className="px-3 py-2 text-[#5B21B6]">{t.compName}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{t.members.join(", ")}</td>
-                  <td className="px-3 py-2">
-                    <button onClick={() => openEditTeam(t)} className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-4 w-4" /></button>
-                  </td>
-                </tr>
-              ))}
+              {filteredTeams.map((t, i) => {
+                const isEven = i % 2 === 0;
+                return (
+                  <tr
+                    key={t.id}
+                    className="border-b transition-colors"
+                    style={{ borderColor: "#e5e7eb", background: isEven ? "#fff" : "#f8f7ff" }}
+                    onMouseEnter={(ev) => (ev.currentTarget.style.background = "#ede9fe")}
+                    onMouseLeave={(ev) => (ev.currentTarget.style.background = isEven ? "#fff" : "#f8f7ff")}
+                  >
+                    <td className="px-3 py-3"><p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{t.teamName}</p></td>
+                    <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{t.shakhaName}</span></td>
+                    <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{t.compName}</span></td>
+                    <td className="px-3 py-3"><span className="text-[12.5px]" style={{ color: "#6B7280" }}>{t.members.join(", ") || "—"}</span></td>
+                    <td className="px-3 py-3">
+                      <button onClick={() => openEditTeam(t)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
 
-        <div className="space-y-2 sm:hidden">
+        <div className="space-y-2.5 sm:hidden">
           {filteredTeams.map((t) => (
-            <div key={t.id} className="rounded-xl border-[1.5px] p-3" style={{ borderColor: "#ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
-              <div className="flex items-start justify-between">
-                <p className="font-bold text-black">{t.teamName}</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-neutral-500">{t.shakhaName}</span>
-                  <button onClick={() => openEditTeam(t)} className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-4 w-4" /></button>
+            <div key={t.id} className="overflow-hidden rounded-xl bg-white" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
+              <div className="px-3.5 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[15px] font-black leading-tight" style={{ color: "#1e1b4b" }}>{t.teamName}</p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{t.shakhaName}</span>
+                    <button onClick={() => openEditTeam(t)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
+                  </div>
                 </div>
+                <p className="mt-1 text-[12px] font-semibold" style={{ color: "#5B21B6" }}>{t.compName}</p>
+                {t.members.length > 0 && <p className="mt-1.5 text-[12px] leading-snug" style={{ color: "#6B7280" }}>{t.members.join(", ")}</p>}
               </div>
-              <p className="mt-0.5 text-xs text-[#5B21B6]">{t.compName}</p>
-              <p className="mt-1 text-xs text-neutral-500">{t.members.join(", ")}</p>
             </div>
           ))}
         </div>

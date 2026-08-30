@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { setParticipation, setChanceNo } from "@/actions/feast";
 import { setTeamParticipation, setTeamChanceNo } from "@/actions/team";
+import { CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/competition-categories";
 import { getScoreHeadings } from "@/lib/scoresheet-headings";
 import { getCompetitionSubject } from "@/lib/competition-subjects";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
@@ -23,6 +24,35 @@ interface EntryRow {
   participated: boolean;
   chanceNo: number | null;
   isTeam: boolean;
+}
+
+function Checkbox({ checked }: { checked: boolean }) {
+  return (
+    <span
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors"
+      style={{ borderColor: checked ? "#BE185D" : "#cbd5e1", background: checked ? "#BE185D" : "#fff" }}
+    >
+      {checked && <Check className="h-[15px] w-[15px]" color="#fff" strokeWidth={3} />}
+    </span>
+  );
+}
+
+function ChanceInput({ value, onChange, onBlur }: { value: number | null; onChange: (raw: string) => void; onBlur: () => void }) {
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      maxLength={5}
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      placeholder="—"
+      className="w-14 rounded-lg border-2 px-1 py-1.5 text-center text-sm font-bold outline-none transition-colors"
+      style={{ borderColor: "#f472b6", color: "#1e1b4b" }}
+      onFocus={(ev) => (ev.currentTarget.style.borderColor = "#BE185D")}
+      onBlurCapture={(ev) => (ev.currentTarget.style.borderColor = "#f472b6")}
+    />
+  );
 }
 
 function sortByChance(a: EntryRow, b: EntryRow) {
@@ -101,11 +131,12 @@ export default function ParticipationPage() {
     } else {
       const { data } = await supabase
         .from("participant_registrations")
-        .select("id, participated, chance_no, participant:participants(name, house_name, registration_number, competition_category_id, shakha:shakhas(id, name))")
+        .select("id, participated, chance_no, participant:participants(name, house_name, registration_number, competition_category:competition_categories(slug), shakha:shakhas(id, name))")
         .eq("feast_competition_id", compId);
       const rows: EntryRow[] = (data ?? []).map((r) => {
         const p = Array.isArray(r.participant) ? r.participant[0] : r.participant;
         const shakha = Array.isArray(p?.shakha) ? p?.shakha[0] : p?.shakha;
+        const cat = Array.isArray(p?.competition_category) ? p?.competition_category[0] : p?.competition_category;
         return {
           regId: r.id,
           regNo: p?.registration_number ?? "—",
@@ -113,7 +144,7 @@ export default function ParticipationPage() {
           houseName: p?.house_name ?? "",
           shakhaName: shakha?.name ?? "—",
           shakhaId: shakha?.id ?? "",
-          catSlug: "",
+          catSlug: cat?.slug ?? "",
           participated: r.participated,
           chanceNo: r.chance_no,
           isTeam: false,
@@ -329,73 +360,83 @@ export default function ParticipationPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
+          <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white shadow-md sm:block">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs font-semibold uppercase text-neutral-500" style={{ background: "linear-gradient(90deg,#fce7f3,#fdf2f8)" }}>
-                  <th className="px-3 py-2">Took part</th>
-                  <th className="px-3 py-2">Chance #</th>
-                  <th className="px-3 py-2">{isGroup ? "Team" : "Reg No"}</th>
-                  <th className="px-3 py-2">{isGroup ? "Roster" : "Participant"}</th>
-                  <th className="px-3 py-2">{isGroup ? "Members" : "House"}</th>
-                  <th className="px-3 py-2">Shakha</th>
+              <thead style={{ background: "linear-gradient(90deg,#fce7f3,#fdf2f8)" }}>
+                <tr className="border-b-2" style={{ borderColor: "#f9a8d4" }}>
+                  {(isGroup ? ["Took part", "Chance #", "Team", "Roster", "Members", "Shakha"] : ["Took part", "Chance #", "Reg No", "Participant", "House", "Shakha"]).map((h) => (
+                    <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#831843" }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row) => (
-                  <tr
-                    key={row.regId}
-                    onClick={() => toggleParticipated(row)}
-                    className="cursor-pointer border-t border-neutral-100"
-                    style={{ background: row.participated ? "#fdf2f8" : undefined }}
-                  >
-                    <td className="px-3 py-2">
-                      <input type="checkbox" checked={row.participated} readOnly />
-                    </td>
-                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-xs"
-                        maxLength={5}
-                        value={row.chanceNo ?? ""}
-                        onChange={(e) => editChance(row.regId, e.target.value)}
-                        onBlur={() => commitChance(row)}
-                      />
-                    </td>
-                    <td className="px-3 py-2 font-mono font-semibold text-[#831843]">{row.regNo}</td>
-                    <td className="px-3 py-2">{row.name}</td>
-                    <td className="px-3 py-2">{row.houseName}</td>
-                    <td className="px-3 py-2">{row.shakhaName}</td>
-                  </tr>
-                ))}
+                {filtered.map((row, i) => {
+                  const isEven = i % 2 === 0;
+                  const catColor = row.catSlug ? (CATEGORY_COLORS[row.catSlug] ?? "#BE185D") : "#BE185D";
+                  return (
+                    <tr
+                      key={row.regId}
+                      onClick={() => toggleParticipated(row)}
+                      className="cursor-pointer border-b transition-colors"
+                      style={{ borderColor: "#e5e7eb", background: row.participated ? "#fdf2f8" : isEven ? "#fff" : "#fafafa" }}
+                    >
+                      <td className="px-3 py-3"><Checkbox checked={row.participated} /></td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <ChanceInput value={row.chanceNo} onChange={(v) => editChance(row.regId, v)} onBlur={() => commitChance(row)} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="inline-block rounded-lg px-2.5 py-1 font-mono text-[13px] font-black tracking-wide text-white" style={{ background: "#831843" }}>{row.regNo}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{row.name}</p>
+                        {!isGroup && row.catSlug && (
+                          <span className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[11px] font-bold text-white" style={{ background: catColor }}>
+                            {CATEGORY_LABELS[row.catSlug] ?? row.catSlug}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{row.houseName || "—"}</span></td>
+                      <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{row.shakhaName}</span></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           {/* Mobile cards */}
-          <div className="space-y-2 sm:hidden">
-            {filtered.map((row) => (
-              <div
-                key={row.regId}
-                onClick={() => toggleParticipated(row)}
-                className="flex items-center gap-3 rounded-xl border bg-white p-3"
-                style={{ borderColor: row.participated ? "#f472b6" : "#e5e5e5", borderWidth: row.participated ? 1.5 : 1 }}
-              >
-                <input type="checkbox" checked={row.participated} readOnly className="shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{row.name}</p>
-                  <p className="truncate font-mono text-xs font-semibold text-[#831843]">{row.regNo}</p>
-                  <p className="truncate text-xs text-neutral-500">{row.shakhaName}</p>
+          <div className="space-y-2.5 sm:hidden">
+            {filtered.map((row) => {
+              const catColor = row.catSlug ? (CATEGORY_COLORS[row.catSlug] ?? "#BE185D") : "#BE185D";
+              return (
+                <div
+                  key={row.regId}
+                  onClick={() => toggleParticipated(row)}
+                  className="cursor-pointer overflow-hidden rounded-xl bg-white"
+                  style={{ border: row.participated ? "1.5px solid #f472b6" : "1.5px solid #e5e7eb", boxShadow: "0 2px 8px rgba(190,24,93,0.06)" }}
+                >
+                  <div className="flex items-center gap-3 px-3.5 py-3">
+                    <Checkbox checked={row.participated} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-black leading-tight" style={{ color: "#1e1b4b" }}>{row.name}</p>
+                      {row.houseName && <p className="mt-0.5 text-[12px] font-black" style={{ color: "#5B21B6" }}>{row.houseName}</p>}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-md px-2 py-0.5 font-mono text-[12px] font-black tracking-wide text-white" style={{ background: "#831843" }}>{row.regNo}</span>
+                        <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{row.shakhaName}</span>
+                      </div>
+                    </div>
+                    {!isGroup && row.catSlug && (
+                      <span className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-black text-white" style={{ background: catColor }}>
+                        {CATEGORY_LABELS[row.catSlug] ?? row.catSlug}
+                      </span>
+                    )}
+                    <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <ChanceInput value={row.chanceNo} onChange={(v) => editChance(row.regId, v)} onBlur={() => commitChance(row)} />
+                    </div>
+                  </div>
                 </div>
-                <input
-                  className="w-14 shrink-0 rounded border border-neutral-300 px-1.5 py-1 text-xs"
-                  maxLength={5}
-                  onClick={(e) => e.stopPropagation()}
-                  value={row.chanceNo ?? ""}
-                  onChange={(e) => editChance(row.regId, e.target.value)}
-                  onBlur={() => commitChance(row)}
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
