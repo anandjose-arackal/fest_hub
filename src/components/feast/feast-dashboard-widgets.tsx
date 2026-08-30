@@ -8,7 +8,7 @@ import { getOverallLeaderboard, type LeaderboardRow } from "@/actions/results";
 import { useShakhas } from "@/hooks/use-feast";
 import { GlassPanel, theme } from "./feast-shared";
 
-const ACTIVITY_POLL_MS = 30_000;
+const ACTIVITY_POLL_MS = 120_000;
 
 const TYPE_CONFIG: Record<ActivityType, { icon: typeof Trophy; label: string; color: string; bg: string }> = {
   published: { icon: Trophy, label: "Results published", color: "#B45309", bg: "#FDE68A" },
