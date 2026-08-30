@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, UserCheck, ClipboardCheck, Medal, Trophy, Users, CalendarDays,
-  Layers, Landmark, Settings, Menu, X, LogOut,
+  Layers, Landmark, Settings, Menu, X, LogOut, Award,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -37,6 +37,7 @@ const FULL_NAV_SECTIONS: NavSection[] = [
       { href: "/admin/participation", label: "Attendance", icon: ClipboardCheck, color: "#BE185D" },
       { href: "/admin/results", label: "Results", icon: Medal, color: "#D97706" },
       { href: "/admin/standings", label: "Standings", icon: Trophy, color: "#7C3AED" },
+      { href: "/admin/certificates", label: "Certificates", icon: Award, color: "#A16207" },
     ],
   },
   {

@@ -217,3 +217,36 @@ export interface OrgSettings {
   created_at: string;
   updated_at: string;
 }
+
+export type CertificateFieldType = "name" | "place" | "shakha" | "grade_text" | "grade_tick";
+
+export interface CertificateField {
+  id: string;
+  type: CertificateFieldType;
+  x_mm: number;
+  y_mm: number;
+  rotation_deg: number;
+  font_size_pt: number;
+  color: string;
+  text_align: "left" | "center" | "right";
+  /** Only meaningful when type === "grade_tick" — which grade this marker represents. */
+  gradeValue?: "A" | "B" | "C";
+}
+
+export interface CertificateTemplate {
+  feast_id: string;
+  paper_width_mm: number;
+  paper_height_mm: number;
+  background_image_url: string;
+  fields: CertificateField[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CertificateRosterRow {
+  name: string;
+  shakhaName: string;
+  competitionName: string;
+  place: number | null;
+  grade: "A" | "B" | "C" | null;
+}
