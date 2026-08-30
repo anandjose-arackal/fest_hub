@@ -89,6 +89,7 @@ export interface FeastUI {
   eventCount?: number;
   daysLeft: number;
   competitions: FeastCompetitionUI[];
+  registrationEditDeadline: string | null;
 }
 
 export interface ShakhaOption {
@@ -153,6 +154,7 @@ export function useFeasts(options?: UseFeastsOptions) {
             eventCount: eventCountMap[row.id] ?? 0,
             daysLeft: daysLeft(row.end_date),
             competitions: [],
+            registrationEditDeadline: row.registration_edit_deadline,
           };
         });
 
@@ -255,6 +257,7 @@ export function useFeast(slug: string) {
           registrations: regsCount ?? 0,
           daysLeft: daysLeft(feastRow.end_date),
           competitions: comps,
+          registrationEditDeadline: feastRow.registration_edit_deadline,
         });
       }
       setLoading(false);

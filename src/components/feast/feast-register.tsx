@@ -11,10 +11,10 @@ import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-c
 import { GlassPanel, GlowBtn, FeastTopBar, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS } from "./feast-shared";
 import type { CompetitionCategory } from "@/types";
 
-const DEFAULT_MAX_PER_SHAKHA = 2;
+export const DEFAULT_MAX_PER_SHAKHA = 2;
 const STEPS = ["Details", "Events", "Review"];
 
-function normGender(g: string | null | undefined): string | null {
+export function normGender(g: string | null | undefined): string | null {
   if (!g) return null;
   const l = g.toLowerCase();
   if (l === "boy" || l === "boys" || l === "male") return "boy";
@@ -22,7 +22,7 @@ function normGender(g: string | null | undefined): string | null {
   return l;
 }
 
-function TextField({ label, value, onChange, placeholder, type = "text", icon: Icon }: {
+export function TextField({ label, value, onChange, placeholder, type = "text", icon: Icon }: {
   label: string; value: string; onChange: (v: string) => void; placeholder: string; type?: string; icon?: typeof User;
 }) {
   return (
@@ -44,7 +44,7 @@ function TextField({ label, value, onChange, placeholder, type = "text", icon: I
   );
 }
 
-function DateField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function DateField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="mb-2">
       <label className="mb-1.5 block text-[11.5px] font-semibold tracking-wide" style={{ color: theme.sub, fontFamily: "var(--font-poppins), sans-serif" }}>{label}</label>
@@ -64,7 +64,7 @@ function DateField({ label, value, onChange }: { label: string; value: string; o
   );
 }
 
-function CategoryPill({ slug }: { slug: string }) {
+export function CategoryPill({ slug }: { slug: string }) {
   if (!slug) return <div className="mb-3" />;
   const label = CATEGORY_LABELS[slug];
   const color = CATEGORY_COLORS[slug] || theme.lavender;
@@ -76,7 +76,7 @@ function CategoryPill({ slug }: { slug: string }) {
   );
 }
 
-function GenderPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function GenderPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const options = [{ value: "boy", label: "Boy" }, { value: "girl", label: "Girl" }, { value: "other", label: "Other" }];
   return (
     <div className="mb-3">
