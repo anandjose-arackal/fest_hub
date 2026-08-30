@@ -872,7 +872,7 @@ const CSS = `
 @keyframes scSpin { to { transform: rotate(360deg); } }
 @keyframes scFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes scLaneShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-@keyframes scPulseDot { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.4); } }
+@keyframes scPulseDot { 0%, 100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-50%,-50%) scale(1.4); } }
 @keyframes tableScroll { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
 @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
 `;
