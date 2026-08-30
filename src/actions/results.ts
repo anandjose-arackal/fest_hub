@@ -108,6 +108,62 @@ export async function getOverallStandings(): Promise<StandingsRow[]> {
   return rows;
 }
 
+// ── public leaderboard (Rankings screen) ─────────────────────────────────
+export interface LeaderboardRow {
+  shakhaId: string;
+  name: string;
+  rank: number;
+  points: number;
+  subJunior: number;
+  junior: number;
+  senior: number;
+  superSenior: number;
+  elder: number;
+  firstCount: number;
+  secondCount: number;
+  thirdCount: number;
+  aGrade: number;
+  bGrade: number;
+  cGrade: number;
+}
+
+function toLeaderboardRow(r: StandingsRow, rank: number): LeaderboardRow {
+  return {
+    shakhaId: r.shakhaId,
+    name: r.shakhaName,
+    rank,
+    points: r.grandTotal,
+    subJunior: r.subJuniorPoints,
+    junior: r.juniorPoints,
+    senior: r.seniorPoints,
+    superSenior: r.superSeniorPoints,
+    elder: r.elderPoints,
+    firstCount: r.firstPlaceCount,
+    secondCount: r.secondPlaceCount,
+    thirdCount: r.thirdPlaceCount,
+    aGrade: r.aGradeCount,
+    bGrade: r.bGradeCount,
+    cGrade: r.cGradeCount,
+  };
+}
+
+// Public-facing (Rankings screen). shakha_feast_standings has no RLS, so
+// this still goes through the admin client, same as the standings actions
+// above — "public" here just means "no auth required to call", not a
+// client-side-queryable table.
+export async function getLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
+  const admin = getSupabaseAdmin();
+  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+  const rows = await getFeastStandings(feast.id);
+  return { data: rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1)) };
+}
+
+export async function getOverallLeaderboard(): Promise<{ data?: LeaderboardRow[]; error?: string }> {
+  const rows = await getOverallStandings();
+  return { data: rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1)) };
+}
+
 // ── score entry / publishing ──────────────────────────────────────────────
 export async function setMaxScore(feastCompetitionId: string, maxScore: number): Promise<{ error?: string }> {
   const { error } = await getSupabaseAdmin()
@@ -390,19 +446,69 @@ export async function rebuildStandings(feastId: string, admin: SupabaseClient): 
 }
 
 // ── public reads (screen / search) ────────────────────────────────────────
-export async function searchParticipantResults(feastSlug: string, query: string) {
+export interface ParticipantSearchRow {
+  participantId: string;
+  name: string;
+  houseName: string | null;
+  shakha: string;
+  regNo: string;
+  category: string | null;
+  results: {
+    competitionId: string;
+    competitionName: string;
+    grade: "A" | "B" | "C" | null;
+    position: number | null;
+    totalPoints: number;
+    isPublished: boolean;
+  }[];
+}
+
+export async function searchParticipantResults(
+  feastSlug: string,
+  query: string
+): Promise<{ data?: ParticipantSearchRow[]; error?: string }> {
   const admin = getSupabaseAdmin();
-  const { data: feast } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (!feast) return [];
-  const { data } = await admin
+  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+
+  const { data, error } = await admin
     .from("participants")
     .select(
-      "id, name, registration_number, shakha:shakhas(name), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(score, grade, position, published_at))"
+      "id, name, house_name, registration_number, competition_category:competition_categories(slug), shakha:shakhas(name), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
     )
     .eq("feast_id", feast.id)
     .ilike("name", `%${query}%`)
     .limit(25);
-  return data ?? [];
+  if (error) return { error: error.message };
+
+  const rows: ParticipantSearchRow[] = (data ?? []).map((p) => {
+    const shakha = Array.isArray(p.shakha) ? p.shakha[0] : p.shakha;
+    const cat = Array.isArray(p.competition_category) ? p.competition_category[0] : p.competition_category;
+    const results = (p.participant_registrations ?? []).map((reg) => {
+      const fc = Array.isArray(reg.feast_competition) ? reg.feast_competition[0] : reg.feast_competition;
+      const competition = Array.isArray(fc?.competition) ? fc?.competition[0] : fc?.competition;
+      const result = Array.isArray(reg.competition_results) ? reg.competition_results[0] : reg.competition_results;
+      return {
+        competitionId: fc?.id ?? "",
+        competitionName: competition?.name ?? "—",
+        grade: (result?.grade as "A" | "B" | "C" | null) ?? null,
+        position: result?.position ?? null,
+        totalPoints: result?.total_points ?? 0,
+        isPublished: !!result?.published_at,
+      };
+    });
+    return {
+      participantId: p.id,
+      name: p.name,
+      houseName: p.house_name,
+      shakha: shakha?.name ?? "—",
+      regNo: p.registration_number ?? "",
+      category: cat?.slug ?? null,
+      results,
+    };
+  });
+
+  return { data: rows };
 }
 
 export async function getScreenData(feastSlug: string) {

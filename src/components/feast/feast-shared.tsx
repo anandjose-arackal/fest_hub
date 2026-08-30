@@ -305,6 +305,47 @@ export function FeastNav() {
   );
 }
 
+// ── FeastTabs — DB-driven feast switcher chips ───────────────────────────
+export function FeastTabs({
+  feasts, active, onPick, loading,
+}: {
+  feasts: { slug: string; name: string; tint: [string, string]; accent: string }[];
+  active: string;
+  onPick: (slug: string) => void;
+  loading: boolean;
+}) {
+  if (loading && feasts.length === 0) {
+    return (
+      <div className="mb-4 flex gap-2">
+        <div className="h-11 flex-1 animate-pulse rounded-2xl bg-white/50" />
+        <div className="h-11 flex-1 animate-pulse rounded-2xl bg-white/50" />
+      </div>
+    );
+  }
+  if (feasts.length === 0) return null;
+  return (
+    <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+      {feasts.map((f) => {
+        const on = f.slug === active;
+        return (
+          <button
+            key={f.slug}
+            onClick={() => onPick(f.slug)}
+            className="shrink-0 rounded-2xl px-4 py-2.5 text-sm font-semibold"
+            style={
+              on
+                ? { background: `linear-gradient(135deg, ${f.tint[0]}, ${f.tint[1]})`, color: "#fff", boxShadow: `0 8px 22px ${f.accent}55` }
+                : { background: "rgba(255,255,255,0.7)", color: "#4B5563", border: "1px solid rgba(107,70,255,0.14)" }
+            }
+          >
+            {f.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Shell — full-bleed page wrapper every screen renders inside ─────────
 export function FeastShell({ children }: { children: React.ReactNode }) {
   return (
