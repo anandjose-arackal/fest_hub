@@ -1,121 +1,155 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Trophy } from "lucide-react";
+import { Trophy, Medal, Globe } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getFeastStandings, getOverallStandings, type StandingsRow } from "@/actions/results";
 import type { Feast, Shakha } from "@/types";
 
-const PODIUM_COLORS = ["#F5C542", "#C9CDD6", "#E0936A"];
+const RANK_COLORS: Record<number, string> = { 1: "#F5C542", 2: "#C9CDD6", 3: "#E0936A" };
 
-function StandingsBlock({ title, rows, shakhaColor }: { title: string; rows: StandingsRow[]; shakhaColor: (id: string) => string }) {
+const CAT_COLS = [
+  { key: "subJuniorPoints", label: "Sub Jr" },
+  { key: "juniorPoints", label: "Junior" },
+  { key: "seniorPoints", label: "Senior" },
+  { key: "superSeniorPoints", label: "Super Sr" },
+  { key: "elderPoints", label: "Elder" },
+  { key: "teamPoints", label: "Team" },
+] as const;
+
+function StandingsBlock({ rows, loading, emptyText, shakhaColor }: { rows: StandingsRow[]; loading: boolean; emptyText: string; shakhaColor: (id: string) => string }) {
   return (
-    <section className="mb-8">
-      <h2 className="mb-3 text-sm font-semibold text-neutral-700">{title}</h2>
-
-      {rows.length > 0 && (
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {rows.slice(0, 3).map((r, i) => (
-            <div key={r.shakhaId} className="rounded-xl border border-neutral-200 bg-white p-4">
-              <div className="flex items-center gap-2">
-                <span
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white"
-                  style={{ background: PODIUM_COLORS[i] }}
-                >
-                  {i + 1}
-                </span>
-                <span className="h-2.5 w-2.5 rounded-full" style={{ background: shakhaColor(r.shakhaId) }} />
-                <span className="font-semibold text-neutral-800">{r.shakhaName}</span>
+    <>
+      {/* Top 3 podium cards */}
+      {!loading && rows.length > 0 && (
+        <div className="mb-6 flex flex-wrap gap-3">
+          {rows.slice(0, 3).map((s, i) => {
+            const rank = s.rank ?? i + 1;
+            const c = RANK_COLORS[rank] ?? "#9CA3AF";
+            return (
+              <div key={s.shakhaId} className="min-w-[140px] flex-1 rounded-2xl border p-4" style={{ background: `${c}12`, borderColor: `${c}44` }}>
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold" style={{ background: c, color: "#2a1d00" }}>{rank}</div>
+                  <Medal className="h-3.5 w-3.5" style={{ color: c }} />
+                </div>
+                <div className="mb-0.5 text-[15px] font-bold text-gray-900">{s.shakhaName}</div>
+                <div className="text-2xl font-bold" style={{ color: c }}>{s.grandTotal}</div>
+                <div className="mt-0.5 text-xs text-gray-400">total points</div>
+                <div className="mt-2 flex gap-2 text-xs text-gray-500">
+                  <span>🥇 {s.firstPlaceCount}</span>
+                  <span>🥈 {s.secondPlaceCount}</span>
+                  <span>🥉 {s.thirdPlaceCount}</span>
+                </div>
               </div>
-              <p className="mt-1 text-2xl font-bold text-[#6B46FF]">{r.grandTotal}</p>
-              <p className="text-xs text-neutral-500">🥇{r.firstPlaceCount} 🥈{r.secondPlaceCount} 🥉{r.thirdPlaceCount}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {/* Mobile cards */}
-      <div className="space-y-2 sm:hidden">
-        {rows.map((r, i) => (
-          <div key={r.shakhaId} className="rounded-xl border border-neutral-200 bg-white p-3">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 text-sm font-medium">
-                <span className="text-xs text-neutral-400">#{r.rank ?? i + 1}</span>
-                <span className="h-2 w-2 rounded-full" style={{ background: shakhaColor(r.shakhaId) }} />
-                {r.shakhaName}
-              </span>
-              <span className="font-bold" style={{ color: r.grandTotal > 0 ? "#6B46FF" : "#9CA3AF" }}>{r.grandTotal}</span>
-            </div>
-            <div className="mt-2 grid grid-cols-3 gap-1 text-[11px] text-neutral-500">
-              <span>Sub Jr: {r.subJuniorPoints || "—"}</span>
-              <span>Junior: {r.juniorPoints || "—"}</span>
-              <span>Senior: {r.seniorPoints || "—"}</span>
-              <span>Super Sr: {r.superSeniorPoints || "—"}</span>
-              <span>Elder: {r.elderPoints || "—"}</span>
-              <span>Team: {r.teamPoints || "—"}</span>
-            </div>
-            <div className="mt-1.5 flex gap-1.5 text-[11px]">
-              <span>1st: {r.firstPlaceCount || "—"}</span>
-              {r.aGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ background: "#16A34A18", color: "#16A34A" }}>A×{r.aGradeCount}</span>}
-              {r.bGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ background: "#D9770618", color: "#D97706" }}>B×{r.bGradeCount}</span>}
-              {r.cGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ background: "#6B46FF18", color: "#6B46FF" }}>C×{r.cGradeCount}</span>}
-            </div>
+      {loading ? (
+        <p className="py-14 text-center text-sm text-neutral-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-200 py-14 text-center text-sm text-gray-400">{emptyText}</div>
+      ) : (
+        <>
+          {/* Mobile cards */}
+          <div className="space-y-2 sm:hidden">
+            {rows.map((s, i) => {
+              const rank = s.rank ?? i + 1;
+              const rankColor = RANK_COLORS[rank];
+              return (
+                <div key={s.shakhaId} className="rounded-xl border border-gray-100 bg-white p-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      {rankColor ? (
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold" style={{ background: rankColor, color: "#2a1d00" }}>{rank}</span>
+                      ) : (
+                        <span className="w-6 text-center text-xs font-medium text-gray-400">{rank}</span>
+                      )}
+                      <span className="h-2 w-2 rounded-full" style={{ background: shakhaColor(s.shakhaId) }} />
+                      {s.shakhaName}
+                    </span>
+                    <span className="font-bold" style={{ color: s.grandTotal > 0 ? "#6B46FF" : "#9CA3AF" }}>{s.grandTotal}</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-1 text-[11px] text-gray-500">
+                    {CAT_COLS.map((c) => (
+                      <span key={c.key}>{c.label}: {s[c.key] || "—"}</span>
+                    ))}
+                  </div>
+                  <div className="mt-1.5 flex gap-1.5 text-[11px]">
+                    <span className="text-gray-500">1st: {s.firstPlaceCount || "—"}</span>
+                    {s.aGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ background: "#16A34A18", color: "#16A34A" }}>A×{s.aGradeCount}</span>}
+                    {s.bGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ background: "#D9770618", color: "#D97706" }}>B×{s.bGradeCount}</span>}
+                    {s.cGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ background: "#6B46FF18", color: "#6B46FF" }}>C×{s.cGradeCount}</span>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
 
-      <div className="hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
-        <table className="min-w-[760px] w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs font-semibold uppercase text-neutral-500" style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
-              <th className="px-3 py-2">#</th>
-              <th className="px-3 py-2">Shakha</th>
-              <th className="px-3 py-2">Sub Jr</th>
-              <th className="px-3 py-2">Junior</th>
-              <th className="px-3 py-2">Senior</th>
-              <th className="px-3 py-2">Super Sr</th>
-              <th className="px-3 py-2">Elder</th>
-              <th className="px-3 py-2">Team</th>
-              <th className="px-3 py-2">Total</th>
-              <th className="px-3 py-2">1st</th>
-              <th className="px-3 py-2">A</th>
-              <th className="px-3 py-2">B</th>
-              <th className="px-3 py-2">C</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.shakhaId} className={i % 2 === 0 ? "bg-white" : "bg-[#f8f7ff]"}>
-                <td className="px-3 py-2">{r.rank ?? i + 1}</td>
-                <td className="px-3 py-2">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-2 w-2 rounded-full" style={{ background: shakhaColor(r.shakhaId) }} />
-                    {r.shakhaName}
-                  </span>
-                </td>
-                <td className="px-3 py-2">{r.subJuniorPoints || "—"}</td>
-                <td className="px-3 py-2">{r.juniorPoints || "—"}</td>
-                <td className="px-3 py-2">{r.seniorPoints || "—"}</td>
-                <td className="px-3 py-2">{r.superSeniorPoints || "—"}</td>
-                <td className="px-3 py-2">{r.elderPoints || "—"}</td>
-                <td className="px-3 py-2">{r.teamPoints || "—"}</td>
-                <td className="px-3 py-2 font-bold" style={{ color: r.grandTotal > 0 ? "#6B46FF" : "#9CA3AF" }}>{r.grandTotal}</td>
-                <td className="px-3 py-2">{r.firstPlaceCount || "—"}</td>
-                <td className="px-3 py-2">
-                  {r.aGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 text-xs font-semibold" style={{ background: "#16A34A18", color: "#16A34A" }}>{r.aGradeCount}</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {r.bGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 text-xs font-semibold" style={{ background: "#D9770618", color: "#D97706" }}>{r.bGradeCount}</span>}
-                </td>
-                <td className="px-3 py-2">
-                  {r.cGradeCount > 0 && <span className="rounded-full px-1.5 py-0.5 text-xs font-semibold" style={{ background: "#6B46FF18", color: "#6B46FF" }}>{r.cGradeCount}</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+          {/* Desktop table */}
+          <div className="hidden overflow-x-auto rounded-xl border border-gray-100 bg-white shadow-sm sm:block">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="border-b border-gray-100 bg-gray-50">
+                <tr>
+                  <th className="w-10 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">#</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">Shakha</th>
+                  {CAT_COLS.map((c) => (
+                    <th key={c.key} className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">{c.label}</th>
+                  ))}
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">Total</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">1st</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">A</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">B</th>
+                  <th className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">C</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((s, i) => {
+                  const rank = s.rank ?? i + 1;
+                  const rankColor = RANK_COLORS[rank];
+                  return (
+                    <tr key={s.shakhaId} className="border-b border-gray-50 transition-colors hover:bg-gray-50/60">
+                      <td className="px-3 py-3">
+                        {rankColor ? (
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold" style={{ background: rankColor, color: "#2a1d00" }}>{rank}</div>
+                        ) : (
+                          <span className="text-xs font-medium text-gray-400">{rank}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: shakhaColor(s.shakhaId) }} />
+                          <span className="font-semibold text-gray-900">{s.shakhaName}</span>
+                        </div>
+                      </td>
+                      {CAT_COLS.map((c) => (
+                        <td key={c.key} className="px-3 py-3 text-center text-[13px] text-gray-600">
+                          {s[c.key] > 0 ? <span className="font-semibold">{s[c.key]}</span> : <span className="text-gray-300">—</span>}
+                        </td>
+                      ))}
+                      <td className="px-3 py-3 text-center">
+                        <span className="text-[14px] font-bold" style={{ color: s.grandTotal > 0 ? "#6B46FF" : "#9CA3AF" }}>{s.grandTotal}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center text-xs text-gray-500">{s.firstPlaceCount || "—"}</td>
+                      <td className="px-3 py-3 text-center">
+                        {s.aGradeCount > 0 ? <span className="rounded-full px-1.5 py-0.5 text-[11px] font-bold" style={{ background: "#16A34A18", color: "#16A34A" }}>{s.aGradeCount}</span> : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {s.bGradeCount > 0 ? <span className="rounded-full px-1.5 py-0.5 text-[11px] font-bold" style={{ background: "#D9770618", color: "#D97706" }}>{s.bGradeCount}</span> : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        {s.cGradeCount > 0 ? <span className="rounded-full px-1.5 py-0.5 text-[11px] font-bold" style={{ background: "#6B46FF18", color: "#6B46FF" }}>{s.cGradeCount}</span> : <span className="text-xs text-gray-300">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -124,7 +158,9 @@ export default function StandingsPage() {
   const [feastId, setFeastId] = useState("");
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
   const [overall, setOverall] = useState<StandingsRow[]>([]);
+  const [overallLoading, setOverallLoading] = useState(true);
   const [feastRows, setFeastRows] = useState<StandingsRow[]>([]);
+  const [feastLoading, setFeastLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -136,6 +172,7 @@ export default function StandingsPage() {
       setFeasts(fs ?? []);
       setShakhas(shks ?? []);
       setOverall(overallRows);
+      setOverallLoading(false);
       if (fs && fs.length > 0) setFeastId(fs[0].id);
       setLoading(false);
     });
@@ -143,7 +180,9 @@ export default function StandingsPage() {
 
   const loadFeastRows = useCallback(async (id: string) => {
     if (!id) return;
+    setFeastLoading(true);
     setFeastRows(await getFeastStandings(id));
+    setFeastLoading(false);
   }, []);
 
   useEffect(() => {
@@ -151,28 +190,46 @@ export default function StandingsPage() {
   }, [feastId, loadFeastRows]);
 
   const shakhaColor = (id: string) => shakhas.find((s) => s.id === id)?.color ?? "#A78BFA";
+  const selectCls = "rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-200";
 
   if (loading) return <p className="text-sm text-neutral-500">Loading…</p>;
 
   return (
     <div>
-      <div className="mb-6 flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#F5C542] to-[#F59E0B] text-white">
-          <Trophy className="h-5 w-5" />
+      <div className="mb-5 flex items-center gap-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#F5C542] to-[#F59E0B] text-white">
+          <Trophy className="h-[17px] w-[17px]" />
         </span>
-        <h1 className="text-xl font-semibold text-neutral-800">Standings</h1>
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Standings</h1>
+          <p className="text-xs text-gray-500">Shakha rankings aggregated from published results</p>
+        </div>
       </div>
 
-      <StandingsBlock title="Overall Standings — All Feasts" rows={overall} shakhaColor={shakhaColor} />
+      <div className="mb-3 flex items-center gap-2">
+        <Globe className="h-[15px] w-[15px] text-gray-400" />
+        <h2 className="text-sm font-bold text-gray-800">Overall Standings — All Feasts</h2>
+      </div>
+      <div className="mb-8">
+        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any feast." shakhaColor={shakhaColor} />
+      </div>
+
+      <div className="mb-8 h-px bg-gray-100" />
 
       <div className="mb-3 flex items-center gap-2">
-        <select className="rounded-lg border border-neutral-300 px-3 py-2 text-sm" value={feastId} onChange={(e) => setFeastId(e.target.value)}>
+        <Trophy className="h-[15px] w-[15px] text-gray-400" />
+        <h2 className="text-sm font-bold text-gray-800">Feast Standings</h2>
+      </div>
+      <div className="mb-5">
+        <label className="mb-1 block text-xs font-medium text-gray-500">Feast</label>
+        <select className={selectCls} value={feastId} onChange={(e) => setFeastId(e.target.value)}>
           {feasts.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
         </select>
       </div>
-      <StandingsBlock title="Feast Standings" rows={feastRows} shakhaColor={shakhaColor} />
+
+      <StandingsBlock rows={feastRows} loading={feastLoading} emptyText="No standings yet. Publish some results first." shakhaColor={shakhaColor} />
     </div>
   );
 }
