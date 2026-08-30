@@ -55,6 +55,8 @@ Migrations live in [`supabase/migrations/`](./supabase/migrations/), numbered in
 | `006_org_settings.sql` | The `org_settings` singleton (your org's name/logo/tagline) |
 | `007_arts_fest_competitions.sql` *(optional)* | Example competition catalog copied from a real deployment — skip this if you'd rather define your own competitions from scratch in the admin panel |
 | `008_attach_arts_fest_competitions.sql` *(optional)* | Attaches `007`'s catalog to a specific feast — edit the `feast_id` at the top of the file, or skip entirely |
+| `009_feast_competitions_updated_at.sql` | Tracks per-competition status changes for the landing page's Live Updates feed |
+| `010_external_feast_points.sql` | `feasts.is_external` — marks a feast whose shakha points are entered by hand (competition happened outside the app) instead of computed from results |
 
 **Option A — Supabase SQL Editor (simplest, no CLI needed):**
 
