@@ -267,7 +267,7 @@ export function FeastNav() {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3.5 pb-[22px]">
       <div
-        className="pointer-events-auto relative flex w-full max-w-[420px] items-center rounded-[26px] px-1.5 py-2.5"
+        className="pointer-events-auto relative flex w-full max-w-[420px] items-center rounded-[26px] px-1.5 py-2.5 sm:max-w-[520px] lg:max-w-[640px]"
         style={{
           background: `linear-gradient(135deg, rgba(167,139,250,0.72), rgba(190,24,147,0.4) 45%, rgba(107,70,255,0.8)), ${theme.navBg}`,
           border: "1px solid rgba(255,255,255,0.45)",
