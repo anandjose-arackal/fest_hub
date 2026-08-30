@@ -14,6 +14,9 @@ const DESIGN_W = 1920;
 const C_CYAN = "#3fe7ff";
 const C_VIOLET = "#7c5cff";
 const GOLD_GRAD = "linear-gradient(135deg, #6ef2ff, #36b6ff 30%, #7a6cff 55%, #e84ad6 80%, #ff8a3c)";
+const HUD_CLIP = (notch = 16) =>
+  `polygon(0 ${notch}px, ${notch}px 0, calc(100% - ${notch}px) 0, 100% ${notch}px, 100% calc(100% - ${notch}px), calc(100% - ${notch}px) 100%, ${notch}px 100%, 0 calc(100% - ${notch}px))`;
+const HUD_CLIP_STR = HUD_CLIP(16);
 const MEDAL_COLOR = ["#FFD24A", "#C8D6E0", "#E8934A"];
 const MEDAL_EMO = ["🥇", "🥈", "🥉"];
 const PLACE_LBL = ["Champion Shakha", "Second Place", "Third Place"];
@@ -348,60 +351,166 @@ function StageBoardScreen({ feastSlug }: { feastSlug: string }) {
 function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boolean }) {
   const color = STAGE_STATUS_COLOR[stage.status];
   const isLive = stage.status === "running";
+  const isDone = stage.status === "completed";
   const upcoming = stage.competitions.filter((c) => c.status === "upcoming");
 
   return (
-    <div style={{ position: "relative", perspective: 1400 }}>
-      <div
-        style={{
-          position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d",
-          transition: "transform .9s cubic-bezier(.4,.15,.2,1)", transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
-        }}
-      >
-        {/* Front */}
-        <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", borderRadius: 14, background: "rgba(15,12,35,.6)", borderLeft: `4px solid ${color}`, padding: 14, opacity: stage.status === "completed" ? 0.68 : 1, boxShadow: isLive ? `0 0 40px ${color}44` : undefined }}>
-          <StageBadge stage={stage} color={color} />
-          <div style={{ fontFamily: "var(--font-oswald)", fontSize: 16, textTransform: "uppercase", color: "#cdd7f5", marginTop: 4 }}>Stage {stage.stageNumber} · {stage.title}</div>
-          {isLive && stage.runningCompetition && (
-            <div style={{ fontFamily: "var(--font-oswald)", fontSize: 26, fontWeight: 900, background: GOLD_GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginTop: 4 }}>{stage.runningCompetition.label}</div>
-          )}
-          <div style={{ fontSize: 13, color: "#9db4ff", marginTop: 4 }}>
-            {stage.completedCount}/{stage.totalCount}{!isLive && stage.scheduledTime ? ` · ${stage.scheduledTime}` : ""}
-            {isLive && stage.runningCompetition?.itemProgressPct != null && <span style={{ color }}> · {stage.runningCompetition.itemProgressPct}% done</span>}
-          </div>
-          <div style={{ position: "relative", height: isLive ? 12 : 8, borderRadius: 4, background: "rgba(255,255,255,.1)", overflow: "hidden", marginTop: 8 }}>
-            <div style={{ height: "100%", borderRadius: 4, width: `${stage.progressPct}%`, background: color }} />
-            {isLive && <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent)", animation: "scLaneShimmer 2.1s linear infinite", mixBlendMode: "overlay" }} />}
-          </div>
-        </div>
+    <div
+      className="sc-hud"
+      style={{
+        minWidth: 0,
+        minHeight: 0,
+        position: "relative",
+        borderLeft: `4px solid ${color}`,
+        boxShadow: isLive ? `0 0 40px ${color}44, inset 0 0 0 1px ${color}33` : undefined,
+        opacity: isDone ? 0.68 : 1,
+        transition: "opacity .5s, box-shadow .5s",
+      }}
+    >
+      {isLive && <span className="sc-tick tl" style={{ borderColor: color }} />}
+      {isLive && <span className="sc-tick br" style={{ borderColor: color }} />}
 
-        {/* Back */}
-        <div style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", transform: "rotateY(180deg)", borderRadius: 14, background: "rgba(15,12,35,.6)", borderLeft: `4px solid ${color}`, padding: 14 }}>
-          <StageBadge stage={stage} color={color} />
-          <div style={{ fontFamily: "var(--font-oswald)", fontSize: 15, textTransform: "uppercase", color: "#cdd7f5", marginTop: 4 }}>Stage {stage.stageNumber} · UPCOMING · {upcoming.length}</div>
-          {upcoming.length === 0 ? (
-            <p style={{ fontSize: 14, color: "rgba(200,210,240,.5)", marginTop: 8 }}>{stage.status === "completed" ? "All competitions completed" : "Nothing left upcoming"}</p>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8, overflow: "hidden" }}>
-              {upcoming.slice(0, 6).map((c) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#cdd7f5" }}>
-                  <span style={{ width: 18, height: 18, borderRadius: "50%", background: "rgba(255,255,255,.1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, flexShrink: 0 }}>{c.order + 1}</span>
-                  {c.label}
-                </div>
-              ))}
+      {/* Stage number — persistent corner badge, visible on both faces */}
+      <div style={{
+        position: "absolute", top: 12, left: 12, zIndex: 3,
+        width: 52, height: 52, borderRadius: "50%", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: isDone ? "linear-gradient(135deg,#4ade80,#22c55e)" : `linear-gradient(135deg, ${color}, ${color}cc)`,
+        border: "2px solid rgba(5,4,16,.6)",
+        boxShadow: "0 4px 14px rgba(0,0,0,.45)",
+      }}>
+        <span className="sc-font-disp" style={{ fontSize: 24, fontWeight: 900, color: "#05040f", lineHeight: 1 }}>
+          {isDone ? "✓" : stage.stageNumber}
+        </span>
+      </div>
+
+      <div style={{ position: "relative", width: "100%", height: "100%", perspective: 1400 }}>
+        <div
+          style={{
+            position: "relative", width: "100%", height: "100%",
+            transformStyle: "preserve-3d",
+            transition: "transform .9s cubic-bezier(.4,.15,.2,1)",
+            transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+          }}
+        >
+          {/* Front — live progress lane */}
+          <div style={{
+            position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+            display: "flex", flexDirection: "column", justifyContent: "center", gap: 4, padding: "14px 24px 14px 78px",
+          }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
+              <span className="sc-font-disp" style={{
+                fontSize: 22, fontWeight: 600, color: "rgba(230,235,255,.85)", textTransform: "uppercase", letterSpacing: 0.5,
+                lineHeight: 1.1, flexShrink: 0,
+              }}>
+                {stage.title}{isLive ? "," : ""}
+              </span>
+              {isLive && (
+                <span style={{
+                  fontFamily: "var(--font-anek), var(--font-oswald), sans-serif",
+                  fontWeight: 900, fontSize: 46, lineHeight: 1.05,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1,
+                  background: GOLD_GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+                }}>
+                  {stage.runningCompetition?.label ?? "—"}
+                </span>
+              )}
             </div>
-          )}
+
+            <div className="sc-font-hud" style={{ fontSize: 13, color: "rgba(157,180,216,.75)", marginTop: 2, display: "flex", justifyContent: "space-between" }}>
+              <span>{stage.completedCount}/{stage.totalCount}{stage.scheduledTime && !isLive ? ` · ${stage.scheduledTime}` : ""}</span>
+              {isLive && stage.runningCompetition?.itemProgressPct != null && (
+                <span><b style={{ color }}>{stage.runningCompetition.itemProgressPct}%</b> done</span>
+              )}
+            </div>
+
+            <div style={{ position: "relative", height: isLive ? 12 : 8, minWidth: 0, flexShrink: 0 }}>
+              <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: "rgba(255,255,255,.07)" }} />
+              <div style={{
+                position: "absolute", top: 0, bottom: 0, left: 0, width: `${stage.progressPct}%`,
+                borderRadius: 6, overflow: "hidden",
+                background: `linear-gradient(90deg, ${color}99, ${color})`,
+                transition: "width .8s cubic-bezier(.22,1,.36,1)",
+              }}>
+                <div className="sc-lane-shimmer" style={{ position: "absolute", inset: 0, width: "55%", background: "linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent)", animation: "scLaneShimmer 2.1s linear infinite", mixBlendMode: "overlay" }} />
+              </div>
+              {stage.competitions.map((c, i) => {
+                const pos = ((i + 0.5) / stage.competitions.length) * 100;
+                const dotColor = c.status === "completed" ? "#4ade80" : c.status === "running" ? "#ffd24a" : "rgba(255,255,255,.3)";
+                return (
+                  <span
+                    key={c.id}
+                    title={c.label}
+                    style={{
+                      position: "absolute", left: `${pos}%`, top: "50%",
+                      transform: "translate(-50%,-50%)",
+                      width: isLive ? 10 : 7, height: isLive ? 10 : 7, borderRadius: "50%",
+                      background: dotColor,
+                      boxShadow: c.status === "running" ? `0 0 12px ${dotColor}` : undefined,
+                      animation: c.status === "running" ? "scBlink 1s steps(1) infinite" : undefined,
+                      border: "1.5px solid rgba(5,4,16,.7)",
+                    }}
+                  />
+                );
+              })}
+              {isLive && (
+                <div style={{
+                  position: "absolute", left: `${stage.progressPct}%`, top: "50%",
+                  transform: "translate(-50%,-50%)", width: 20, height: 20, borderRadius: "50%",
+                  background: color, boxShadow: `0 0 22px ${color}`, animation: "scPulseDot 1.3s ease-in-out infinite",
+                }} />
+              )}
+            </div>
+          </div>
+
+          {/* Back — every competition in this stage still upcoming */}
+          <div style={{
+            position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+            display: "flex", flexDirection: "column", gap: 6, padding: "14px 22px 14px 78px", overflow: "hidden",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginBottom: 2 }}>
+              <span className="sc-font-disp" style={{ fontSize: 24, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                {stage.title}
+              </span>
+              <span className="sc-font-hud" style={{ fontSize: 19, color: "rgba(157,180,216,.6)", marginLeft: "auto" }}>
+                UPCOMING · {upcoming.length}
+              </span>
+            </div>
+            {upcoming.length === 0 ? (
+              <div className="sc-font-hud" style={{ fontSize: 24, color: "rgba(157,180,216,.55)" }}>
+                {isDone ? "All competitions completed" : "Nothing left upcoming"}
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 14, rowGap: 6, overflow: "hidden" }}>
+                {upcoming.map((c) => {
+                  const runningOrder = stage.competitions.findIndex((x) => x.id === c.id) + 1;
+                  return (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <span style={{
+                        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        background: color, boxShadow: `0 0 10px ${color}88`,
+                      }}>
+                        <span className="sc-font-disp" style={{ fontSize: 16, fontWeight: 900, color: "#05040f" }}>
+                          {runningOrder}
+                        </span>
+                      </span>
+                      <span style={{
+                        fontFamily: "var(--font-anek), var(--font-rajdhani), sans-serif",
+                        fontSize: 26, color: "rgba(230,235,255,.9)", fontWeight: 600,
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}>
+                        {c.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function StageBadge({ stage, color }: { stage: CompetitionStage; color: string }) {
-  const done = stage.status === "completed";
-  return (
-    <div style={{ position: "absolute", top: 10, left: 10, width: 40, height: 40, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 16, color: "#fff", background: done ? "linear-gradient(135deg,#4ade80,#22c55e)" : color }}>
-      {done ? "✓" : stage.stageNumber}
     </div>
   );
 }
@@ -715,6 +824,66 @@ function ScreenPageInner() {
 const ctrlBtnStyle: React.CSSProperties = { width: 34, height: 34, borderRadius: "50%", background: "rgba(10,8,30,.8)", border: "1px solid rgba(124,92,255,.4)", color: "#fff", cursor: "pointer", fontSize: 15 };
 
 const CSS = `
+.sc-font-disp { font-family: var(--font-oswald), 'Arial Narrow', sans-serif; }
+.sc-font-hud  { font-family: var(--font-rajdhani), 'Arial', sans-serif; }
+
+/* ── HUD panels (stage board cards) ── */
+.sc-hud {
+  position: relative;
+  background:
+    repeating-linear-gradient(0deg, rgba(150,210,255,.05) 0 1px, transparent 1px 3px),
+    linear-gradient(150deg, rgba(180,205,255,.16), rgba(180,205,255,0) 44%),
+    linear-gradient(160deg, rgba(58,70,135,.15), rgba(10,8,28,.24));
+  backdrop-filter: blur(30px) saturate(1.6) brightness(1.06);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6) brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgba(205,225,255,.28),
+    inset 0 0 40px rgba(90,160,255,.10),
+    inset 0 0 0 1px rgba(150,200,255,.07);
+  clip-path: ${HUD_CLIP_STR};
+  overflow: hidden;
+  animation: neonPanelPulse 5.5s ease-in-out infinite;
+}
+.sc-hud::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  clip-path: ${HUD_CLIP_STR}; mix-blend-mode: screen;
+  background: linear-gradient(115deg,
+    transparent 32%, rgba(150,210,255,.10) 47%,
+    rgba(205,180,255,.18) 50%, rgba(150,210,255,.10) 53%, transparent 68%);
+  background-size: 260% 100%; background-position: 200% 0;
+  animation: holoSweep 7.5s ease-in-out infinite;
+}
+.sc-hud::after {
+  content: ""; position: absolute; inset: 0; padding: 1.6px;
+  clip-path: ${HUD_CLIP_STR};
+  background: linear-gradient(135deg, #6ef2ff, #5b8cff 22%, #9d6eff 42%, #e84ad6 62%, #ff8a3c 82%, #6ef2ff 100%);
+  background-size: 300% 300%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none; opacity: .95;
+  animation: neonFlow 9s linear infinite;
+}
+@keyframes neonFlow {
+  0%   { background-position: 0%   50%; }
+  100% { background-position: 300% 50%; }
+}
+@keyframes holoSweep {
+  0%       { background-position: 200% 0; }
+  60%,100% { background-position: -90% 0; }
+}
+@keyframes neonPanelPulse {
+  0%,100% { box-shadow: inset 0 1px 0 rgba(205,225,255,.26), inset 0 0 38px rgba(90,160,255,.10), inset 0 0 0 1px rgba(150,200,255,.07); }
+  50%     { box-shadow: inset 0 1px 0 rgba(216,232,255,.36), inset 0 0 62px rgba(124,150,255,.22), inset 0 0 0 1px rgba(172,210,255,.13); }
+}
+.sc-tick {
+  position: absolute; width: 18px; height: 18px;
+  border: 2px solid var(--gold, #3fe7ff); opacity: .8; z-index: 4;
+}
+.sc-tick.tl { top: 8px; left: 8px; border-right: 0; border-bottom: 0; }
+.sc-tick.tr { top: 8px; right: 8px; border-left: 0; border-bottom: 0; }
+.sc-tick.bl { bottom: 8px; left: 8px; border-right: 0; border-top: 0; }
+.sc-tick.br { bottom: 8px; right: 8px; border-left: 0; border-top: 0; }
+
 @keyframes scBlink { 50% { opacity: .25; } }
 @keyframes scSpin { to { transform: rotate(360deg); } }
 @keyframes scFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
