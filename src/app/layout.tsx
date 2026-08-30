@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Baloo_Chettan_2, Anek_Malayalam, Gayathri } from "next/font/google";
+import { Providers } from "@/components/providers";
 import {
   SITE_URL, SITE_NAME, SITE_SHORT_NAME, SITE_DESCRIPTION,
   SITE_KEYWORDS, SITE_LOCALE, OG_IMAGE,
@@ -96,7 +97,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         />
       </head>
       <body className="min-h-full flex flex-col bg-[#FAFAFC]" style={{ fontFamily: "var(--font-inter), sans-serif" }}>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
