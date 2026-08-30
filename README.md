@@ -19,3 +19,4 @@ Without Supabase env vars set, the app falls back to static demo data for local 
 - `npm run build` — production build
 - `npm run lint`
 - `npx tsc --noEmit` — type-check
+"# fest_hub" 
