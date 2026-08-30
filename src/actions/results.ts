@@ -511,19 +511,86 @@ export async function searchParticipantResults(
   return { data: rows };
 }
 
-export async function getScreenData(feastSlug: string) {
+// ── /screen big-display data ──────────────────────────────────────────────
+export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; }
+export interface ScreenPosition { place: 1 | 2 | 3; name: string; houseName: string | null; shakha: string; photoUrl: string | null; }
+export interface ScreenCompetitionResult {
+  competitionId: string;
+  competitionName: string;
+  categoryName: string;
+  categorySlug: string;
+  positions: ScreenPosition[];
+  grades: { A: ScreenAchiever[]; B: ScreenAchiever[]; C: ScreenAchiever[] };
+}
+export interface ScreenData { competitions: ScreenCompetitionResult[] }
+
+// Decision #2: no per-participant photo pipeline exists yet, so unlike the
+// source app (which hardcoded one specific prod Supabase storage file as a
+// 100%-of-the-time fallback), positions[].photoUrl is always null here —
+// the UI shows its generic placeholder silhouette instead.
+export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenData; error?: string }> {
   const admin = getSupabaseAdmin();
-  const { data: feast } = await admin.from("feasts").select("id, name").eq("slug", feastSlug).single();
-  if (!feast) return null;
+  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
 
-  const { data: results } = await admin
+  const { data: fcs, error: fcErr } = await admin
+    .from("feast_competitions")
+    .select("id, competition:competitions(name, competition_category:competition_categories(name, slug))")
+    .eq("feast_id", feast.id)
+    .eq("result_status", "published")
+    .order("display_order");
+  if (fcErr) return { error: fcErr.message };
+  if (!fcs || fcs.length === 0) return { data: { competitions: [] } };
+
+  const { data: results, error: resErr } = await admin
     .from("competition_results")
-    .select(
-      "score, grade, position, feast_competition:feast_competitions!inner(id, feast_id, result_status, competition:competitions(name)), participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))"
-    )
-    .eq("feast_competition.feast_id", feast.id)
-    .eq("feast_competition.result_status", "published")
+    .select("feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))")
+    .in("feast_competition_id", fcs.map((f) => f.id))
     .not("published_at", "is", null);
+  if (resErr) return { error: resErr.message };
 
-  return { feast, results: results ?? [] };
+  const byFc = new Map<string, typeof results>();
+  for (const r of results ?? []) {
+    (byFc.get(r.feast_competition_id) ?? byFc.set(r.feast_competition_id, []).get(r.feast_competition_id)!).push(r);
+  }
+
+  const competitions: ScreenCompetitionResult[] = [];
+  for (const fc of fcs) {
+    const rows = byFc.get(fc.id) ?? [];
+    if (rows.length === 0) continue;
+    const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
+    const category = Array.isArray(competition?.competition_category) ? competition?.competition_category[0] : competition?.competition_category;
+
+    const positions: ScreenPosition[] = [];
+    const grades: { A: ScreenAchiever[]; B: ScreenAchiever[]; C: ScreenAchiever[] } = { A: [], B: [], C: [] };
+
+    for (const r of rows) {
+      const partReg = Array.isArray(r.participant_registration) ? r.participant_registration[0] : r.participant_registration;
+      const participant = Array.isArray(partReg?.participant) ? partReg?.participant[0] : partReg?.participant;
+      const shakha = Array.isArray(participant?.shakha) ? participant?.shakha[0] : participant?.shakha;
+      if (!participant) continue;
+      const entry = { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—" };
+
+      if (r.position != null && r.position >= 1 && r.position <= 3) {
+        positions.push({ place: r.position as 1 | 2 | 3, ...entry, photoUrl: null });
+      }
+      const grade = r.grade as "A" | "B" | "C" | null;
+      if (grade === "A" || grade === "B" || grade === "C") {
+        grades[grade].push(entry);
+      }
+    }
+
+    if (positions.length === 0 && grades.A.length === 0 && grades.B.length === 0 && grades.C.length === 0) continue;
+
+    competitions.push({
+      competitionId: fc.id,
+      competitionName: competition?.name ?? "Competition",
+      categoryName: category?.name ?? "",
+      categorySlug: category?.slug ?? "",
+      positions: positions.sort((a, b) => a.place - b.place),
+      grades,
+    });
+  }
+
+  return { data: { competitions } };
 }

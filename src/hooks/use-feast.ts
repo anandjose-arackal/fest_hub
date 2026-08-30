@@ -120,7 +120,14 @@ export function useFeasts(options?: UseFeastsOptions) {
         .order("start_date");
 
       if (error) console.error("[useFeasts]", error.message);
-      if (cancelled || !data?.length) { setLoading(false); return; }
+      // A stale/cancelled effect instance (React Strict Mode's mount-unmount-
+      // remount in dev) must not touch state at all, including loading —
+      // doing so previously let it flip loading to false a beat before the
+      // real instance's feasts had landed, which raced consumers keyed on
+      // "loading just became false" (e.g. /screen's deep-link effect) into
+      // reading an empty feast list.
+      if (cancelled) return;
+      if (!data?.length) { setLoading(false); return; }
 
       const feastIds = data.map((r) => r.id);
       const { data: countRows, error: countErr } = await supabase.rpc("get_feast_counts", { p_feast_ids: feastIds });
