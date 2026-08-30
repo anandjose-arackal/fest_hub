@@ -353,6 +353,9 @@ function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boole
   const isLive = stage.status === "running";
   const isDone = stage.status === "completed";
   const upcoming = stage.competitions.filter((c) => c.status === "upcoming");
+  // Bar reflects the current item's own progress, not how many of the
+  // stage's competitions have been checked off.
+  const itemFillPct = isLive ? stage.runningCompetition?.itemProgressPct ?? 0 : isDone ? 100 : 0;
 
   return (
     <div
@@ -427,35 +430,16 @@ function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boole
             <div style={{ position: "relative", height: isLive ? 12 : 8, minWidth: 0, flexShrink: 0 }}>
               <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: "rgba(255,255,255,.07)" }} />
               <div style={{
-                position: "absolute", top: 0, bottom: 0, left: 0, width: `${stage.progressPct}%`,
+                position: "absolute", top: 0, bottom: 0, left: 0, width: `${itemFillPct}%`,
                 borderRadius: 6, overflow: "hidden",
                 background: `linear-gradient(90deg, ${color}99, ${color})`,
                 transition: "width .8s cubic-bezier(.22,1,.36,1)",
               }}>
                 <div className="sc-lane-shimmer" style={{ position: "absolute", inset: 0, width: "55%", background: "linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent)", animation: "scLaneShimmer 2.1s linear infinite", mixBlendMode: "overlay" }} />
               </div>
-              {stage.competitions.map((c, i) => {
-                const pos = ((i + 0.5) / stage.competitions.length) * 100;
-                const dotColor = c.status === "completed" ? "#4ade80" : c.status === "running" ? "#ffd24a" : "rgba(255,255,255,.3)";
-                return (
-                  <span
-                    key={c.id}
-                    title={c.label}
-                    style={{
-                      position: "absolute", left: `${pos}%`, top: "50%",
-                      transform: "translate(-50%,-50%)",
-                      width: isLive ? 10 : 7, height: isLive ? 10 : 7, borderRadius: "50%",
-                      background: dotColor,
-                      boxShadow: c.status === "running" ? `0 0 12px ${dotColor}` : undefined,
-                      animation: c.status === "running" ? "scBlink 1s steps(1) infinite" : undefined,
-                      border: "1.5px solid rgba(5,4,16,.7)",
-                    }}
-                  />
-                );
-              })}
               {isLive && (
                 <div style={{
-                  position: "absolute", left: `${stage.progressPct}%`, top: "50%",
+                  position: "absolute", left: `${itemFillPct}%`, top: "50%",
                   transform: "translate(-50%,-50%)", width: 20, height: 20, borderRadius: "50%",
                   background: color, boxShadow: `0 0 22px ${color}`, animation: "scPulseDot 1.3s ease-in-out infinite",
                 }} />
