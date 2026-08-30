@@ -445,6 +445,48 @@ export async function rebuildStandings(feastId: string, admin: SupabaseClient): 
   return null;
 }
 
+// ── external feasts (played outside the app; points entered by hand) ──────
+// shakha_feast_standings is normally derived from shakha_point_ledger via
+// rebuildStandings(). An external feast has no competitions/ledger rows to
+// derive from, so this writes its standings row directly — grand_total is
+// the only real number, category buckets stay 0 (they show as "—" in the
+// standings UI, same as any shakha with no points in that bucket).
+export async function saveExternalFeastPoints(
+  feastId: string,
+  rows: { shakhaId: string; points: number }[]
+): Promise<{ error?: string }> {
+  const admin = getSupabaseAdmin();
+
+  const { data: feast, error: feastErr } = await admin.from("feasts").select("is_external").eq("id", feastId).single();
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+  if (!feast.is_external) return { error: "This feast isn't marked as external." };
+
+  const sorted = [...rows].sort((a, b) => b.points - a.points);
+  const upsertRows = sorted.map((r, i) => ({
+    feast_id: feastId,
+    shakha_id: r.shakhaId,
+    sub_junior_points: 0,
+    junior_points: 0,
+    senior_points: 0,
+    super_senior_points: 0,
+    elder_points: 0,
+    team_points: 0,
+    grand_total: r.points,
+    first_place_count: 0,
+    second_place_count: 0,
+    third_place_count: 0,
+    a_grade_count: 0,
+    b_grade_count: 0,
+    c_grade_count: 0,
+    rank: i + 1,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { error } = await admin.from("shakha_feast_standings").upsert(upsertRows, { onConflict: "feast_id,shakha_id" });
+  if (error) return { error: error.message };
+  return {};
+}
+
 // ── public reads (screen / search) ────────────────────────────────────────
 export interface ParticipantSearchRow {
   participantId: string;

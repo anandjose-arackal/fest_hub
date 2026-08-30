@@ -39,6 +39,7 @@ export interface Feast {
   start_date: string | null;
   end_date: string | null;
   registration_edit_deadline: string | null;
+  is_external: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { CalendarDays, Pencil, Trash2, ArrowRight, Plus, X } from "lucide-react";
+import { CalendarDays, Pencil, Trash2, ArrowRight, Plus, X, Coins } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Feast, FeastStatus } from "@/types";
 
@@ -26,6 +26,7 @@ const emptyForm = {
   start_date: "",
   end_date: "",
   description: "",
+  is_external: false,
 };
 
 export default function FeastsPage() {
@@ -76,6 +77,7 @@ export default function FeastsPage() {
       start_date: f.start_date ?? "",
       end_date: f.end_date ?? "",
       description: f.description ?? "",
+      is_external: f.is_external ?? false,
     });
     setError(null);
     setModalOpen(true);
@@ -97,6 +99,7 @@ export default function FeastsPage() {
       start_date: form.start_date || null,
       end_date: form.end_date || null,
       description: form.description || null,
+      is_external: form.is_external,
     };
     const { error } = editId
       ? await supabase.from("feasts").update(payload).eq("id", editId)
@@ -151,17 +154,31 @@ export default function FeastsPage() {
                     <span className="font-semibold text-neutral-800">{f.name}</span>
                     <span className="text-xs text-neutral-400">{f.year}</span>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${status.classes}`}>{status.label}</span>
+                    {f.is_external && (
+                      <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <Coins className="h-3 w-3" /> External
+                      </span>
+                    )}
                   </div>
                   <p className="truncate text-xs text-neutral-500">
                     {f.venue || "No venue"} · {f.participant_count} participants · {f.slug}
                   </p>
                 </div>
-                <Link
-                  href={`/admin/feasts/${f.id}`}
-                  className="flex items-center gap-1 text-xs font-semibold text-[#7C3AED] hover:underline"
-                >
-                  Competitions <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
+                {f.is_external ? (
+                  <Link
+                    href={`/admin/feasts/${f.id}/external-points`}
+                    className="flex items-center gap-1 text-xs font-semibold text-[#7C3AED] hover:underline"
+                  >
+                    Enter Points <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/admin/feasts/${f.id}`}
+                    className="flex items-center gap-1 text-xs font-semibold text-[#7C3AED] hover:underline"
+                  >
+                    Competitions <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
                 <button onClick={() => openEdit(f)} className="text-neutral-400 hover:text-neutral-700">
                   <Pencil className="h-4 w-4" />
                 </button>
@@ -225,6 +242,19 @@ export default function FeastsPage() {
               <Field label="Description">
                 <textarea className="input" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </Field>
+              <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={form.is_external}
+                  onChange={(e) => setForm({ ...form, is_external: e.target.checked })}
+                />
+                <span>
+                  <span className="font-semibold">External feast</span> — competitions happened outside this app.
+                  Instead of a competition lineup, you&apos;ll enter each shakha&apos;s total points by hand, and
+                  they&apos;ll be summed into Overall Standings alongside the app-tracked feasts.
+                </span>
+              </label>
             </div>
 
             {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
