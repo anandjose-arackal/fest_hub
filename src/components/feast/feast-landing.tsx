@@ -47,12 +47,6 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
             Active Feasts
           </SectionTitle>
 
-          {/* Widgets show here first on phone/tablet, above the feast list */}
-          <div className="mb-4 space-y-4 lg:hidden">
-            <LiveActivityFeed />
-            <TopShakhasWidget />
-          </div>
-
           <div className="grid grid-cols-1 gap-4">
             {feasts.map((f, i) => (
               <GlassPanel
@@ -141,6 +135,13 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
             {!loading && feasts.length === 0 && (
               <p className="col-span-full text-sm" style={{ color: theme.sub }}>No active feasts right now — check back soon.</p>
             )}
+          </div>
+
+          {/* Widgets: shown here (after the feast list) on phone/tablet; the
+              sidebar covers wide screens instead. */}
+          <div className="mt-6 space-y-4 lg:hidden">
+            <LiveActivityFeed />
+            <TopShakhasWidget />
           </div>
 
           <Link href="/search" className="mt-6 block">
