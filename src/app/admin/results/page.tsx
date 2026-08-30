@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { setMaxScore, saveDraftScores, publishResults, unpublishResults } from "@/actions/results";
 import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults } from "@/actions/team-results";
 import {
-  calcGrade, calcPositions, gradeColor, positionLabel,
+  calcGrade, calcPositions, positionLabel,
   DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS,
   type Grade,
 } from "@/lib/result-calculator";
@@ -28,8 +28,58 @@ interface EntryRow {
 
 interface Preview {
   grade: Grade;
+  gradePoints: number;
   position: number | null;
+  positionPoints: number;
   totalPoints: number;
+}
+
+// ─── Grade / position cells — matches cml-mission-hub's admin/results table ──
+
+const GRADE_SOLID: Record<string, { bg: string; pts: string }> = {
+  A: { bg: "#15803D", pts: "#14532D" },
+  B: { bg: "#B45309", pts: "#78350F" },
+  C: { bg: "#5B21B6", pts: "#3B0764" },
+};
+
+function GradeCell({ grade, pts }: { grade: Grade; pts: number }) {
+  if (!grade) return <span className="text-sm font-bold" style={{ color: "#6B7280" }}>—</span>;
+  const { bg, pts: ptsColor } = GRADE_SOLID[grade];
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span
+        className="inline-flex w-full items-center justify-center rounded-lg px-3 py-1 text-[13px] font-black leading-none text-white"
+        style={{ background: bg }}
+      >
+        Grade {grade}
+      </span>
+      <span className="text-[12px] font-black" style={{ color: ptsColor }}>+{pts} pts</span>
+    </div>
+  );
+}
+
+const POS_COLORS: Record<number, { bg: string; pts: string }> = {
+  1: { bg: "#92400E", pts: "#78350F" },
+  2: { bg: "#374151", pts: "#1F2937" },
+  3: { bg: "#7C2D12", pts: "#6B2510" },
+};
+const POS_EMOJI: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+function PosCell({ pos, pts }: { pos: number | null; pts: number }) {
+  if (!pos) return <span className="text-sm font-bold" style={{ color: "#6B7280" }}>—</span>;
+  const style = POS_COLORS[pos] ?? { bg: "#374151", pts: "#1F2937" };
+  const emoji = POS_EMOJI[pos] ?? "";
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1 text-[13px] font-black leading-none text-white"
+        style={{ background: style.bg }}
+      >
+        {emoji} {positionLabel(pos)}
+      </span>
+      {pts > 0 && <span className="text-[12px] font-black" style={{ color: style.pts }}> +{pts} pts</span>}
+    </div>
+  );
 }
 
 export default function ResultsPage() {
@@ -163,7 +213,7 @@ export default function ResultsPage() {
     for (const e of calcEntries) {
       const { grade, gradePoints } = maxScore ? calcGrade(e.score, maxScore, gradeScale) : { grade: null, gradePoints: 0 };
       const pos = posMap.get(e.id) ?? { position: null, positionPoints: 0 };
-      map.set(e.id, { grade, position: pos.position, totalPoints: gradePoints + pos.positionPoints });
+      map.set(e.id, { grade, gradePoints, position: pos.position, positionPoints: pos.positionPoints, totalPoints: gradePoints + pos.positionPoints });
     }
     return map;
   }, [entries, typedScores, maxScore, gradeScale, positionScale]);
@@ -245,7 +295,7 @@ export default function ResultsPage() {
     if (!selectedFc || isGroup) return;
     const rows = entries
       .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
-      .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, position: null, totalPoints: 0 }) }))
+      .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
       .filter((r) => r.grade !== null || r.position !== null);
     const sorted = sortPdfRows(rows);
     const feast = feasts.find((f) => f.id === feastId);
@@ -273,7 +323,7 @@ export default function ResultsPage() {
           return {
             regId: t.id, regNo: t.team_name, name: t.team_name, sub: "", shakhaName: shakha?.name ?? "—", shakhaId: shakha?.id ?? "",
             chanceNo: null, savedScore: s ? Number(s.score) : null,
-            grade: (s?.grade as Grade) ?? null, position: s?.position ?? null, totalPoints: s?.total_points ?? 0,
+            grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.total_points ?? 0,
           };
         });
       } else {
@@ -289,7 +339,7 @@ export default function ResultsPage() {
           return {
             regId: r.id, regNo: p?.registration_number ?? "—", name: p?.name ?? "—", sub: p?.house_name ?? "",
             shakhaName: shakha?.name ?? "—", shakhaId: shakha?.id ?? "", chanceNo: null, savedScore: s ? Number(s.score) : null,
-            grade: (s?.grade as Grade) ?? null, position: s?.position ?? null, totalPoints: s?.total_points ?? 0,
+            grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.total_points ?? 0,
           };
         });
       }
@@ -366,45 +416,73 @@ export default function ResultsPage() {
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden overflow-x-auto rounded-xl border border-neutral-200 bg-white sm:block">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs font-semibold uppercase text-neutral-500" style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
-                  <th className="px-3 py-2">#</th>
-                  <th className="px-3 py-2">{isGroup ? "Team" : "Reg No"}</th>
-                  {!isGroup && <th className="px-3 py-2">Chance #</th>}
-                  <th className="px-3 py-2">Score/{maxScore ?? "?"}</th>
-                  <th className="px-3 py-2">{isGroup ? "Members" : "Participant"}</th>
-                  <th className="px-3 py-2">Shakha</th>
-                  <th className="px-3 py-2">Grade</th>
-                  <th className="px-3 py-2">Position</th>
-                  <th className="px-3 py-2">Total</th>
+          <div className="mb-4 hidden overflow-hidden rounded-xl border border-[#1e1b4b] bg-white shadow-md sm:block">
+            <table className="w-full min-w-[780px] text-sm">
+              <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
+                <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
+                  {["#", isGroup ? "Team" : "Reg No", ...(isGroup ? [] : ["Chance #"]), `Score / ${maxScore ?? "?"}`, isGroup ? "Members" : "Participant", "Shakha", "Grade", "Position", "Total"].map((h) => (
+                    <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {entries.map((e, i) => {
                   const p = preview.get(e.regId);
                   const val = typedScores[e.regId] ?? (e.savedScore != null ? String(e.savedScore) : "");
+                  const isEven = i % 2 === 0;
                   return (
-                    <tr key={e.regId} className={i % 2 === 0 ? "bg-white" : "bg-[#f8f7ff]"}>
-                      <td className="px-3 py-2">{i + 1}</td>
-                      <td className="px-3 py-2 font-mono font-semibold">{e.regNo}</td>
-                      {!isGroup && <td className="px-3 py-2">{e.chanceNo ?? "—"}</td>}
-                      <td className="px-3 py-2">
+                    <tr
+                      key={e.regId}
+                      className="border-b transition-colors"
+                      style={{ borderColor: "#e5e7eb", background: isEven ? "#fff" : "#f8f7ff" }}
+                      onMouseEnter={(ev) => (ev.currentTarget.style.background = "#ede9fe")}
+                      onMouseLeave={(ev) => (ev.currentTarget.style.background = isEven ? "#fff" : "#f8f7ff")}
+                    >
+                      <td className="px-3 py-3 text-xs font-black" style={{ color: "#4C1D95" }}>{i + 1}</td>
+                      <td className="px-3 py-3">
+                        <span className="inline-block rounded-lg px-2.5 py-1 font-mono text-[13px] font-black tracking-wide text-white" style={{ background: "#4C1D95" }}>
+                          {e.regNo}
+                        </span>
+                      </td>
+                      {!isGroup && (
+                        <td className="px-3 py-3 text-center">
+                          <span className="text-[14px] font-black" style={{ color: e.chanceNo != null ? "#6B46FF" : "#D1D5DB" }}>{e.chanceNo ?? "—"}</span>
+                        </td>
+                      )}
+                      <td className="px-3 py-3">
                         <input
-                          className="w-16 rounded border border-neutral-300 px-1.5 py-1 text-xs disabled:bg-neutral-100"
+                          className="w-20 rounded-lg border-[3px] px-2 py-1.5 text-center text-[15px] font-black outline-none transition-colors disabled:opacity-50"
+                          style={{ borderColor: "#a78bfa", color: "#1e1b4b" }}
                           disabled={isPublished || !maxScore}
                           value={val}
                           onChange={(ev) => setScore(e.regId, ev.target.value)}
+                          onFocus={(ev) => (ev.currentTarget.style.borderColor = "#6B46FF")}
+                          onBlur={(ev) => (ev.currentTarget.style.borderColor = "#a78bfa")}
                         />
                       </td>
-                      <td className="px-3 py-2">{isGroup ? e.sub : e.name}</td>
-                      <td className="px-3 py-2">{e.shakhaName}</td>
-                      <td className="px-3 py-2">
-                        {p?.grade && <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ background: gradeColor(p.grade) }}>{p.grade}</span>}
+                      <td className="px-3 py-3">
+                        {isGroup ? (
+                          <p className="max-w-[220px] text-[12px] leading-snug" style={{ color: "#6B7280" }}>{e.sub}</p>
+                        ) : (
+                          <>
+                            <p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{e.name}</p>
+                            {e.sub && <p className="mt-0.5 text-[12px] font-semibold" style={{ color: "#7C3AED" }}>{e.sub}</p>}
+                          </>
+                        )}
                       </td>
-                      <td className="px-3 py-2">{p?.position ? positionLabel(p.position) : "—"}</td>
-                      <td className="px-3 py-2 font-semibold">{p?.totalPoints ?? "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <span className="text-[13px] font-semibold" style={{ color: "#4B5563" }}>{e.shakhaName}</span>
+                      </td>
+                      <td className="px-3 py-3 text-center"><GradeCell grade={p?.grade ?? null} pts={p?.gradePoints ?? 0} /></td>
+                      <td className="px-3 py-3 text-center"><PosCell pos={p?.position ?? null} pts={p?.positionPoints ?? 0} /></td>
+                      <td className="px-3 py-3">
+                        {p ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="text-[20px] font-black leading-none" style={{ color: p.totalPoints > 0 ? "#6B46FF" : "#D1D5DB" }}>{p.totalPoints}</span>
+                            <span className="text-[10px] font-semibold" style={{ color: "#A78BFA" }}>pts</span>
+                          </div>
+                        ) : <span className="text-sm font-medium text-gray-300">—</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -413,34 +491,54 @@ export default function ResultsPage() {
           </div>
 
           {/* Mobile cards */}
-          <div className="space-y-2 sm:hidden">
+          <div className="mb-4 space-y-2.5 sm:hidden">
             {entries.map((e, i) => {
               const p = preview.get(e.regId);
               const val = typedScores[e.regId] ?? (e.savedScore != null ? String(e.savedScore) : "");
               return (
-                <div key={e.regId} className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-                  <div className="flex items-center justify-between p-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{i + 1}. {isGroup ? e.name : e.name}</p>
-                      <p className="truncate text-xs text-neutral-500">{e.sub}</p>
-                      <p className="mt-0.5 flex items-center gap-1.5 text-xs">
-                        <span className="font-mono font-semibold text-[#4C1D95]">{e.regNo}</span>
-                        {e.chanceNo && <span className="rounded-full bg-neutral-100 px-1.5 py-0.5">#{e.chanceNo}</span>}
-                        <span className="text-neutral-400">{e.shakhaName}</span>
-                      </p>
+                <div key={e.regId} className="overflow-hidden rounded-xl" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
+                  <div className="flex items-center gap-2.5 bg-white px-3.5 pb-2.5 pt-3">
+                    <span className="w-5 shrink-0 font-mono text-[13px] font-black" style={{ color: "#4C1D95" }}>{i + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-black leading-tight" style={{ color: "#1e1b4b" }}>{e.name}</p>
+                      {e.sub && <p className="mt-0.5 text-[12px] leading-snug" style={{ color: isGroup ? "#6B7280" : "#5B21B6", fontWeight: isGroup ? 500 : 800 }}>{e.sub}</p>}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-md px-2 py-0.5 font-mono text-[12px] font-black tracking-wide text-white" style={{ background: "#4C1D95" }}>{e.regNo}</span>
+                        {e.chanceNo != null && (
+                          <span className="rounded-md px-2 py-0.5 font-mono text-[12px] font-black tracking-wide text-white" style={{ background: "#6B46FF" }}>#{e.chanceNo}</span>
+                        )}
+                        <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{e.shakhaName}</span>
+                      </div>
                     </div>
-                    <span className="text-lg font-bold text-[#6B46FF]">{p?.totalPoints ?? "—"}</span>
+                    <div className="shrink-0 text-right">
+                      {p ? (
+                        <>
+                          <span className="text-[24px] font-black leading-none" style={{ color: p.totalPoints > 0 ? "#4C1D95" : "#9CA3AF" }}>{p.totalPoints}</span>
+                          <p className="text-[10px] font-black" style={{ color: "#5B21B6" }}>pts</p>
+                        </>
+                      ) : <span className="text-[20px] font-black" style={{ color: "#9CA3AF" }}>—</span>}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 bg-[#ede9fe] px-3 py-2">
+
+                  <div className="flex items-center gap-3 border-t px-3.5 py-3" style={{ background: "#ede9fe", borderColor: "#ddd6fe" }}>
+                    <span className="shrink-0 text-[11px] font-black uppercase tracking-widest" style={{ color: "#4C1D95" }}>Score</span>
                     <input
-                      className="w-20 rounded border border-neutral-300 px-1.5 py-1 text-xs disabled:bg-neutral-100"
+                      className="w-20 rounded-lg border-[3px] bg-white px-3 py-2 text-center text-[16px] font-black outline-none transition-colors disabled:opacity-40"
+                      style={{ borderColor: "#a78bfa", color: "#1e1b4b" }}
                       disabled={isPublished || !maxScore}
                       value={val}
                       onChange={(ev) => setScore(e.regId, ev.target.value)}
-                      placeholder={`Score / ${maxScore ?? "?"}`}
+                      onFocus={(ev) => (ev.currentTarget.style.borderColor = "#7C3AED")}
+                      onBlur={(ev) => (ev.currentTarget.style.borderColor = "#a78bfa")}
+                      placeholder="—"
                     />
-                    {p?.grade && <span className="rounded-full px-2 py-0.5 text-xs font-bold text-white" style={{ background: gradeColor(p.grade) }}>{p.grade}</span>}
-                    {p?.position && <span className="text-xs font-semibold">{positionLabel(p.position)}</span>}
+                    <span className="shrink-0 text-[13px] font-black" style={{ color: "#4C1D95" }}>/ {maxScore ?? "?"}</span>
+                    {p ? (
+                      <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                        <GradeCell grade={p.grade} pts={p.gradePoints} />
+                        <PosCell pos={p.position} pts={p.positionPoints} />
+                      </div>
+                    ) : <span className="ml-auto text-[12px] font-bold" style={{ color: "#6D28D9" }}>enter score</span>}
                   </div>
                 </div>
               );
