@@ -210,6 +210,12 @@ export function FeastDetails({ slug }: { slug: string }) {
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const isMeAdmin = profile?.role === "me_admin";
+  // Registering a participant always assigns them to the signed-in admin's
+  // own shakha (see feast-register.tsx's adminShakha lookup, which has no
+  // manual shakha picker at all) — so an admin with no shakha_id has no
+  // branch to register into, regardless of role. me_admin oversees every
+  // branch and is excluded outright, same as before.
+  const canRegister = !!session && !isMeAdmin && !!profile?.shakha_id;
 
   const availableCats = useMemo(() => {
     if (!feast) return [];
@@ -256,7 +262,7 @@ export function FeastDetails({ slug }: { slug: string }) {
         <div className="mt-4 space-y-2">
           {!session ? (
             <GlowBtn variant="ghost" size="lg" className="w-full" icon={Lock} onClick={() => setLoginOpen(true)}>Login to Register</GlowBtn>
-          ) : !isMeAdmin ? (
+          ) : canRegister ? (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <GlowBtn variant="gold" size="lg" className="w-full" icon={Ticket} onClick={() => router.push(`/feast/${slug}/register`)}>Register Now</GlowBtn>
               {hasTeamComp && (
@@ -269,7 +275,7 @@ export function FeastDetails({ slug }: { slug: string }) {
 
           <div className="grid grid-cols-2 gap-2">
             <GlowBtn variant="ghost" size="md" className="w-full" icon={Medal} onClick={() => router.push(`/results?feast=${slug}`)}>Results</GlowBtn>
-            {session && !isMeAdmin ? (
+            {canRegister ? (
               <GlowBtn variant="ghost" size="md" className="w-full" icon={ClipboardList} onClick={() => router.push(`/feast/${slug}/registrations`)}>My Registrations</GlowBtn>
             ) : (
               <GlowBtn variant="ghost" size="md" className="w-full" icon={Trophy} onClick={() => router.push(`/rankings?feast=${slug}`)}>Leaderboard</GlowBtn>

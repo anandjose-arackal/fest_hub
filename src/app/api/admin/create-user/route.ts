@@ -3,10 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 // Creates a new admin user (email + password) via the Supabase Admin API.
-// Only sa_admin and me_admin may call this — Decision #6: the source app's
+// Only admin and me_admin may call this — Decision #6: the source app's
 // version of this route only checked that *a* profile existed for the
-// caller, never that profile's role, so any plain `admin` could mint new
-// sa_admins. Fixed here with a real role check.
+// caller, never that profile's role. sa_admin is a branch (shakha) admin
+// with no back-office capability at all (see admin/layout.tsx), so it's
+// excluded here too — they can't reach /admin/users to call this anyway,
+// but the API itself shouldn't grant it either.
 
 export async function POST(req: NextRequest) {
   try {
@@ -46,9 +48,9 @@ export async function POST(req: NextRequest) {
       .eq("id", caller.id)
       .single();
 
-    if (!callerProfile || !["sa_admin", "me_admin"].includes(callerProfile.role)) {
+    if (!callerProfile || !["admin", "me_admin"].includes(callerProfile.role)) {
       return NextResponse.json(
-        { error: "Only sa_admin or me_admin can create admin users" },
+        { error: "Only admin or me_admin can create admin users" },
         { status: 403 }
       );
     }

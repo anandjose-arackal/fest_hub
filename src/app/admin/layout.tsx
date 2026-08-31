@@ -20,11 +20,12 @@ interface NavSection {
   items: NavItem[];
 }
 
-// Decision #5: sa_admin means genuinely full access (matching the Users
-// page's own description of the role), not "bounced out of /admin" — the
-// source app's layout contradicted its own Users-page copy. Fixed here:
-// only me_admin gets a restricted slice; admin and sa_admin both see
-// everything.
+// Revised Decision #5: sa_admin is a shakha (branch) admin — full control
+// of their own branch's registrations via the public Feast Portal, zero
+// back-office access. "admin" is the real back-office role (not tied to a
+// branch, so it can't register participants — see feast-details.tsx's
+// registration gate). Only sa_admin gets fully bounced from /admin;
+// me_admin still gets its own restricted slice below.
 const FULL_NAV_SECTIONS: NavSection[] = [
   {
     title: null,
@@ -77,13 +78,21 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   const isLoginPage = pathname === "/admin/login";
   const isMeAdmin = profile?.role === "me_admin";
+  // sa_admin is a branch (shakha) admin, not a back-office role — they
+  // register participants for their assigned shakha through the public
+  // Feast Portal (see feast-details.tsx's LoginSheet + feast-register.tsx's
+  // adminShakha lookup), never through /admin. Unlike me_admin, they get no
+  // allowed-paths slice at all — every /admin/* route bounces them out.
+  const isSaAdmin = profile?.role === "sa_admin";
   const needsLoginRedirect = !loading && !session && !isLoginPage;
   const needsMeAdminRedirect = !loading && !isLoginPage && isMeAdmin && !ME_ADMIN_ALLOWED_PATHS.includes(pathname);
+  const needsSaAdminRedirect = !loading && !isLoginPage && isSaAdmin;
 
   useEffect(() => {
     if (needsLoginRedirect) router.replace("/admin/login");
+    else if (needsSaAdminRedirect) router.replace("/");
     else if (needsMeAdminRedirect) router.replace("/admin");
-  }, [needsLoginRedirect, needsMeAdminRedirect, router]);
+  }, [needsLoginRedirect, needsSaAdminRedirect, needsMeAdminRedirect, router]);
 
   if (loading) {
     return (
@@ -93,7 +102,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (needsLoginRedirect || needsMeAdminRedirect) return null;
+  if (needsLoginRedirect || needsSaAdminRedirect || needsMeAdminRedirect) return null;
 
   if (isLoginPage) return <>{children}</>;
 

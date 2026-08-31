@@ -7,9 +7,9 @@ import { useAuth } from "@/lib/auth-context";
 import type { Profile, Shakha, UserRole } from "@/types";
 
 const ROLES: { value: UserRole; label: string; desc: string; classes: string }[] = [
-  { value: "admin", label: "Admin", desc: "Branch administrator — full control on assigned branch", classes: "bg-blue-100 text-blue-700" },
+  { value: "admin", label: "Admin", desc: "Full back-office access — not tied to a branch, can't register participants", classes: "bg-blue-100 text-blue-700" },
   { value: "me_admin", label: "ME Admin", desc: "Can view all branches", classes: "bg-purple-100 text-purple-700" },
-  { value: "sa_admin", label: "SA Admin", desc: "Full system access, no restrictions", classes: "bg-red-100 text-red-700" },
+  { value: "sa_admin", label: "SA Admin", desc: "Shakha admin — registers participants for their assigned branch via the public site, no back-office access", classes: "bg-red-100 text-red-700" },
 ];
 
 export default function UsersPage() {
@@ -23,6 +23,7 @@ export default function UsersPage() {
   const [editRole, setEditRole] = useState<UserRole>("admin");
   const [editShakha, setEditShakha] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -61,25 +62,37 @@ export default function UsersPage() {
     setEditProfile(p);
     setEditRole(p.role);
     setEditShakha(p.shakha_id ?? "");
+    setEditError(null);
   }
 
   async function handleSaveEdit() {
     if (!editProfile) return;
+    setEditError(null);
+    if (editRole === "sa_admin" && !editShakha) {
+      setEditError("SA Admin needs a branch selected — they register participants for that branch and can't reach the admin panel otherwise.");
+      return;
+    }
     setEditSaving(true);
     const { error } = await supabase
       .from("profiles")
       .update({ full_name: editProfile.full_name, role: editRole, shakha_id: editShakha || null })
       .eq("id", editProfile.id);
     setEditSaving(false);
-    if (!error) {
-      setEditProfile(null);
-      load();
+    if (error) {
+      setEditError(error.message);
+      return;
     }
+    setEditProfile(null);
+    load();
   }
 
   async function handleCreate() {
-    setCreating(true);
     setCreateError(null);
+    if (newRole === "sa_admin" && !newShakha) {
+      setCreateError("SA Admin needs a branch selected — they register participants for that branch and can't reach the admin panel otherwise.");
+      return;
+    }
+    setCreating(true);
     const res = await fetch("/api/admin/create-user", {
       method: "POST",
       headers: {
@@ -196,6 +209,7 @@ export default function UsersPage() {
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
+              {editError && <p className="text-sm text-red-600">{editError}</p>}
               <button onClick={handleSaveEdit} disabled={editSaving} className="w-full rounded-lg bg-[#6B46FF] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
                 {editSaving ? "Saving…" : "Save"}
               </button>
