@@ -12,6 +12,7 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
 ![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](./LICENSE)
 
 </div>
 
@@ -140,3 +141,9 @@ If you later attach a custom domain in Vercel, update `NEXT_PUBLIC_SITE_URL` to 
 - `npm run build` — production build
 - `npm run lint`
 - `npx tsc --noEmit` — type-check
+
+---
+
+## 📄 License
+
+MIT — see [`LICENSE`](./LICENSE).
