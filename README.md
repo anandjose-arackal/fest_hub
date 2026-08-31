@@ -1,8 +1,21 @@
-# Feast Hub
+<div align="center">
+  <img src="public/logo.png" alt="Feast Hub" width="110" />
+  <h1>Feast Hub</h1>
+  <h3>A multi-org feast-competition management platform — public registration and results portal, admin back-office, and a public big-screen results display.</h3>
+</div>
 
-A standalone, multi-org feast-competition management product — public registration/results portal, admin back-office, and a public big-screen results display.
+<div align="center">
 
-**Stack**: Next.js (App Router) + React + TypeScript, Tailwind CSS, shadcn UI components, [Supabase](https://supabase.com) (Postgres + auth), deployed on [Vercel](https://vercel.com).
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)
+
+</div>
+
+---
 
 This guide walks through setting up a brand-new deployment from scratch: a Supabase project, environment variables, database migrations, your first admin account, and deploying to Vercel. If you're going to work on the code itself rather than just deploy it, see [`AGENTS.md`](./AGENTS.md) for architecture, data model, and coding conventions.
 
@@ -121,7 +134,7 @@ If you later attach a custom domain in Vercel, update `NEXT_PUBLIC_SITE_URL` to 
 
 ---
 
-## Scripts
+## 🛠️ Scripts
 
 - `npm run dev` — dev server
 - `npm run build` — production build
