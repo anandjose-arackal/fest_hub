@@ -218,7 +218,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "place" | "shakha" | "grade_text" | "grade_tick";
+export type CertificateFieldType = "name" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition";
 
 export interface CertificateField {
   id: string;
@@ -247,6 +247,8 @@ export interface CertificateRosterRow {
   name: string;
   shakhaName: string;
   competitionName: string;
+  /** competitionName prefixed with age category + gender, e.g. "Sub Junior Boys Elocution" — gender omitted when "common". */
+  competitionLabel: string;
   place: number | null;
   grade: "A" | "B" | "C" | null;
 }

@@ -46,6 +46,17 @@ export async function saveCertificateTemplate(input: SaveCertificateTemplateInpu
   return {};
 }
 
+interface CompInfo {
+  name: string;
+  /** name prefixed with age category + gender, e.g. "Sub Junior Boys Elocution" — gender omitted when "common"/null. */
+  label: string;
+}
+
+function buildCompetitionLabel(name: string, gender: string | null, categoryName: string | null): string {
+  const genderWord = gender === "boy" ? "Boys" : gender === "girl" ? "Girls" : null; // "common" and null both stay unlabeled
+  return [categoryName, genderWord, name].filter(Boolean).join(" ");
+}
+
 // Shared by both roster queries below — given a set of published
 // feast_competition ids (and their names), returns one CertificateRosterRow
 // per published individual result plus one row per member of every
@@ -54,7 +65,7 @@ export async function saveCertificateTemplate(input: SaveCertificateTemplateInpu
 async function buildRosterRows(
   admin: ReturnType<typeof getSupabaseAdmin>,
   fcIds: string[],
-  compNameByFc: Map<string, string>
+  compInfoByFc: Map<string, CompInfo>
 ): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
   const rows: CertificateRosterRow[] = [];
 
@@ -72,10 +83,12 @@ async function buildRosterRows(
     const participant = Array.isArray(partReg?.participant) ? partReg?.participant[0] : partReg?.participant;
     const shakha = Array.isArray(participant?.shakha) ? participant?.shakha[0] : participant?.shakha;
     if (!participant) continue;
+    const compInfo = compInfoByFc.get(r.feast_competition_id);
     rows.push({
       name: participant.name,
       shakhaName: shakha?.name ?? "—",
-      competitionName: compNameByFc.get(r.feast_competition_id) ?? "Competition",
+      competitionName: compInfo?.name ?? "Competition",
+      competitionLabel: compInfo?.label ?? "Competition",
       place: r.position,
       grade: r.grade as "A" | "B" | "C" | null,
     });
@@ -94,14 +107,15 @@ async function buildRosterRows(
     const teamReg = Array.isArray(r.team_registration) ? r.team_registration[0] : r.team_registration;
     const shakha = Array.isArray(teamReg?.shakha) ? teamReg?.shakha[0] : teamReg?.shakha;
     const members = teamReg?.team_registration_members ?? [];
-    const competitionName = compNameByFc.get(r.feast_competition_id) ?? "Competition";
+    const compInfo = compInfoByFc.get(r.feast_competition_id);
     for (const m of members) {
       const participant = Array.isArray(m.participant) ? m.participant[0] : m.participant;
       if (!participant) continue;
       rows.push({
         name: participant.name,
         shakhaName: shakha?.name ?? "—",
-        competitionName,
+        competitionName: compInfo?.name ?? "Competition",
+        competitionLabel: compInfo?.label ?? "Competition",
         place: r.position,
         grade: r.grade as "A" | "B" | "C" | null,
       });
@@ -117,19 +131,21 @@ export async function getCertificateRoster(feastId: string): Promise<{ data?: Ce
 
   const { data: fcs, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, competition:competitions(name)")
+    .select("id, competition:competitions(name, gender, competition_category:competition_categories(name))")
     .eq("feast_id", feastId)
     .eq("result_status", "published");
   if (fcErr) return { error: fcErr.message };
   if (!fcs || fcs.length === 0) return { data: [] };
 
-  const compNameByFc = new Map<string, string>();
+  const compInfoByFc = new Map<string, CompInfo>();
   for (const fc of fcs) {
     const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
-    compNameByFc.set(fc.id, competition?.name ?? "Competition");
+    const category = Array.isArray(competition?.competition_category) ? competition?.competition_category[0] : competition?.competition_category;
+    const name = competition?.name ?? "Competition";
+    compInfoByFc.set(fc.id, { name, label: buildCompetitionLabel(name, competition?.gender ?? null, category?.name ?? null) });
   }
 
-  return buildRosterRows(admin, fcs.map((f) => f.id), compNameByFc);
+  return buildRosterRows(admin, fcs.map((f) => f.id), compInfoByFc);
 }
 
 // Every participant with a published result for ONE competition — used by
@@ -140,13 +156,15 @@ export async function getCertificateRosterForCompetition(feastCompetitionId: str
 
   const { data: fc, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, competition:competitions(name)")
+    .select("id, competition:competitions(name, gender, competition_category:competition_categories(name))")
     .eq("id", feastCompetitionId)
     .single();
   if (fcErr || !fc) return { error: fcErr?.message ?? "Competition not found" };
 
   const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
-  const compNameByFc = new Map([[fc.id, competition?.name ?? "Competition"]]);
+  const category = Array.isArray(competition?.competition_category) ? competition?.competition_category[0] : competition?.competition_category;
+  const name = competition?.name ?? "Competition";
+  const compInfoByFc = new Map([[fc.id, { name, label: buildCompetitionLabel(name, competition?.gender ?? null, category?.name ?? null) }]]);
 
-  return buildRosterRows(admin, [fc.id], compNameByFc);
+  return buildRosterRows(admin, [fc.id], compInfoByFc);
 }

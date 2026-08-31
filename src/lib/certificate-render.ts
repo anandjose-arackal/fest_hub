@@ -13,6 +13,7 @@ export function fieldContentForRow(field: CertificateField, row: CertificateRost
   if (field.type === "name") return row.name;
   if (field.type === "place") return row.place ? positionLabel(row.place) : "";
   if (field.type === "shakha") return row.shakhaName;
+  if (field.type === "competition") return row.competitionLabel;
   if (field.type === "grade_text") return row.grade ?? "";
   return row.grade === field.gradeValue ? "✓" : ""; // grade_tick
 }

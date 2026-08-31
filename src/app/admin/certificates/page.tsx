@@ -16,6 +16,7 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   name: "Participant Name",
   place: "Place",
   shakha: "Shakha",
+  competition: "Competition Name",
   grade_text: "Grade",
   grade_tick: "Grade tick",
 };
@@ -42,6 +43,7 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "name") return "Participant Name";
   if (field.type === "place") return "1st";
   if (field.type === "shakha") return "Shakha";
+  if (field.type === "competition") return "Sub Junior Boys Elocution";
   if (field.type === "grade_text") return "A";
   return field.gradeValue ?? "✓"; // grade_tick
 }
@@ -354,7 +356,7 @@ export default function CertificatesPage() {
 
       {/* Toolbar */}
       <div className="mb-3 flex flex-wrap gap-1.5">
-        {(["name", "place", "shakha", "grade_text", "grade_tick"] as CertificateFieldType[]).map((t) => (
+        {(["name", "place", "shakha", "competition", "grade_text", "grade_tick"] as CertificateFieldType[]).map((t) => (
           <button key={t} onClick={() => addField(t)} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold hover:bg-neutral-50">
             <Plus className="h-3 w-3" /> {FIELD_LABELS[t]}{t === "grade_tick" ? " (A/B/C)" : ""}
           </button>
