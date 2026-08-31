@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { ClipboardCheck, Check } from "lucide-react";
+import { ClipboardCheck, Check, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { setParticipation, setChanceNo } from "@/actions/feast";
 import { setTeamParticipation, setTeamChanceNo } from "@/actions/team";
@@ -23,6 +23,8 @@ interface EntryRow {
   catSlug: string;
   participated: boolean;
   chanceNo: number | null;
+  /** Last value actually persisted — compared against chanceNo to know whether the Save button should show. */
+  savedChanceNo: number | null;
   isTeam: boolean;
 }
 
@@ -37,7 +39,7 @@ function Checkbox({ checked }: { checked: boolean }) {
   );
 }
 
-function ChanceInput({ value, onChange, onBlur }: { value: number | null; onChange: (raw: string) => void; onBlur: () => void }) {
+function ChanceInput({ value, onChange }: { value: number | null; onChange: (raw: string) => void }) {
   return (
     <input
       type="text"
@@ -45,13 +47,36 @@ function ChanceInput({ value, onChange, onBlur }: { value: number | null; onChan
       maxLength={5}
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
-      onBlur={onBlur}
       placeholder="—"
       className="w-14 rounded-lg border-2 px-1 py-1.5 text-center text-sm font-bold outline-none transition-colors"
       style={{ borderColor: "#f472b6", color: "#1e1b4b" }}
       onFocus={(ev) => (ev.currentTarget.style.borderColor = "#BE185D")}
       onBlurCapture={(ev) => (ev.currentTarget.style.borderColor = "#f472b6")}
     />
+  );
+}
+
+// Always rendered at a fixed size — dirty state toggles opacity/scale rather
+// than mounting/unmounting, so its appearance never shifts surrounding
+// layout. Square on every breakpoint per the phone-UI requirement.
+function SaveChanceButton({ dirty, saving, onClick }: { dirty: boolean; saving: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!dirty || saving}
+      tabIndex={dirty ? 0 : -1}
+      title="Save chance number"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all duration-150 ease-out"
+      style={{
+        background: "#BE185D",
+        opacity: dirty ? 1 : 0,
+        transform: dirty ? "scale(1)" : "scale(0.6)",
+        pointerEvents: dirty ? "auto" : "none",
+      }}
+    >
+      {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white" /> : <Check className="h-3.5 w-3.5" color="#fff" strokeWidth={3} />}
+    </button>
   );
 }
 
@@ -73,6 +98,8 @@ export default function ParticipationPage() {
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState<{ text: string; error?: boolean } | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [justSavedId, setJustSavedId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
@@ -124,6 +151,7 @@ export default function ParticipationPage() {
           catSlug: "team",
           participated: t.participated,
           chanceNo: t.chance_no,
+          savedChanceNo: t.chance_no,
           isTeam: true,
         };
       });
@@ -147,6 +175,7 @@ export default function ParticipationPage() {
           catSlug: cat?.slug ?? "",
           participated: r.participated,
           chanceNo: r.chance_no,
+          savedChanceNo: r.chance_no,
           isTeam: false,
         };
       });
@@ -189,20 +218,29 @@ export default function ParticipationPage() {
     setEntries((prev) => prev.map((r) => (r.regId === regId ? { ...r, chanceNo: digits ? Number(digits) : null } : r)));
   }
 
-  async function commitChance(row: EntryRow) {
+  async function saveChance(row: EntryRow) {
     const next = row.chanceNo;
     if (next != null && (next < 1 || next > 10000)) {
       showBanner("Chance number must be between 1 and 10000.", true);
       loadEntries();
       return;
     }
+    setSavingId(row.regId);
     const result = row.isTeam ? await setTeamChanceNo(row.regId, next) : await setChanceNo(row.regId, next);
+    setSavingId(null);
     if (result.error) {
       showBanner(result.error, true);
       loadEntries();
       return;
     }
-    setEntries((prev) => [...prev].sort(sortByChance));
+    setEntries((prev) => prev.map((r) => (r.regId === row.regId ? { ...r, savedChanceNo: next } : r)));
+    // Flash the row in place first, then re-sort once the flash finishes —
+    // resorting immediately would yank the row out from under the animation.
+    setJustSavedId(row.regId);
+    setTimeout(() => {
+      setJustSavedId((id) => (id === row.regId ? null : id));
+      setEntries((prev) => [...prev].sort(sortByChance));
+    }, 900);
   }
 
   async function fetchRegNosByComp(participatedOnly: boolean): Promise<{ comp: FCRow; regNos: string[] }[]> {
@@ -377,12 +415,15 @@ export default function ParticipationPage() {
                     <tr
                       key={row.regId}
                       onClick={() => toggleParticipated(row)}
-                      className="cursor-pointer border-b transition-colors"
+                      className={`cursor-pointer border-b transition-colors${row.regId === justSavedId ? " row-saved-flash" : ""}`}
                       style={{ borderColor: "#e5e7eb", background: row.participated ? "#fdf2f8" : isEven ? "#fff" : "#fafafa" }}
                     >
                       <td className="px-3 py-3"><Checkbox checked={row.participated} /></td>
                       <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                        <ChanceInput value={row.chanceNo} onChange={(v) => editChance(row.regId, v)} onBlur={() => commitChance(row)} />
+                        <div className="flex items-center gap-1.5">
+                          <ChanceInput value={row.chanceNo} onChange={(v) => editChance(row.regId, v)} />
+                          <SaveChanceButton dirty={row.chanceNo !== row.savedChanceNo} saving={savingId === row.regId} onClick={() => saveChance(row)} />
+                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <span className="inline-block rounded-lg px-2.5 py-1 font-mono text-[13px] font-black tracking-wide text-white" style={{ background: "#831843" }}>{row.regNo}</span>
@@ -412,7 +453,7 @@ export default function ParticipationPage() {
                 <div
                   key={row.regId}
                   onClick={() => toggleParticipated(row)}
-                  className="cursor-pointer overflow-hidden rounded-xl bg-white"
+                  className={`cursor-pointer overflow-hidden rounded-xl bg-white${row.regId === justSavedId ? " row-saved-flash" : ""}`}
                   style={{ border: row.participated ? "1.5px solid #f472b6" : "1.5px solid #e5e7eb", boxShadow: "0 2px 8px rgba(190,24,93,0.06)" }}
                 >
                   <div className="flex items-center gap-3 px-3.5 py-3">
@@ -430,8 +471,9 @@ export default function ParticipationPage() {
                         {CATEGORY_LABELS[row.catSlug] ?? row.catSlug}
                       </span>
                     )}
-                    <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <ChanceInput value={row.chanceNo} onChange={(v) => editChance(row.regId, v)} onBlur={() => commitChance(row)} />
+                    <div className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <ChanceInput value={row.chanceNo} onChange={(v) => editChance(row.regId, v)} />
+                      <SaveChanceButton dirty={row.chanceNo !== row.savedChanceNo} saving={savingId === row.regId} onClick={() => saveChance(row)} />
                     </div>
                   </div>
                 </div>
@@ -443,6 +485,11 @@ export default function ParticipationPage() {
 
       <style jsx>{`
         .input { border-radius: 0.5rem; border: 1px solid #d4d4d8; padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
+        .row-saved-flash { animation: rowSavedFlash 900ms ease-out; }
+        @keyframes rowSavedFlash {
+          0% { background-color: rgba(190, 24, 93, 0.16); }
+          100% { background-color: transparent; }
+        }
       `}</style>
     </div>
   );
