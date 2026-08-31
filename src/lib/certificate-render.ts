@@ -69,11 +69,17 @@ function renderFieldHtml(field: CertificateField, row: CertificateRosterRow): st
   return `<div style="position:absolute;left:${field.x_mm}mm;top:${field.y_mm}mm;"><div style="display:inline-block;white-space:nowrap;transform:translate(${tx}, -50%) rotate(${field.rotation_deg}deg);font-size:${field.font_size_pt}pt;color:${field.color};font-family:${field.font_family};">${escHtml(content)}</div></div>`;
 }
 
+// The background image is a design-time-only aid — the canvas shows it so
+// an admin can align fields against the certificate's real graphics, but
+// most orgs print onto paper that already has those graphics pre-printed
+// (by a print shop, in bulk), then feed it back through an office printer
+// for just the variable text. Printing the background image too would
+// print it a second time on top of that pre-printed stock, so the print
+// output deliberately omits it — only the field elements are printed.
 export function buildCertificateHtml(template: CertificateTemplate, rows: CertificateRosterRow[]): string {
   const sheets = rows
     .map(
       (row) => `<div class="sheet">
-    <img class="bg" src="${template.background_image_url}" alt="" />
     ${template.fields.map((f) => renderFieldHtml(f, row)).join("")}
   </div>`
     )
@@ -89,6 +95,5 @@ export function buildCertificateHtml(template: CertificateTemplate, rows: Certif
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
     .sheet { position: relative; width: ${template.paper_width_mm}mm; height: ${template.paper_height_mm}mm; overflow: hidden; page-break-after: always; }
     .sheet:last-child { page-break-after: auto; }
-    .sheet > img.bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
   </style></head><body>${PRINT_FALLBACK_BUTTON}${sheets}</body></html>`;
 }
