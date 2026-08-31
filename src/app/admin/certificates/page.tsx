@@ -185,7 +185,7 @@ function FieldChip({
     const w = (field.width_mm ?? 30) * pxPerMm;
     const h = (field.height_mm ?? 30) * pxPerMm;
     return (
-      <div style={{ position: "absolute", left: field.x_mm * pxPerMm, top: field.y_mm * pxPerMm }}>
+      <div style={{ position: "absolute", left: field.x_mm * pxPerMm, top: field.y_mm * pxPerMm }} onClick={(e) => e.stopPropagation()}>
         <div
           ref={innerRef}
           onPointerDown={onBodyPointerDown}
@@ -233,7 +233,7 @@ function FieldChip({
   const tx = alignTx(field.text_align);
 
   return (
-    <div style={{ position: "absolute", left: field.x_mm * pxPerMm, top: field.y_mm * pxPerMm }}>
+    <div style={{ position: "absolute", left: field.x_mm * pxPerMm, top: field.y_mm * pxPerMm }} onClick={(e) => e.stopPropagation()}>
       <div
         ref={innerRef}
         onPointerDown={onBodyPointerDown}
