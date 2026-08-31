@@ -46,28 +46,16 @@ export async function saveCertificateTemplate(input: SaveCertificateTemplateInpu
   return {};
 }
 
-// Every participant with a published result across the whole feast — one
-// row per individual result, and (per product decision) one row per member
-// of every published team result, so each teammate gets their own printed
-// certificate while sharing the team's place/grade/shakha.
-export async function getCertificateRoster(feastId: string): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
-  const admin = getSupabaseAdmin();
-
-  const { data: fcs, error: fcErr } = await admin
-    .from("feast_competitions")
-    .select("id, competition:competitions(name)")
-    .eq("feast_id", feastId)
-    .eq("result_status", "published");
-  if (fcErr) return { error: fcErr.message };
-  if (!fcs || fcs.length === 0) return { data: [] };
-
-  const compNameByFc = new Map<string, string>();
-  for (const fc of fcs) {
-    const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
-    compNameByFc.set(fc.id, competition?.name ?? "Competition");
-  }
-  const fcIds = fcs.map((f) => f.id);
-
+// Shared by both roster queries below — given a set of published
+// feast_competition ids (and their names), returns one CertificateRosterRow
+// per published individual result plus one row per member of every
+// published team result (so each teammate gets their own certificate while
+// sharing the team's place/grade/shakha).
+async function buildRosterRows(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  fcIds: string[],
+  compNameByFc: Map<string, string>
+): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
   const rows: CertificateRosterRow[] = [];
 
   const { data: indivResults, error: indivErr } = await admin
@@ -121,4 +109,44 @@ export async function getCertificateRoster(feastId: string): Promise<{ data?: Ce
   }
 
   return { data: rows };
+}
+
+// Every participant with a published result across the whole feast.
+export async function getCertificateRoster(feastId: string): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
+  const admin = getSupabaseAdmin();
+
+  const { data: fcs, error: fcErr } = await admin
+    .from("feast_competitions")
+    .select("id, competition:competitions(name)")
+    .eq("feast_id", feastId)
+    .eq("result_status", "published");
+  if (fcErr) return { error: fcErr.message };
+  if (!fcs || fcs.length === 0) return { data: [] };
+
+  const compNameByFc = new Map<string, string>();
+  for (const fc of fcs) {
+    const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
+    compNameByFc.set(fc.id, competition?.name ?? "Competition");
+  }
+
+  return buildRosterRows(admin, fcs.map((f) => f.id), compNameByFc);
+}
+
+// Every participant with a published result for ONE competition — used by
+// the "Print Certificate" button on /admin/results, scoped to whichever
+// competition is currently selected there.
+export async function getCertificateRosterForCompetition(feastCompetitionId: string): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
+  const admin = getSupabaseAdmin();
+
+  const { data: fc, error: fcErr } = await admin
+    .from("feast_competitions")
+    .select("id, competition:competitions(name)")
+    .eq("id", feastCompetitionId)
+    .single();
+  if (fcErr || !fc) return { error: fcErr?.message ?? "Competition not found" };
+
+  const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
+  const compNameByFc = new Map([[fc.id, competition?.name ?? "Competition"]]);
+
+  return buildRosterRows(admin, [fc.id], compNameByFc);
 }
