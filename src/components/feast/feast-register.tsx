@@ -194,10 +194,52 @@ export function FeastRegister({ slug }: { slug: string }) {
     return genderOk && catOk && c.cat === "Individual";
   });
 
+  const summarySidebar = (
+    <GlassPanel strong className="p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Registering for</p>
+      <p className="mt-0.5 text-[17px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{feast.name}</p>
+      <p className="mt-1 text-[12.5px]" style={{ color: theme.sub }}>Step {step + 1} of {STEPS.length} — {STEPS[step]}</p>
+
+      <div className="mt-4 space-y-2.5" style={{ borderTop: `1px solid ${theme.hairline}`, paddingTop: 14 }}>
+        {form.name ? (
+          <SummaryRow label="Name" value={form.name} />
+        ) : (
+          <p className="text-[12px]" style={{ color: theme.faint }}>Fill in the form to see your registration summary here.</p>
+        )}
+        {form.houseName && <SummaryRow label="House Name" value={form.houseName} />}
+        {form.dob && <SummaryRow label="Date of Birth" value={form.dob} />}
+        {catSlug && <SummaryRow label="Category" value={CATEGORY_LABELS[catSlug] ?? catSlug} color={CATEGORY_COLORS[catSlug]} />}
+        {form.gender && <SummaryRow label="Gender" value={form.gender.charAt(0).toUpperCase() + form.gender.slice(1)} />}
+        {form.phone && <SummaryRow label="Phone" value={form.phone} />}
+        {adminShakha && <SummaryRow label="Shakha" value={adminShakha.name} />}
+      </div>
+
+      {step >= 1 && (
+        <div className="mt-4" style={{ borderTop: `1px solid ${theme.hairline}`, paddingTop: 14 }}>
+          <p className="mb-2 text-[12.5px] font-semibold" style={{ color: theme.text }}>Competitions ({picked.length})</p>
+          {picked.length === 0 ? (
+            <p className="text-[12px]" style={{ color: theme.faint }}>None selected yet.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {picked.map((id) => (
+                <span key={id} className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ color: theme.text, background: `${theme.purple}1a`, border: `1px solid ${theme.purple}33` }}>
+                  {feast.competitions.find((c) => c.id === id)?.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </GlassPanel>
+  );
+
   return (
     <div>
       <FeastTopBar title={`Register · ${feast.name}`} onBack={() => (step === 0 ? router.push(`/feast/${slug}`) : setStep((s) => s - 1))} />
       <div className="mb-4"><StepDots steps={STEPS} current={step} /></div>
+
+      <div className="lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
+        <div className="min-w-0">
 
       {step === 0 && (
         <div>
@@ -312,6 +354,21 @@ export function FeastRegister({ slug }: { slug: string }) {
           <p className="mt-2.5 text-center text-[11.5px]" style={{ color: theme.faint }}>Registering under <strong>{adminShakha?.name ?? "your shakha"}</strong></p>
         </div>
       )}
+
+        </div>
+
+        {/* Live summary — wide screens only, updates as the form is filled */}
+        <div className="sticky top-4 hidden lg:block">{summarySidebar}</div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[12px]" style={{ color: theme.faint }}>{label}</span>
+      <span className="truncate text-[12.5px] font-semibold" style={{ color: color ?? theme.text, maxWidth: "60%" }}>{value}</span>
     </div>
   );
 }

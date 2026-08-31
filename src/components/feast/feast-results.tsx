@@ -102,10 +102,10 @@ function CompCard({ comp, catColor }: { comp: FeastCompetitionUI; catColor: stri
           ) : (results?.length ?? 0) === 0 ? (
             <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: `${catColor}10`, color: "#9CA3AF" }}>No results recorded</div>
           ) : (
-            <>
+            <div className="lg:grid lg:grid-cols-2 lg:gap-5">
               <ResultTable title="Positions" rows={positions} color={catColor} />
               <ResultTable title="Grades" rows={grades} color={catColor} />
-            </>
+            </div>
           )}
         </div>
       )}
@@ -180,31 +180,42 @@ export function FeastResults() {
     router.replace(`/results?feast=${s}`);
   }
 
+  const searchCta = (
+    <button
+      onClick={() => router.push(`/search?feast=${activeSlug}`)}
+      className="flex w-full items-center gap-2.5 rounded-[14px] px-4 py-3"
+      style={{ background: "rgba(255,255,255,0.72)", border: "1.5px solid rgba(107,70,255,0.14)", backdropFilter: "blur(12px)" }}
+    >
+      <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "rgba(107,70,255,0.1)" }}><Search className="h-[15px] w-[15px]" style={{ color: "#8B5CF6" }} /></div>
+      <div className="flex-1 text-left">
+        <p className="text-sm font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Search Participants</p>
+        <p className="text-[11px]" style={{ color: "#9CA3AF" }}>Find a participant and see their results</p>
+      </div>
+      <ChevronDown className="h-3.5 w-3.5" style={{ color: "#C4B5FD", transform: "rotate(-90deg)" }} />
+    </button>
+  );
+
   return (
     <div>
       <FeastTopBar title="Results" />
       <FeastTabs feasts={feasts} active={activeSlug} onPick={handlePick} loading={feastsLoading} />
 
-      <button
-        onClick={() => router.push(`/search?feast=${activeSlug}`)}
-        className="mb-4 flex w-full items-center gap-2.5 rounded-[14px] px-4 py-3"
-        style={{ background: "rgba(255,255,255,0.72)", border: "1.5px solid rgba(107,70,255,0.14)", backdropFilter: "blur(12px)" }}
-      >
-        <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "rgba(107,70,255,0.1)" }}><Search className="h-[15px] w-[15px]" style={{ color: "#8B5CF6" }} /></div>
-        <div className="flex-1 text-left">
-          <p className="text-sm font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Search Participants</p>
-          <p className="text-[11px]" style={{ color: "#9CA3AF" }}>Find a participant and see their results</p>
-        </div>
-        <ChevronDown className="h-3.5 w-3.5" style={{ color: "#C4B5FD", transform: "rotate(-90deg)" }} />
-      </button>
+      <div className="lg:grid lg:grid-cols-[1fr_300px] lg:items-start lg:gap-6">
+        <div className="min-w-0">
+          <div className="mb-4 lg:hidden">{searchCta}</div>
 
-      {!feastsLoading && feasts.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 py-16"><BookOpen className="h-7 w-7" style={{ color: theme.faint }} /><p className="text-sm" style={{ color: theme.sub }}>No feasts found.</p></div>
-      ) : !feastsLoading && feasts.length > 0 && !feasts.some((f) => f.slug === activeSlug) ? (
-        <div className="flex justify-center py-16"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
-      ) : activeSlug ? (
-        <FeastContent key={activeSlug} slug={activeSlug} />
-      ) : null}
+          {!feastsLoading && feasts.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-16"><BookOpen className="h-7 w-7" style={{ color: theme.faint }} /><p className="text-sm" style={{ color: theme.sub }}>No feasts found.</p></div>
+          ) : !feastsLoading && feasts.length > 0 && !feasts.some((f) => f.slug === activeSlug) ? (
+            <div className="flex justify-center py-16"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
+          ) : activeSlug ? (
+            <FeastContent key={activeSlug} slug={activeSlug} />
+          ) : null}
+        </div>
+
+        {/* Sidebar — wide screens only (mobile copy renders above) */}
+        <div className="sticky top-4 hidden lg:block">{searchCta}</div>
+      </div>
     </div>
   );
 }
