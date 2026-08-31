@@ -1,8 +1,10 @@
 # Feast Hub
 
-A standalone, multi-org feast-competition management product — public registration/results portal, admin back-office, and a public big-screen results display. See [`AGENTS.md`](./AGENTS.md) for architecture and conventions.
+A standalone, multi-org feast-competition management product — public registration/results portal, admin back-office, and a public big-screen results display.
 
-This guide walks through setting up a brand-new deployment from scratch: a Supabase project, environment variables, database migrations, your first admin account, and deploying to Vercel.
+**Stack**: Next.js (App Router) + React + TypeScript, Tailwind CSS, shadcn UI components, [Supabase](https://supabase.com) (Postgres + auth), deployed on [Vercel](https://vercel.com).
+
+This guide walks through setting up a brand-new deployment from scratch: a Supabase project, environment variables, database migrations, your first admin account, and deploying to Vercel. If you're going to work on the code itself rather than just deploy it, see [`AGENTS.md`](./AGENTS.md) for architecture, data model, and coding conventions.
 
 ---
 
