@@ -56,7 +56,23 @@ function ParticipantCard({ row, color }: { row: ParticipantSearchRow; color: str
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             {row.regNo && (
-              <span className="rounded-[5px] px-3.5 py-1.5 text-[15px] font-extrabold tracking-wide" style={{ background: "#FCD34D", color: "#451A03", border: "1px dashed rgba(120,53,15,0.4)" }}>{row.regNo}</span>
+              <span
+                className="relative inline-flex items-center px-3.5 py-1.5 text-[15px] tracking-wide"
+                style={{
+                  background: "#FCD34D",
+                  color: "#451A03",
+                  fontFamily: "var(--font-anek), sans-serif",
+                  fontWeight: 800,
+                  WebkitTextStroke: "0.3px #451A03",
+                  borderRadius: "5px",
+                  border: "1px dashed rgba(120,53,15,0.4)",
+                  boxShadow: "0 1px 3px rgba(120,53,15,0.25)",
+                }}
+              >
+                <span className="absolute -left-[5px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ background: "rgba(255,255,255,0.9)", boxShadow: "0 0 0 1px rgba(120,53,15,0.2)" }} aria-hidden="true" />
+                {row.regNo}
+                <span className="absolute -right-[5px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ background: "rgba(255,255,255,0.9)", boxShadow: "0 0 0 1px rgba(120,53,15,0.2)" }} aria-hidden="true" />
+              </span>
             )}
             {totalPts > 0 && <span className="text-[11px]" style={{ color: "#7C3AED" }}>{totalPts} pts</span>}
           </div>
