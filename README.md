@@ -39,6 +39,8 @@ This guide walks through setting up a brand-new deployment from scratch: a Supab
 
 Without these set, the app falls back to static demo data for local exploration — useful for UI work, but `/setup` and all data-backed pages need a real project connected.
 
+> **Deploying straight to Vercel, skipping local dev entirely?** You don't strictly need to create `.env.local` at all — just keep the three Supabase values (URL, anon/publishable key, service_role/secret key) handy and paste them into Vercel's Environment Variables in [step 6](#6-deploy-to-vercel) instead. Jump to [Run the database migrations](#3-run-the-database-migrations) → [Deploy to Vercel](#6-deploy-to-vercel), skipping step 4 and doing step 5's `/setup` on your live Vercel URL instead of `localhost`.
+
 ---
 
 ## 3. Run the database migrations
@@ -74,20 +76,20 @@ npx supabase db push
 
 ---
 
-## 4. Install and run locally
+## 4. Install and run locally *(optional — skip if you're deploying straight to Vercel)*
 
 ```bash
 npm install
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000).
+Visit [http://localhost:3000](http://localhost:3000). If you're not planning to develop locally, skip straight to [Deploy to Vercel](#6-deploy-to-vercel) — you can do step 5 (create your first admin) on your live Vercel URL instead.
 
 ---
 
 ## 5. Create your first admin account
 
-Once the migrations have run and `.env.local` is filled in, visit **`/setup`**. This route is only reachable while the `profiles` table is empty — it lets you create the first Super Admin (`sa_admin`) account and set your organization's basic identity (name, area). Once that account exists, `/setup` permanently redirects to `/admin/login`.
+Once the migrations have run, visit **`/setup`** — either `http://localhost:3000/setup` if you're running locally, or `https://<your-vercel-domain>/setup` if you deployed straight to Vercel (step 6) without a local run. This route is only reachable while the `profiles` table is empty — it lets you create the first Super Admin (`sa_admin`) account and set your organization's basic identity (name, area). Once that account exists, `/setup` permanently redirects to `/admin/login`.
 
 From there, sign in at `/admin/login` and use the admin panel to:
 - **Organization Settings** (`/admin/org-settings`) — set your org/area name, tagline, and logo.
@@ -102,7 +104,7 @@ From there, sign in at `/admin/login` and use the admin panel to:
 1. Push this repo to GitHub (or GitLab/Bitbucket).
 2. Go to [vercel.com](https://vercel.com), sign in, and click **Add New → Project**.
 3. Import the repository. Vercel auto-detects Next.js — no build configuration needed.
-4. Before deploying, add the same four environment variables from `.env.local` under **Environment Variables**:
+4. Before deploying, add the same four environment variables described in [step 2](#2-configure-environment-variables) under **Environment Variables** (whether or not you ever created a local `.env.local`):
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
