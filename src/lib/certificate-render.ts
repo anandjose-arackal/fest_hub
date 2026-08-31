@@ -41,7 +41,11 @@ export function googleFontsHref(fields: CertificateField[]): string | null {
 }
 
 export function fieldContentForRow(field: CertificateField, row: CertificateRosterRow): string {
-  if (field.type === "name") return row.name;
+  // Name and house name print together as one field — "Name (House)" when a
+  // house name is set, otherwise just the name. house_name stays a valid
+  // field type for backward compatibility with any template saved while it
+  // was still offered as a separate element.
+  if (field.type === "name") return row.houseName ? `${row.name} (${row.houseName})` : row.name;
   if (field.type === "house_name") return row.houseName;
   if (field.type === "place") return row.place ? positionLabel(row.place) : "";
   if (field.type === "shakha") return row.shakhaName;
