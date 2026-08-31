@@ -8,6 +8,37 @@ import type { CertificateField, CertificateRosterRow, CertificateTemplate } from
 // goes through the service-role client, same convention as
 // shakha_feast_standings / competition_results.
 
+const MAX_ASSET_BYTES = 4 * 1024 * 1024; // 4MB — leaves headroom under next.config.ts's 5mb server-action body limit
+
+// Uploads a background/signature image to the public "certificate-assets"
+// bucket (migration 012). Goes through the service-role client — same
+// reason as everything else in this file — so the bucket itself needs no
+// storage RLS policies, just public:true for the printed <img> URLs.
+export async function uploadCertificateAsset(
+  feastId: string,
+  fileName: string,
+  fileBase64: string,
+  contentType: string
+): Promise<{ url?: string; error?: string }> {
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(fileBase64, "base64");
+  } catch {
+    return { error: "Invalid file data." };
+  }
+  if (buffer.length === 0) return { error: "File is empty." };
+  if (buffer.length > MAX_ASSET_BYTES) return { error: "Image is too large — please use a file under 4MB." };
+  if (!contentType.startsWith("image/")) return { error: "Only image files are supported." };
+
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${feastId}/${Date.now()}-${safeName}`;
+  const admin = getSupabaseAdmin();
+  const { error } = await admin.storage.from("certificate-assets").upload(path, buffer, { contentType, upsert: false });
+  if (error) return { error: error.message };
+  const { data } = admin.storage.from("certificate-assets").getPublicUrl(path);
+  return { url: data.publicUrl };
+}
+
 export async function getCertificateTemplate(feastId: string): Promise<{ data?: CertificateTemplate | null; error?: string }> {
   const { data, error } = await getSupabaseAdmin()
     .from("certificate_templates")

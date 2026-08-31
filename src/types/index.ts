@@ -218,19 +218,28 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition";
+export type CertificateFieldType = "name" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "image";
 
 export interface CertificateField {
   id: string;
   type: CertificateFieldType;
+  /** Center anchor, both text and image fields. */
   x_mm: number;
   y_mm: number;
   rotation_deg: number;
   font_size_pt: number;
   color: string;
   text_align: "left" | "center" | "right";
+  /** CSS font-family value actually applied, e.g. "'Dancing Script', cursive". */
+  font_family: string;
+  /** Google Fonts API family segment to load, e.g. "Dancing+Script:wght@700" — null for system fonts that need no fetch. */
+  google_font: string | null;
   /** Only meaningful when type === "grade_tick" — which grade this marker represents. */
   gradeValue?: "A" | "B" | "C";
+  /** Only meaningful when type === "image" (e.g. an imported signature). */
+  image_url?: string;
+  width_mm?: number;
+  height_mm?: number;
 }
 
 export interface CertificateTemplate {
