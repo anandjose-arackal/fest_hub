@@ -54,6 +54,21 @@ function newField(type: CertificateFieldType, paperW: number, paperH: number, gr
   };
 }
 
+// Fields saved before Google Fonts support was added (font_family/
+// google_font didn't exist yet) come back from the DB without those
+// properties — back-fill them so every downstream read (canvas, properties
+// panel, print HTML) can rely on font_family always being a string.
+function normalizeTemplate(t: CertificateTemplate): CertificateTemplate {
+  return {
+    ...t,
+    fields: t.fields.map((f) => ({
+      ...f,
+      font_family: f.font_family ?? FONT_PRESETS[0].fontFamily,
+      google_font: f.google_font ?? FONT_PRESETS[0].googleFont,
+    })),
+  };
+}
+
 function newImageField(paperW: number, paperH: number, url: string, widthMm: number, heightMm: number): CertificateField {
   return {
     ...newField("image", paperW, paperH),
@@ -325,7 +340,7 @@ export default function CertificatesPage() {
     setRoster(null);
     getCertificateTemplate(feastId).then(({ data, error }) => {
       if (error) console.error("[certificates]", error);
-      setTemplate(data ?? emptyTemplate(feastId));
+      setTemplate(normalizeTemplate(data ?? emptyTemplate(feastId)));
       setLoading(false);
     });
   }, [feastId]);
