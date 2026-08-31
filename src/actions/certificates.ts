@@ -103,7 +103,7 @@ async function buildRosterRows(
   const { data: indivResults, error: indivErr } = await admin
     .from("competition_results")
     .select(
-      "feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, shakha:shakhas(name)))"
+      "feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))"
     )
     .in("feast_competition_id", fcIds)
     .not("published_at", "is", null);
@@ -117,6 +117,7 @@ async function buildRosterRows(
     const compInfo = compInfoByFc.get(r.feast_competition_id);
     rows.push({
       name: participant.name,
+      houseName: participant.house_name ?? "",
       shakhaName: shakha?.name ?? "—",
       competitionName: compInfo?.name ?? "Competition",
       competitionLabel: compInfo?.label ?? "Competition",
@@ -128,7 +129,7 @@ async function buildRosterRows(
   const { data: teamResults, error: teamErr } = await admin
     .from("team_results")
     .select(
-      "feast_competition_id, grade, position, team_registration:team_registrations(shakha:shakhas(name), team_registration_members(participant:participants(name)))"
+      "feast_competition_id, grade, position, team_registration:team_registrations(shakha:shakhas(name), team_registration_members(participant:participants(name, house_name)))"
     )
     .in("feast_competition_id", fcIds)
     .not("published_at", "is", null);
@@ -144,6 +145,7 @@ async function buildRosterRows(
       if (!participant) continue;
       rows.push({
         name: participant.name,
+        houseName: participant.house_name ?? "",
         shakhaName: shakha?.name ?? "—",
         competitionName: compInfo?.name ?? "Competition",
         competitionLabel: compInfo?.label ?? "Competition",

@@ -42,6 +42,7 @@ export function googleFontsHref(fields: CertificateField[]): string | null {
 
 export function fieldContentForRow(field: CertificateField, row: CertificateRosterRow): string {
   if (field.type === "name") return row.name;
+  if (field.type === "house_name") return row.houseName;
   if (field.type === "place") return row.place ? positionLabel(row.place) : "";
   if (field.type === "shakha") return row.shakhaName;
   if (field.type === "competition") return row.competitionLabel;

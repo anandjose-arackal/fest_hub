@@ -218,7 +218,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "image";
+export type CertificateFieldType = "name" | "house_name" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "image";
 
 export interface CertificateField {
   id: string;
@@ -254,6 +254,8 @@ export interface CertificateTemplate {
 
 export interface CertificateRosterRow {
   name: string;
+  /** Empty string when the participant has no house name set — the field simply doesn't render on that certificate. */
+  houseName: string;
   shakhaName: string;
   competitionName: string;
   /** competitionName prefixed with age category + gender, e.g. "Sub Junior Boys Elocution" — gender omitted when "common". */
