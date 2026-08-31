@@ -13,12 +13,15 @@ This guide walks through setting up a brand-new deployment from scratch: a Supab
    - Pick an organization, give the project a name (e.g. `feast-hub-prod`), and set a database password (save it somewhere — you won't need it day-to-day since the app uses API keys, but it's needed for direct DB access).
    - Choose a region close to where most users will be.
 3. Wait for the project to finish provisioning (a minute or two).
-4. Open **Project Settings → API Keys**. You'll need three values from here in the next step:
-   - **Project URL**
-   - **`anon` / publishable key** (safe to expose client-side)
-   - **`service_role` / secret key** (server-only — never expose this client-side)
+4. Once inside the project, find the keys: click the **gear icon (⚙ Project Settings)** near the bottom of the left sidebar, then **API Keys** in the settings menu (older dashboards call this page just **API**). You'll need three values from this page:
 
-   Newer Supabase projects show these as **publishable key** / **secret key**; older ones show **anon key** / **service_role key**. Either naming works — the app just needs the URL, the public key, and the secret key.
+   | Value | Where on the page | What it looks like |
+   |---|---|---|
+   | **Project URL** | Top of the page, labeled "Project URL" | `https://abcdefghijklmnop.supabase.co` — your project's ref ID as a subdomain |
+   | **anon / publishable key** | Under "Project API keys" — safe to expose client-side | New-style: starts with `sb_publishable_…`. Legacy-style: a long three-part string starting with `eyJhbGci…` (it's a JWT) |
+   | **service_role / secret key** | Same section, usually below the anon key — click "Reveal" to see it — **server-only, never expose this client-side** | New-style: starts with `sb_secret_…`. Legacy-style: another `eyJhbGci…` JWT, longer than the anon one |
+
+   Newer Supabase projects show these as **publishable key** / **secret key**; older ones show **anon key** / **service_role key**. Either naming works — the app just needs the URL, the public key, and the secret key, whichever format they're in.
 
 ---
 
