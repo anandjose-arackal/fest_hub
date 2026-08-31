@@ -18,6 +18,7 @@ const MAX_CANVAS_PX = 700;
 const FIELD_LABELS: Record<CertificateFieldType, string> = {
   name: "Participant Name",
   house_name: "House Name",
+  name_house: "Name + House Name",
   place: "Place",
   shakha: "Shakha",
   competition: "Competition Name",
@@ -28,6 +29,8 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
 
 const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string; color: string }[] = [
   { type: "name", label: "Name", emoji: "👤", color: "#2563EB" },
+  { type: "house_name", label: "House", emoji: "🏠", color: "#4F46E5" },
+  { type: "name_house", label: "Name + House", emoji: "🧾", color: "#0EA5E9" },
   { type: "place", label: "Place", emoji: "🥇", color: "#D97706" },
   { type: "shakha", label: "Shakha", emoji: "🏫", color: "#0D9488" },
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
@@ -80,8 +83,9 @@ function newImageField(paperW: number, paperH: number, url: string, widthMm: num
 }
 
 function fieldPreviewContent(field: CertificateField): string {
-  if (field.type === "name") return "Participant Name (House Name)";
+  if (field.type === "name") return "Participant Name";
   if (field.type === "house_name") return "House Name";
+  if (field.type === "name_house") return "Participant Name (House Name)";
   if (field.type === "place") return "1st";
   if (field.type === "shakha") return "Shakha";
   if (field.type === "competition") return "Sub Junior Boys Elocution";
@@ -578,7 +582,7 @@ export default function CertificatesPage() {
       </StepCard>
 
       <StepCard step={3} emoji="🏷️" title="Add fields — drag them onto your certificate">
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9">
           {FIELD_TOOLBAR.map((f) => (
             <button
               key={f.type}
