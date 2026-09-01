@@ -25,6 +25,7 @@ const emptyForm = {
   venue: "",
   start_date: "",
   end_date: "",
+  registration_deadline: "",
   description: "",
   is_external: false,
 };
@@ -76,6 +77,7 @@ export default function FeastsPage() {
       venue: f.venue ?? "",
       start_date: f.start_date ?? "",
       end_date: f.end_date ?? "",
+      registration_deadline: f.registration_deadline ?? "",
       description: f.description ?? "",
       is_external: f.is_external ?? false,
     });
@@ -98,6 +100,7 @@ export default function FeastsPage() {
       venue: form.venue || null,
       start_date: form.start_date || null,
       end_date: form.end_date || null,
+      registration_deadline: form.registration_deadline || null,
       description: form.description || null,
       is_external: form.is_external,
     };
@@ -239,6 +242,9 @@ export default function FeastsPage() {
                   <input type="date" className="input" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} />
                 </Field>
               </div>
+              <Field label="Last day of registration" hint="Not enforced yet — informational only. Leave blank for no cutoff.">
+                <input type="date" className="input" value={form.registration_deadline} onChange={(e) => setForm({ ...form, registration_deadline: e.target.value })} />
+              </Field>
               <Field label="Description">
                 <textarea className="input" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </Field>
