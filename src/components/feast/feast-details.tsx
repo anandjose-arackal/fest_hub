@@ -4,13 +4,13 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, MapPin, Clock, Lock, Ticket, Users, Layers, Medal, ClipboardList, Trophy,
-  LogIn, Eye, EyeOff, ChevronDown, ChevronRight,
+  LogIn, Eye, EyeOff, ChevronDown, ChevronRight, type LucideIcon,
 } from "lucide-react";
 import { useFeast } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { getPublishedResults } from "@/actions/results";
 import { getPublishedTeamResults } from "@/actions/team-results";
-import { GlassPanel, GlowBtn, StatusPill, StatBlock, FeastTopBar, theme, CATEGORY_COLORS, CATEGORY_LABELS } from "./feast-shared";
+import { GlassPanel, GlowBtn, StatusPill, FeastTopBar, theme, CATEGORY_COLORS } from "./feast-shared";
 import { ResultTable, sortResults, type PublicResultRow } from "./feast-shared-results";
 
 const CAT_CONFIG: { slug: string; label: string; color: string }[] = [
@@ -34,6 +34,31 @@ function genderLabel(gender: string | null) {
   if (gender === "boy") return { label: "Boys", color: "#3B82F6" };
   if (gender === "girl") return { label: "Girls", color: "#EC4899" };
   return null;
+}
+
+function HeroStat({ icon: Icon, value, label }: { icon: LucideIcon; value: number | string; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1 rounded-2xl border border-white/35 bg-white/15 py-3 backdrop-blur-md">
+      <Icon className="h-4 w-4 text-white/80" />
+      <span className="text-[20px] font-bold tabular-nums text-white">{value}</span>
+      <span className="text-[9.5px] font-semibold uppercase tracking-wider text-white/70">{label}</span>
+    </div>
+  );
+}
+
+function QuickTile({ icon: Icon, label, color, onClick }: { icon: LucideIcon; label: string; color: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-1.5 rounded-2xl py-3.5 transition-transform active:scale-95"
+      style={{ background: `${color}14`, border: `1px solid ${color}2a` }}
+    >
+      <span className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: `${color}22` }}>
+        <Icon className="h-4 w-4" style={{ color }} />
+      </span>
+      <span className="text-[11.5px] font-semibold" style={{ color: theme.text }}>{label}</span>
+    </button>
+  );
 }
 
 function LoginSheet({ onClose }: { onClose: () => void }) {
@@ -144,7 +169,7 @@ function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>[
   const grades = (results ?? []).filter((r) => r.position == null && r.grade != null);
 
   return (
-    <GlassPanel className="relative mb-3 overflow-hidden p-4">
+    <GlassPanel className="relative h-fit overflow-hidden p-4">
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: catColor }} />
       <div className="pl-2">
         <div className="flex items-start justify-between gap-2">
@@ -243,50 +268,68 @@ export function FeastDetails({ slug }: { slug: string }) {
       <FeastTopBar title={feast.name} onBack={() => router.push("/")} />
 
       {/* Hero */}
-      <GlassPanel strong glow={feast.accent} className="relative overflow-hidden p-5" style={{ background: `linear-gradient(140deg, ${feast.tint[0]}cc, ${feast.tint[1]}cc)` }}>
-        <div className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-white/20 blur-3xl" />
-        <StatusPill label={feast.status} white />
-        <p className="mt-3 text-[28px] font-bold text-white">{feast.name} <span className="font-normal opacity-70">{feast.year}</span></p>
-        {feast.venue && <p className="mt-1 flex items-center gap-1 text-sm text-white/85"><MapPin className="h-3.5 w-3.5" />{feast.venue}</p>}
-        <div className="mt-4 flex items-center rounded-2xl border border-white/60 bg-white/15 py-3 backdrop-blur-md">
-          <StatBlock value={feast.registrations} label="Registered" />
-          <div className="h-8 w-px bg-white/30" />
-          <StatBlock value={feast.competitions.length} label="Events" />
-          <div className="h-8 w-px bg-white/30" />
-          <StatBlock value={feast.daysLeft} label="Days Left" color="#8d027de3" />
+      <GlassPanel strong glow={feast.accent} className="relative overflow-hidden p-5 lg:p-8" style={{ background: `linear-gradient(140deg, ${feast.tint[0]}cc, ${feast.tint[1]}cc)` }}>
+        <div className="pointer-events-none absolute -top-14 -right-14 h-52 w-52 rounded-full bg-white/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-16 -left-10 h-44 w-44 rounded-full bg-black/10 blur-3xl" />
+        <div className="relative lg:flex lg:items-end lg:justify-between lg:gap-10">
+          <div className="min-w-0">
+            <StatusPill label={feast.status} white />
+            <p className="mt-3 text-[28px] font-bold leading-[1.15] text-white lg:text-[38px]">
+              {feast.name} <span className="font-normal opacity-70">{feast.year}</span>
+            </p>
+            {feast.venue && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-sm text-white/85">
+                <MapPin className="h-3.5 w-3.5" />{feast.venue}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2.5 lg:mt-0 lg:w-[380px] lg:shrink-0">
+            <HeroStat icon={Users} value={feast.registrations} label="Registered" />
+            <HeroStat icon={Trophy} value={feast.competitions.length} label="Events" />
+            <HeroStat icon={Clock} value={feast.daysLeft} label="Days Left" />
+          </div>
         </div>
       </GlassPanel>
 
       {/* Auth-gated actions */}
       {!authLoading && (
-        <div className="mt-4 space-y-2">
-          {!session ? (
-            <GlowBtn variant="ghost" size="lg" className="w-full" icon={Lock} onClick={() => setLoginOpen(true)}>Login to Register</GlowBtn>
-          ) : canRegister ? (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <GlowBtn variant="gold" size="lg" className="w-full" icon={Ticket} onClick={() => router.push(`/feast/${slug}/register`)}>Register Now</GlowBtn>
-              {hasTeamComp && (
-                <GlowBtn variant="pink" size="lg" className="w-full" icon={Users} onClick={() => router.push(`/feast/${slug}/register-team`)}>Register Team</GlowBtn>
-              )}
-            </div>
-          ) : null}
+        <div className="mt-5 lg:flex lg:items-start lg:gap-3">
+          <div className="lg:flex-1">
+            {!session ? (
+              <GlowBtn variant="ghost" size="lg" className="w-full" icon={Lock} onClick={() => setLoginOpen(true)}>Login to Register</GlowBtn>
+            ) : canRegister ? (
+              <div className={`grid grid-cols-1 gap-2.5 ${hasTeamComp ? "sm:grid-cols-2" : ""}`}>
+                <GlowBtn variant="gold" size="lg" className="w-full" icon={Ticket} onClick={() => router.push(`/feast/${slug}/register`)}>Register Now</GlowBtn>
+                {hasTeamComp && (
+                  <GlowBtn variant="pink" size="lg" className="w-full" icon={Users} onClick={() => router.push(`/feast/${slug}/register-team`)}>Register Team</GlowBtn>
+                )}
+              </div>
+            ) : null}
+          </div>
 
-          <GlowBtn variant="ghost" size="md" className="w-full" icon={Layers} onClick={() => router.push(`/feast/${slug}/stages`)}>Competition Stages</GlowBtn>
-
-          <div className="grid grid-cols-2 gap-2">
-            <GlowBtn variant="ghost" size="md" className="w-full" icon={Medal} onClick={() => router.push(`/results?feast=${slug}`)}>Results</GlowBtn>
+          <div className="mt-2.5 grid grid-cols-3 gap-2.5 lg:mt-0 lg:w-[420px] lg:shrink-0">
+            <QuickTile icon={Layers} label="Stages" color={theme.purple} onClick={() => router.push(`/feast/${slug}/stages`)} />
+            <QuickTile icon={Medal} label="Results" color={theme.cyan} onClick={() => router.push(`/results?feast=${slug}`)} />
             {canRegister ? (
-              <GlowBtn variant="ghost" size="md" className="w-full" icon={ClipboardList} onClick={() => router.push(`/feast/${slug}/registrations`)}>My Registrations</GlowBtn>
+              <QuickTile icon={ClipboardList} label="My Regs" color={theme.pink} onClick={() => router.push(`/feast/${slug}/registrations`)} />
             ) : (
-              <GlowBtn variant="ghost" size="md" className="w-full" icon={Trophy} onClick={() => router.push(`/rankings?feast=${slug}`)}>Leaderboard</GlowBtn>
+              <QuickTile icon={Trophy} label="Leaderboard" color={theme.gold} onClick={() => router.push(`/rankings?feast=${slug}`)} />
             )}
           </div>
         </div>
       )}
 
       {/* Competitions */}
-      <div className="mt-6 rounded-[26px] border p-4" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#faf5ff,#ede9fe)", borderColor: "rgba(107,70,255,0.12)" }}>
-        <p className="mb-3 text-[15px] font-semibold" style={{ color: theme.text }}>Competitions</p>
+      <div className="mt-6 rounded-[26px] border p-4 lg:mt-8 lg:p-6" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#faf5ff,#ede9fe)", borderColor: "rgba(107,70,255,0.12)" }}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-[15px] font-semibold" style={{ color: theme.text }}>Competitions</p>
+          {tabComps.length > 0 && (
+            <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(107,70,255,0.12)", color: theme.purple }}>
+              {tabComps.length} {tabComps.length === 1 ? "event" : "events"}
+            </span>
+          )}
+        </div>
         {availableCats.length > 0 && (
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
             {availableCats.map((c) => {
@@ -295,9 +338,10 @@ export function FeastDetails({ slug }: { slug: string }) {
                 <button
                   key={c.slug}
                   onClick={() => setActiveTab(c.slug)}
-                  className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold"
+                  className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold"
                   style={active ? { background: "linear-gradient(135deg, #6B46FF, #A78BFA)", color: "#fff", boxShadow: "0 4px 14px rgba(107,70,255,0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(107,70,255,0.15)" }}
                 >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: active ? "#fff" : c.color }} />
                   {c.label}
                 </button>
               );
@@ -307,7 +351,9 @@ export function FeastDetails({ slug }: { slug: string }) {
         {tabComps.length === 0 ? (
           <p className="text-sm" style={{ color: theme.faint }}>No competitions in this category yet.</p>
         ) : (
-          tabComps.map((c) => <CompetitionCard key={c.id} comp={c} feastId={feast.id} />)
+          <div className="lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0 space-y-3">
+            {tabComps.map((c) => <CompetitionCard key={c.id} comp={c} feastId={feast.id} />)}
+          </div>
         )}
       </div>
 
