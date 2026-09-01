@@ -265,9 +265,9 @@ export function FeastNav() {
   const activeIndex = Math.max(0, NAV_ITEMS.findIndex((i) => i.match(pathname)));
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3.5 pb-[22px]">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-3.5 pb-[22px] lg:hidden">
       <div
-        className="pointer-events-auto relative flex w-full max-w-[420px] items-center rounded-[26px] px-1.5 py-2.5 sm:max-w-[520px] lg:max-w-[640px]"
+        className="pointer-events-auto relative flex w-full max-w-[420px] items-center rounded-[26px] px-1.5 py-2.5 sm:max-w-[520px]"
         style={{
           background: `linear-gradient(135deg, rgba(167,139,250,0.72), rgba(190,24,147,0.4) 45%, rgba(107,70,255,0.8)), ${theme.navBg}`,
           border: "1px solid rgba(255,255,255,0.45)",
@@ -297,6 +297,54 @@ export function FeastNav() {
                 <Icon className="h-[20px] w-[20px]" style={{ color: "#0B2545" }} />
               </span>
               <span className="text-[10px] font-semibold" style={{ color: active ? "#4C1D95" : "#0B2545" }}>{item.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Desktop counterpart to FeastNav — same NAV_ITEMS, same gradient/glass
+// language, laid out as a fixed left sidebar instead of a floating bottom
+// bar. A separate layoutId keeps its active-bubble animation independent of
+// FeastNav's, since both stay mounted simultaneously (CSS hides/shows
+// whichever one applies at the current breakpoint, per FeastShell).
+export function FeastSideNav() {
+  const pathname = usePathname();
+  const activeIndex = Math.max(0, NAV_ITEMS.findIndex((i) => i.match(pathname)));
+
+  return (
+    <div className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col justify-center px-4 lg:flex">
+      <div
+        className="flex flex-col gap-1.5 rounded-[26px] p-3"
+        style={{
+          background: `linear-gradient(165deg, rgba(167,139,250,0.72), rgba(190,24,147,0.4) 45%, rgba(107,70,255,0.8)), ${theme.navBg}`,
+          border: "1px solid rgba(255,255,255,0.45)",
+          boxShadow: "0 12px 34px rgba(107,70,255,0.28), inset 0 1px 1px rgba(255,255,255,0.5)",
+          backdropFilter: "blur(8px) saturate(140%)",
+        }}
+      >
+        {NAV_ITEMS.map((item, i) => {
+          const active = i === activeIndex;
+          const Icon = item.icon;
+          return (
+            <Link key={item.href} href={item.href} className="relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
+              {active && (
+                <motion.div
+                  layoutId="feast-nav-bubble-side"
+                  className="absolute inset-0 rounded-2xl"
+                  style={{
+                    background: "linear-gradient(145deg, #A78BFA, #6B46FF)",
+                    boxShadow: "0 8px 20px rgba(140,100,230,0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
+                  }}
+                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                />
+              )}
+              <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+                <Icon className="h-[20px] w-[20px]" style={{ color: active ? "#fff" : "#0B2545" }} />
+              </span>
+              <span className="relative text-[13.5px] font-semibold" style={{ color: active ? "#fff" : "#0B2545" }}>{item.label}</span>
             </Link>
           );
         })}
@@ -351,8 +399,11 @@ export function FeastShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-dvh w-full overflow-hidden" style={{ background: theme.pageBg }}>
       <Blobs />
-      <main className="relative mx-auto w-full max-w-md px-4 pt-2 pb-[110px] sm:max-w-2xl sm:px-6 lg:max-w-5xl lg:px-8">
-        {children}
+      <FeastSideNav />
+      <main className="relative w-full pb-[110px] lg:ml-56 lg:pb-10">
+        <div className="mx-auto w-full max-w-md px-4 pt-2 sm:max-w-2xl sm:px-6 lg:max-w-5xl lg:px-8">
+          {children}
+        </div>
       </main>
       <FeastNav />
     </div>
