@@ -5,9 +5,13 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, ArrowRight, Trophy, Sparkles, Medal, Search, Home,
-  Loader2, type LucideIcon,
+  Loader2, PenTool, Palette, Zap, type LucideIcon,
 } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
+
+// FeastUI.icon (from use-feast.ts's FEAST_TYPE_CONFIG) is a Lucide icon
+// *name*, not an emoji — this resolves it to the actual component.
+const FEAST_ICONS: Record<string, LucideIcon> = { PenTool, Palette, Zap, Sparkles };
 
 // The Feast Portal's own palette — resolved once from the source app's
 // single production theme instantiation (aurora-glass/dusk/28). Since this
@@ -352,17 +356,30 @@ export function FeastSideNav() {
 
               {/* Under "Feasts" — direct links to every active feast */}
               {item.href === "/" && feasts.length > 0 && (
-                <div className="ml-[34px] mt-0.5 flex flex-col gap-0.5 border-l pl-3" style={{ borderColor: "rgba(11,37,69,0.15)" }}>
+                <div className="mb-1 ml-2 mt-1 flex flex-col gap-1.5">
                   {feasts.map((f) => {
                     const feastActive = pathname.startsWith(`/feast/${f.slug}`);
+                    const FeastIcon = FEAST_ICONS[f.icon] ?? Sparkles;
                     return (
                       <Link
                         key={f.slug}
                         href={`/feast/${f.slug}`}
-                        className="truncate rounded-lg px-2 py-1 text-[12px] font-medium"
-                        style={{ color: feastActive ? "#4C1D95" : "#0B2545CC", background: feastActive ? "rgba(255,255,255,0.5)" : "transparent" }}
+                        className="flex items-center gap-2.5 rounded-2xl py-2 pl-2 pr-3 transition-transform active:scale-[0.97]"
+                        style={
+                          feastActive
+                            ? { background: `linear-gradient(135deg, ${f.accent}, ${f.tint[1]})`, boxShadow: `0 6px 16px ${f.accent}55, inset 0 1.5px 2px rgba(255,255,255,0.4)` }
+                            : { background: "rgba(255,255,255,0.42)", border: "1px solid rgba(255,255,255,0.55)" }
+                        }
                       >
-                        {f.name}
+                        <span
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                          style={{ background: feastActive ? "rgba(255,255,255,0.28)" : `${f.accent}22` }}
+                        >
+                          <FeastIcon className="h-[15px] w-[15px]" style={{ color: feastActive ? "#fff" : f.accent }} />
+                        </span>
+                        <span className="min-w-0 truncate text-[12.5px] font-bold" style={{ color: feastActive ? "#fff" : "#3D2E6B" }}>
+                          {f.name}
+                        </span>
                       </Link>
                     );
                   })}
