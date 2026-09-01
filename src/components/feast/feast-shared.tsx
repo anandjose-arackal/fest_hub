@@ -7,6 +7,7 @@ import {
   ArrowLeft, ArrowRight, Trophy, Sparkles, Medal, Search, Home,
   Loader2, type LucideIcon,
 } from "lucide-react";
+import { useFeasts } from "@/hooks/use-feast";
 
 // The Feast Portal's own palette — resolved once from the source app's
 // single production theme instantiation (aurora-glass/dusk/28). Since this
@@ -313,6 +314,7 @@ export function FeastNav() {
 export function FeastSideNav() {
   const pathname = usePathname();
   const activeIndex = Math.max(0, NAV_ITEMS.findIndex((i) => i.match(pathname)));
+  const { feasts } = useFeasts();
 
   return (
     <div className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col justify-center px-4 lg:flex">
@@ -329,23 +331,44 @@ export function FeastSideNav() {
           const active = i === activeIndex;
           const Icon = item.icon;
           return (
-            <Link key={item.href} href={item.href} className="relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
-              {active && (
-                <motion.div
-                  layoutId="feast-nav-bubble-side"
-                  className="absolute inset-0 rounded-2xl"
-                  style={{
-                    background: "linear-gradient(145deg, #A78BFA, #6B46FF)",
-                    boxShadow: "0 8px 20px rgba(140,100,230,0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
-                  }}
-                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                />
+            <div key={item.href}>
+              <Link href={item.href} className="relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5">
+                {active && (
+                  <motion.div
+                    layoutId="feast-nav-bubble-side"
+                    className="absolute inset-0 rounded-2xl"
+                    style={{
+                      background: "linear-gradient(145deg, #A78BFA, #6B46FF)",
+                      boxShadow: "0 8px 20px rgba(140,100,230,0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
+                    }}
+                    transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                  />
+                )}
+                <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
+                  <Icon className="h-[20px] w-[20px]" style={{ color: active ? "#fff" : "#0B2545" }} />
+                </span>
+                <span className="relative text-[13.5px] font-semibold" style={{ color: active ? "#fff" : "#0B2545" }}>{item.label}</span>
+              </Link>
+
+              {/* Under "Feasts" — direct links to every active feast */}
+              {item.href === "/" && feasts.length > 0 && (
+                <div className="ml-[34px] mt-0.5 flex flex-col gap-0.5 border-l pl-3" style={{ borderColor: "rgba(11,37,69,0.15)" }}>
+                  {feasts.map((f) => {
+                    const feastActive = pathname.startsWith(`/feast/${f.slug}`);
+                    return (
+                      <Link
+                        key={f.slug}
+                        href={`/feast/${f.slug}`}
+                        className="truncate rounded-lg px-2 py-1 text-[12px] font-medium"
+                        style={{ color: feastActive ? "#4C1D95" : "#0B2545CC", background: feastActive ? "rgba(255,255,255,0.5)" : "transparent" }}
+                      >
+                        {f.name}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-              <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
-                <Icon className="h-[20px] w-[20px]" style={{ color: active ? "#fff" : "#0B2545" }} />
-              </span>
-              <span className="relative text-[13.5px] font-semibold" style={{ color: active ? "#fff" : "#0B2545" }}>{item.label}</span>
-            </Link>
+            </div>
           );
         })}
       </div>
@@ -400,7 +423,7 @@ export function FeastShell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-dvh w-full overflow-hidden" style={{ background: theme.pageBg }}>
       <Blobs />
       <FeastSideNav />
-      <main className="relative w-full pb-[110px] lg:ml-56 lg:pb-10">
+      <main className="relative pb-[110px] lg:pb-10">
         <div className="mx-auto w-full max-w-md px-4 pt-2 sm:max-w-2xl sm:px-6 lg:max-w-5xl lg:px-8">
           {children}
         </div>
