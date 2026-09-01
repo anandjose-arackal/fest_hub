@@ -87,12 +87,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const needsLoginRedirect = !loading && !session && !isLoginPage;
   const needsMeAdminRedirect = !loading && !isLoginPage && isMeAdmin && !ME_ADMIN_ALLOWED_PATHS.includes(pathname);
   const needsSaAdminRedirect = !loading && !isLoginPage && isSaAdmin;
+  // Landing on /admin/login with a session already established (e.g. signed
+  // in earlier via the Feast Portal's LoginSheet, then navigating straight
+  // here) used to just show the form again with no redirect — you had to
+  // resubmit valid credentials a second time before anything happened.
+  const needsAwayFromLoginRedirect = !loading && isLoginPage && !!session;
 
   useEffect(() => {
     if (needsLoginRedirect) router.replace("/admin/login");
     else if (needsSaAdminRedirect) router.replace("/");
     else if (needsMeAdminRedirect) router.replace("/admin");
-  }, [needsLoginRedirect, needsSaAdminRedirect, needsMeAdminRedirect, router]);
+    else if (needsAwayFromLoginRedirect) router.replace(isSaAdmin ? "/" : "/admin");
+  }, [needsLoginRedirect, needsSaAdminRedirect, needsMeAdminRedirect, needsAwayFromLoginRedirect, isSaAdmin, router]);
 
   if (loading) {
     return (
@@ -102,7 +108,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (needsLoginRedirect || needsSaAdminRedirect || needsMeAdminRedirect) return null;
+  if (needsLoginRedirect || needsSaAdminRedirect || needsMeAdminRedirect || needsAwayFromLoginRedirect) return null;
 
   if (isLoginPage) return <>{children}</>;
 
