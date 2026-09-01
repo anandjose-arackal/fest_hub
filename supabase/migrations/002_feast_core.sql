@@ -19,6 +19,11 @@ create table if not exists feasts (
   -- Decision #7: per-feast configurable edit deadline (not a hardcoded
   -- historical timestamp as in the source app). NULL = no deadline (open).
   registration_edit_deadline timestamptz,
+  -- Last day new registrations are accepted — distinct from the edit
+  -- deadline above, which only gates editing an already-submitted
+  -- registration. NULL = no cutoff. Admin-only for now: not read or
+  -- enforced anywhere in the public app yet.
+  registration_deadline      date,
   created_at                 timestamptz not null default now(),
   updated_at                 timestamptz not null default now()
 );
