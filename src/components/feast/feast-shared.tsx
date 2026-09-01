@@ -440,7 +440,7 @@ export function FeastShell({ children }: { children: React.ReactNode }) {
     <div className="relative min-h-dvh w-full overflow-hidden" style={{ background: theme.pageBg }}>
       <Blobs />
       <FeastSideNav />
-      <main className="relative pb-[110px] lg:pb-10">
+      <main className="relative pb-[110px] lg:pb-10 lg:pl-56">
         <div className="mx-auto w-full max-w-md px-4 pt-2 sm:max-w-2xl sm:px-6 lg:max-w-5xl lg:px-8">
           {children}
         </div>
