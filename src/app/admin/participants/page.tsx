@@ -5,10 +5,11 @@ import { UserCheck, Pencil, X, Download, Printer } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createParticipantAdmin, updateParticipant, deleteParticipant } from "@/actions/feast";
 import { registerTeam, updateTeam, deleteTeam } from "@/actions/team";
-import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS } from "@/lib/competition-categories";
+import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, Participant, Shakha } from "@/types";
+import { getOrgSettings } from "@/lib/org-settings";
+import type { Competition, CompetitionCategory, Feast, FeastCompetition, OrgSettings, Participant, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 type ParticipantRow = Participant & { shakha: Shakha | null; events: number };
@@ -54,6 +55,7 @@ function RegNoBadge({ regNo }: { regNo: string | null }) {
 }
 
 export default function ParticipantsPage() {
+  const [org, setOrg] = useState<OrgSettings | null>(null);
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
@@ -88,6 +90,7 @@ export default function ParticipantsPage() {
   const [teamConfirmingDelete, setTeamConfirmingDelete] = useState(false);
 
   useEffect(() => {
+    getOrgSettings().then(setOrg);
     fetchCompetitionCategories().then(setCategories);
     supabase.from("shakhas").select("*").order("name").then(({ data }) => setShakhas(data ?? []));
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
@@ -359,6 +362,7 @@ export default function ParticipantsPage() {
 
   function exportPDF() {
     const compsToprint = compFilter ? feastComps.filter((c) => c.id === compFilter) : feastComps;
+    const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const sections = compsToprint
       .map((fc) => {
         const rows = filtered.filter((p) => participantRegs[p.id]?.includes(fc.id));
@@ -366,27 +370,43 @@ export default function ParticipantsPage() {
         const rowsHtml = rows
           .map(
             (p, i) =>
-              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td>${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td></tr>`
+              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td><td class="remarks"></td></tr>`
           )
           .join("");
+        const sub = [fc.competition.competition_category?.name, fc.competition.gender && fc.competition.gender !== "common" ? (fc.competition.gender === "boy" ? "Boys" : fc.competition.gender === "girl" ? "Girls" : fc.competition.gender) : null]
+          .filter(Boolean)
+          .join(" · ");
         return `<div class="sheet">
           <div class="hdr">
-            <div style="font-size:14px;color:#666;">Cherupushpa Mission League Kalpetta</div>
-            <div style="font-size:18px;font-weight:700;">${fc.competition.name} - ${fc.competition.competition_category?.name ?? ""} - ${fc.competition.gender ?? "Common"}</div>
+            ${orgLine ? `<div class="org">${orgLine}</div>` : ""}
+            <div class="comp-name">${fc.competition.name}</div>
+            ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
           </div>
-          <table><thead><tr><th>SL</th><th>Reg No</th><th>Name</th><th>House Name</th><th>Shakha</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          <table><thead><tr><th>SL</th><th>Reg No</th><th>Name</th><th>House Name</th><th>Shakha</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>`;
       })
       .filter(Boolean);
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-      @page { size: A4 portrait; margin: 14mm 10mm; }
-      * { box-sizing: border-box; font-family: Arial, sans-serif; }
-      .sheet { border-left: 3px double #7C3AED; border-right: 3px double #7C3AED; padding: 0 14px 16px; }
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+      <style>
+      @page { size: A4 portrait; margin: 16mm 12mm; }
+      * { box-sizing: border-box; }
+      body { font-family: 'Poppins', Arial, sans-serif; margin: 0; }
+      .sheet { border: 1px solid #D4D4D8; border-radius: 10px; padding: 12px 16px 20px; }
       .sheet:not(:last-child) { page-break-before: always; }
+      .hdr { text-align: center; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 2px solid #7C3AED; }
+      .org { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6B7280; }
+      .comp-name { font-size: 25px; font-weight: 800; color: #1e1b4b; margin-top: 4px; }
+      .comp-sub { font-size: 14px; font-weight: 600; color: #7C3AED; margin-top: 3px; }
       table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1px solid #333; padding: 5px; font-size: 11px; text-align: left; }
-      thead tr { background: #f0f0f0; text-transform: uppercase; }
+      th, td { border: 1.5px solid #999; padding: 9px 8px; font-size: 13.5px; text-align: left; }
+      thead tr { background: #EDE9FE; }
+      th { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #4C1D95; }
+      td.name { font-weight: 700; color: #1e1b4b; }
+      td.remarks { min-width: 120px; }
       .reg { font-family: monospace; font-weight: 700; color: #4C1D95; }
       </style></head><body>${PRINT_FALLBACK_BUTTON}${sections.join("")}</body></html>`;
     openPrintWindow(html);
@@ -429,7 +449,9 @@ export default function ParticipantsPage() {
         <select className="input max-w-xs" value={compFilter} onChange={(e) => setCompFilter(e.target.value)}>
           <option value="">All Competitions</option>
           {individualFeastComps.map((c) => (
-            <option key={c.id} value={c.id}>{c.competition.name}</option>
+            <option key={c.id} value={c.id}>
+              {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
+            </option>
           ))}
         </select>
         <div className="relative">
@@ -535,7 +557,9 @@ export default function ParticipantsPage() {
           <select className="input max-w-xs" value={teamCompFilter} onChange={(e) => setTeamCompFilter(e.target.value)}>
             <option value="">All Team Events</option>
             {teamFeastComps.map((c) => (
-              <option key={c.id} value={c.id}>{c.competition.name}</option>
+              <option key={c.id} value={c.id}>
+                {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
+              </option>
             ))}
           </select>
         </div>

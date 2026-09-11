@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ChangeEvent } from "react";
 import {
   AlignCenter, AlignLeft, AlignRight, Award, Printer, Trash2, X,
   Upload, ImagePlus, Sparkles, FileImage, Type,
@@ -36,6 +36,21 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
   { type: "grade_text", label: "Grade", emoji: "🔤", color: "#16A34A" },
   { type: "grade_tick", label: "Grade Tick", emoji: "✅", color: "#DB2777" },
+];
+
+// Who gets a certificate on this print run — every published result matches
+// at least one of these (place is only set for top-3 finishers; grade
+// covers everyone). A row prints if it matches ANY checked filter, so an
+// admin can run "only 1st place" today and "only Grade A" tomorrow.
+const PLACE_FILTER_OPTIONS: { place: 1 | 2 | 3; label: string; emoji: string }[] = [
+  { place: 1, label: "All 1st Place", emoji: "🥇" },
+  { place: 2, label: "All 2nd Place", emoji: "🥈" },
+  { place: 3, label: "All 3rd Place", emoji: "🥉" },
+];
+const GRADE_FILTER_OPTIONS: { grade: "A" | "B" | "C"; label: string }[] = [
+  { grade: "A", label: "All Grade A" },
+  { grade: "B", label: "All Grade B" },
+  { grade: "C", label: "All Grade C" },
 ];
 
 function emptyTemplate(feastId: string): CertificateTemplate {
@@ -326,6 +341,8 @@ export default function CertificatesPage() {
   const [roster, setRoster] = useState<CertificateRosterRow[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [placeFilters, setPlaceFilters] = useState<Record<1 | 2 | 3, boolean>>({ 1: true, 2: true, 3: true });
+  const [gradeFilters, setGradeFilters] = useState<Record<"A" | "B" | "C", boolean>>({ A: true, B: true, C: true });
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [containerWidthPx, setContainerWidthPx] = useState(MAX_CANVAS_PX);
@@ -382,6 +399,17 @@ export default function CertificatesPage() {
     }
     if (link.href !== href) link.href = href;
   }, [template]);
+
+  const filteredRoster = useMemo(
+    () =>
+      (roster ?? []).filter((r) => {
+        const placeMatch = r.place === 1 || r.place === 2 || r.place === 3 ? placeFilters[r.place] : false;
+        const gradeMatch = r.grade != null ? gradeFilters[r.grade] : false;
+        return placeMatch || gradeMatch;
+      }),
+    [roster, placeFilters, gradeFilters]
+  );
+  const noFiltersSelected = !Object.values(placeFilters).some(Boolean) && !Object.values(gradeFilters).some(Boolean);
 
   if (loading || !template) return <p className="text-sm text-neutral-500">Loading…</p>;
 
@@ -485,9 +513,16 @@ export default function CertificatesPage() {
   }
 
   function confirmPrint() {
-    if (!template || !roster) return;
-    openPrintWindow(buildCertificateHtml(template, roster));
+    if (!template || !roster || filteredRoster.length === 0) return;
+    openPrintWindow(buildCertificateHtml(template, filteredRoster));
     setConfirmOpen(false);
+  }
+
+  function togglePlace(place: 1 | 2 | 3) {
+    setPlaceFilters((f) => ({ ...f, [place]: !f[place] }));
+  }
+  function toggleGrade(grade: "A" | "B" | "C") {
+    setGradeFilters((f) => ({ ...f, [grade]: !f[grade] }));
   }
 
   const selectedField = template.fields.find((f) => f.id === selectedFieldId) ?? null;
@@ -751,19 +786,48 @@ export default function CertificatesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setConfirmOpen(false)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-bold">🖨️ Print Certificates?</h2>
+              <h2 className="text-base font-bold">🖨️ Print Certificates</h2>
               <button onClick={() => setConfirmOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
             </div>
-            <p className="mb-4 text-sm text-neutral-600">
-              {roster.length === 0
-                ? `No published results found yet for ${feastName}.`
-                : `This will print ${roster.length} certificate${roster.length === 1 ? "" : "s"} for ${feastName}, one per published result.`}
-            </p>
+            {roster.length === 0 ? (
+              <p className="mb-4 text-sm text-neutral-600">No published results found yet for {feastName}.</p>
+            ) : (
+              <>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Who gets a certificate?</p>
+                <div className="mb-3 grid grid-cols-3 gap-1.5">
+                  {PLACE_FILTER_OPTIONS.map((o) => (
+                    <button
+                      key={o.place}
+                      onClick={() => togglePlace(o.place)}
+                      className={`rounded-lg border-2 px-2 py-2 text-xs font-bold ${placeFilters[o.place] ? "border-[#D97706] bg-amber-50 text-[#A16207]" : "border-neutral-200 text-neutral-400"}`}
+                    >
+                      {o.emoji} {o.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mb-4 grid grid-cols-3 gap-1.5">
+                  {GRADE_FILTER_OPTIONS.map((o) => (
+                    <button
+                      key={o.grade}
+                      onClick={() => toggleGrade(o.grade)}
+                      className={`rounded-lg border-2 px-2 py-2 text-xs font-bold ${gradeFilters[o.grade] ? "border-[#D97706] bg-amber-50 text-[#A16207]" : "border-neutral-200 text-neutral-400"}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mb-4 text-sm text-neutral-600">
+                  {noFiltersSelected
+                    ? "Select at least one option above to print."
+                    : `This will print ${filteredRoster.length} certificate${filteredRoster.length === 1 ? "" : "s"} for ${feastName}.`}
+                </p>
+              </>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setConfirmOpen(false)} className="flex-1 rounded-xl border-2 border-neutral-200 py-2 text-sm font-semibold">Cancel</button>
               <button
                 onClick={confirmPrint}
-                disabled={roster.length === 0}
+                disabled={filteredRoster.length === 0}
                 className="flex-1 rounded-xl py-2 text-sm font-bold text-white disabled:opacity-50"
                 style={{ background: "linear-gradient(135deg,#A16207,#D97706)" }}
               >

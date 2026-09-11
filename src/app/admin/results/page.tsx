@@ -3,14 +3,15 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Medal, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { setMaxScore, saveDraftScores, publishResults, unpublishResults } from "@/actions/results";
-import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults } from "@/actions/team-results";
+import { setMaxScore, saveDraftScores, publishResults, unpublishResults, getCompetitionScores } from "@/actions/results";
+import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores } from "@/actions/team-results";
 import {
   calcGrade, calcPositions, positionLabel,
   DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS,
   type Grade,
 } from "@/lib/result-calculator";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
+import { formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import type { Competition, CompetitionCategory, Feast, FeastCompetition, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
@@ -89,10 +90,12 @@ export default function ResultsPage() {
   const [compId, setCompId] = useState("");
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
   const [shakhaFilter, setShakhaFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"" | "draft" | "published">("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [typedScores, setTypedScores] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [successPulse, setSuccessPulse] = useState<string | null>(null);
   const [maxScoreInput, setMaxScoreInput] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -126,64 +129,97 @@ export default function ResultsPage() {
   const gradeScale = isGroup ? GROUP_GRADE_POINTS : DEFAULT_GRADE_POINTS;
   const positionScale = isGroup ? GROUP_POSITION_POINTS : DEFAULT_POSITION_POINTS;
 
-  const loadEntries = useCallback(async () => {
-    if (!compId || !selectedFc) return;
-    setLoading(true);
-    setMaxScoreInput(selectedFc.max_score != null ? String(selectedFc.max_score) : "");
-    if (isGroup) {
-      const [{ data: teams }, { data: scores }] = await Promise.all([
-        supabase
-          .from("team_registrations")
-          .select("id, team_name, chance_no, shakha:shakhas(id, name), team_registration_members(participant:participants(name))")
-          .eq("feast_competition_id", compId),
-        supabase.from("team_results").select("team_registration_id, score").eq("feast_competition_id", compId),
-      ]);
-      const scoreMap = new Map((scores ?? []).map((s) => [s.team_registration_id, Number(s.score)]));
-      const rows: EntryRow[] = (teams ?? []).map((t) => {
-        const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
-        const members = (t.team_registration_members ?? []).map((m) => {
-          const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
-          return p?.name ?? "";
-        });
-        return {
-          regId: t.id,
-          regNo: t.team_name,
-          name: t.team_name,
-          sub: members.join(", "),
-          shakhaName: shakha?.name ?? "—",
-          shakhaId: shakha?.id ?? "",
-          chanceNo: t.chance_no,
-          savedScore: scoreMap.get(t.id) ?? null,
-        };
-      });
-      setEntries(rows);
-    } else {
-      const [{ data: regs }, { data: scores }] = await Promise.all([
-        supabase
-          .from("participant_registrations")
-          .select("id, chance_no, participant:participants(name, house_name, registration_number, shakha:shakhas(id, name))")
-          .eq("feast_competition_id", compId),
-        supabase.from("competition_results").select("participant_registration_id, score").eq("feast_competition_id", compId),
-      ]);
-      const scoreMap = new Map((scores ?? []).map((s) => [s.participant_registration_id, Number(s.score)]));
-      const rows: EntryRow[] = (regs ?? []).map((r) => {
-        const p = Array.isArray(r.participant) ? r.participant[0] : r.participant;
-        const shakha = Array.isArray(p?.shakha) ? p?.shakha[0] : p?.shakha;
-        return {
-          regId: r.id,
-          regNo: p?.registration_number ?? "—",
-          name: p?.name ?? "—",
-          sub: p?.house_name ?? "",
-          shakhaName: shakha?.name ?? "—",
-          shakhaId: shakha?.id ?? "",
-          chanceNo: r.chance_no,
-          savedScore: scoreMap.get(r.id) ?? null,
-        };
-      });
-      setEntries(rows);
+  const visibleFeastComps = useMemo(
+    () => (statusFilter ? feastComps.filter((c) => c.result_status === statusFilter) : feastComps),
+    [feastComps, statusFilter]
+  );
+
+  // Status filter can drop the currently-selected competition out of the
+  // list — jump to the first still-visible one so compId never points at a
+  // competition that's no longer in the dropdown.
+  useEffect(() => {
+    if (visibleFeastComps.length > 0 && !visibleFeastComps.some((c) => c.id === compId)) {
+      setCompId(visibleFeastComps[0].id);
     }
-    setTypedScores({});
-    setLoading(false);
+  }, [visibleFeastComps, compId]);
+
+  const loadEntries = useCallback(async (showLoading: boolean = true) => {
+    if (!compId || !selectedFc) return;
+    if (showLoading) setLoading(true);
+    setMaxScoreInput(selectedFc.max_score != null ? String(selectedFc.max_score) : "");
+    try {
+      if (isGroup) {
+        const [{ data: teams, error: teamsErr }, scoreEntries] = await Promise.all([
+          supabase
+            .from("team_registrations")
+            .select("id, team_name, chance_no, shakha:shakhas(id, name), team_registration_members(participant:participants(name))")
+            .eq("feast_competition_id", compId),
+          getTeamCompetitionScores(compId),
+        ]);
+        // A failed fetch must not blank out an already-populated table —
+        // bail out and keep whatever was last shown, rather than replacing
+        // good data with an empty array because this reload happened to fail.
+        if (teamsErr) {
+          showBanner(`Couldn't refresh entries: ${teamsErr.message}`);
+          return;
+        }
+        const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s.score]));
+        const rows: EntryRow[] = (teams ?? []).map((t) => {
+          const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
+          const members = (t.team_registration_members ?? []).map((m) => {
+            const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
+            return p?.name ?? "";
+          });
+          return {
+            regId: t.id,
+            regNo: t.team_name,
+            name: t.team_name,
+            sub: members.join(", "),
+            shakhaName: shakha?.name ?? "—",
+            shakhaId: shakha?.id ?? "",
+            chanceNo: t.chance_no,
+            savedScore: scoreMap.get(t.id) ?? null,
+          };
+        });
+        setEntries(rows);
+      } else {
+        const [{ data: regs, error: regsErr }, scoreEntries] = await Promise.all([
+          supabase
+            .from("participant_registrations")
+            .select("id, chance_no, participant:participants(name, house_name, registration_number, shakha:shakhas(id, name))")
+            .eq("feast_competition_id", compId),
+          getCompetitionScores(compId),
+        ]);
+        if (regsErr) {
+          showBanner(`Couldn't refresh entries: ${regsErr.message}`);
+          return;
+        }
+        const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s.score]));
+        const rows: EntryRow[] = (regs ?? []).map((r) => {
+          const p = Array.isArray(r.participant) ? r.participant[0] : r.participant;
+          const shakha = Array.isArray(p?.shakha) ? p?.shakha[0] : p?.shakha;
+          return {
+            regId: r.id,
+            regNo: p?.registration_number ?? "—",
+            name: p?.name ?? "—",
+            sub: p?.house_name ?? "",
+            shakhaName: shakha?.name ?? "—",
+            shakhaId: shakha?.id ?? "",
+            chanceNo: r.chance_no,
+            savedScore: scoreMap.get(r.id) ?? null,
+          };
+        });
+        setEntries(rows);
+      }
+      setTypedScores({});
+    } catch (err) {
+      // A thrown server action (e.g. a stale reference right after a dev
+      // hot-reload) must not silently wipe the table either — same
+      // preserve-what-was-last-shown contract as the query-error branches.
+      showBanner(err instanceof Error ? `Couldn't refresh entries: ${err.message}` : "Couldn't refresh entries");
+    } finally {
+      setLoading(false);
+    }
   }, [compId, isGroup, selectedFc]);
 
   useEffect(() => {
@@ -198,12 +234,14 @@ export default function ResultsPage() {
   const preview = useMemo(() => {
     const calcEntries = entries
       .map((e) => {
+        // Once the user has touched this cell, its typed value is the only
+        // truth — an explicit "" (cleared) means no score, full stop. Only
+        // fall back to the last saved score for cells nobody has edited yet.
+        const touched = Object.prototype.hasOwnProperty.call(typedScores, e.regId);
         const typed = typedScores[e.regId];
-        const hasInput = typed != null && typed !== "";
-        const hasSaved = e.savedScore != null;
-        if (!hasInput && !hasSaved) return null;
-        const score = hasInput ? Number(typed) : e.savedScore!;
-        if (Number.isNaN(score)) return null;
+        if (touched && typed === "") return null;
+        const score = touched ? Number(typed) : e.savedScore;
+        if (score == null || Number.isNaN(score)) return null;
         return { id: e.regId, score };
       })
       .filter((e): e is { id: string; score: number } => e !== null);
@@ -234,10 +272,25 @@ export default function ResultsPage() {
     setTimeout(() => setBanner(null), 3000);
   }
 
+  function showSuccess(text: string) {
+    setSuccessPulse(text);
+    setTimeout(() => setSuccessPulse(null), 1600);
+  }
+
   async function handleSetMaxScore() {
     if (!compId || !maxScoreInput) return;
-    await setMaxScore(compId, Number(maxScoreInput));
-    loadEntries();
+    const value = Number(maxScoreInput);
+    const result = await setMaxScore(compId, value);
+    if (result.error) {
+      showBanner(result.error);
+      return;
+    }
+    // Patch feastComps locally instead of loadEntries() — loadEntries()
+    // resets maxScoreInput from selectedFc.max_score, which is still the
+    // stale value from this same feastComps state until we update it here,
+    // so calling it right after setMaxScore() would stomp what was just typed.
+    setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, max_score: value } : c)));
+    showSuccess("Max score updated");
   }
 
   async function handleSaveDraft() {
@@ -249,8 +302,10 @@ export default function ResultsPage() {
     const result = isGroup ? await saveDraftTeamScores({ feastCompetitionId: compId, scores }) : await saveDraftScores({ feastCompetitionId: compId, scores });
     setBusy(false);
     if (!result.error) {
-      showBanner("Draft saved");
-      loadEntries();
+      showSuccess("Result saved successfully");
+      loadEntries(false);
+    } else {
+      showBanner(result.error);
     }
   }
 
@@ -260,8 +315,8 @@ export default function ResultsPage() {
     setBusy(false);
     setPublishOpen(false);
     if (!result.error) {
-      showBanner("Results published and standings updated!");
-      loadEntries();
+      showSuccess("Results published and standings updated!");
+      loadEntries(false);
       setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "published", comp_status: "published" } : c)));
     } else {
       showBanner(result.error);
@@ -273,9 +328,11 @@ export default function ResultsPage() {
     const result = isGroup ? await unpublishTeamResults(compId, feastId) : await unpublishResults(compId, feastId);
     setBusy(false);
     if (!result.error) {
-      showBanner("Reverted to draft");
-      loadEntries();
+      showSuccess("Reverted to draft");
+      loadEntries(false);
       setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "draft", comp_status: "completed" } : c)));
+    } else {
+      showBanner(result.error);
     }
   }
 
@@ -312,34 +369,34 @@ export default function ResultsPage() {
       const group = fc.competition.type === "group";
       let rows: (EntryRow & Preview)[] = [];
       if (group) {
-        const [{ data: teams }, { data: scores }] = await Promise.all([
+        const [{ data: teams }, scoreEntries] = await Promise.all([
           supabase.from("team_registrations").select("id, team_name, shakha:shakhas(id,name)").eq("feast_competition_id", fc.id),
-          supabase.from("team_results").select("team_registration_id, score, grade, position, total_points").eq("feast_competition_id", fc.id),
+          getTeamCompetitionScores(fc.id),
         ]);
-        const scoreMap = new Map((scores ?? []).map((s) => [s.team_registration_id, s]));
+        const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s]));
         rows = (teams ?? []).map((t) => {
           const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
           const s = scoreMap.get(t.id);
           return {
             regId: t.id, regNo: t.team_name, name: t.team_name, sub: "", shakhaName: shakha?.name ?? "—", shakhaId: shakha?.id ?? "",
-            chanceNo: null, savedScore: s ? Number(s.score) : null,
-            grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.total_points ?? 0,
+            chanceNo: null, savedScore: s ? s.score : null,
+            grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.totalPoints ?? 0,
           };
         });
       } else {
-        const [{ data: regs }, { data: scores }] = await Promise.all([
+        const [{ data: regs }, scoreEntries] = await Promise.all([
           supabase.from("participant_registrations").select("id, participant:participants(name, house_name, registration_number, shakha:shakhas(id,name))").eq("feast_competition_id", fc.id),
-          supabase.from("competition_results").select("participant_registration_id, score, grade, position, total_points").eq("feast_competition_id", fc.id),
+          getCompetitionScores(fc.id),
         ]);
-        const scoreMap = new Map((scores ?? []).map((s) => [s.participant_registration_id, s]));
+        const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s]));
         rows = (regs ?? []).map((r) => {
           const p = Array.isArray(r.participant) ? r.participant[0] : r.participant;
           const shakha = Array.isArray(p?.shakha) ? p?.shakha[0] : p?.shakha;
           const s = scoreMap.get(r.id);
           return {
             regId: r.id, regNo: p?.registration_number ?? "—", name: p?.name ?? "—", sub: p?.house_name ?? "",
-            shakhaName: shakha?.name ?? "—", shakhaId: shakha?.id ?? "", chanceNo: null, savedScore: s ? Number(s.score) : null,
-            grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.total_points ?? 0,
+            shakhaName: shakha?.name ?? "—", shakhaId: shakha?.id ?? "", chanceNo: null, savedScore: s ? s.score : null,
+            grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.totalPoints ?? 0,
           };
         });
       }
@@ -366,7 +423,21 @@ export default function ResultsPage() {
         <h1 className="text-xl font-semibold text-neutral-800">Results</h1>
       </div>
 
-      {banner && <p className="mb-3 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700">{banner}</p>}
+      {banner && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{banner}</p>}
+
+      {successPulse && (
+        <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center">
+          <div className="success-pulse flex flex-col items-center gap-3">
+            <div
+              className="flex h-28 w-28 items-center justify-center rounded-full"
+              style={{ background: "linear-gradient(135deg,#22C55E,#15803D)", boxShadow: "0 16px 40px rgba(21,128,61,0.5)" }}
+            >
+              <Check className="h-14 w-14 text-white" strokeWidth={3.5} />
+            </div>
+            <p className="max-w-[280px] rounded-full bg-black/80 px-4 py-2 text-center text-sm font-semibold text-white">{successPulse}</p>
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         <select className="input max-w-xs" value={feastId} onChange={(e) => setFeastId(e.target.value)}>
@@ -374,10 +445,23 @@ export default function ResultsPage() {
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
         </select>
+        <select
+          className="input max-w-xs"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "" | "draft" | "published")}
+          title="Filter the competition list by result status"
+        >
+          <option value="">All Status</option>
+          <option value="published">Published</option>
+          <option value="draft">In Progress</option>
+        </select>
         <select className="input max-w-xs" value={compId} onChange={(e) => setCompId(e.target.value)}>
-          {feastComps.map((c) => (
+          {visibleFeastComps.length === 0 && <option value="">No competitions match this filter</option>}
+          {visibleFeastComps.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.competition.type === "group" ? "👥 " : ""}{c.competition.name} {c.result_status === "published" ? "· Published" : ""}
+              {c.competition.type === "group" ? "👥 " : ""}
+              {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
+              {c.result_status === "published" ? " · Published" : ""}
             </option>
           ))}
         </select>
@@ -389,26 +473,43 @@ export default function ResultsPage() {
         </select>
       </div>
 
-      {!maxScore && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-          <span>Set max score to unlock score entry</span>
-          <input className="w-24 rounded border border-amber-300 px-2 py-1 text-sm" type="number" value={maxScoreInput} onChange={(e) => setMaxScoreInput(e.target.value)} />
-          <button onClick={handleSetMaxScore} className="rounded bg-amber-600 px-2 py-1 text-xs font-semibold text-white">Set</button>
-        </div>
-      )}
-      {maxScore != null && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-neutral-500">
-          Max score: {maxScore}
-          <input className="w-20 rounded border border-neutral-300 px-2 py-1 text-xs" type="number" value={maxScoreInput} onChange={(e) => setMaxScoreInput(e.target.value)} />
-          <button onClick={handleSetMaxScore} className="rounded bg-neutral-200 px-2 py-1 text-xs font-semibold">Update</button>
-        </div>
-      )}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {!maxScore && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
+            <span className="text-sm font-semibold text-amber-700">Set max score to unlock score entry</span>
+            <input className="w-28 rounded-lg border border-amber-300 px-3 py-2 text-base font-semibold text-amber-900" type="number" value={maxScoreInput} onChange={(e) => setMaxScoreInput(e.target.value)} />
+            <button onClick={handleSetMaxScore} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700">Set</button>
+          </div>
+        )}
+        {maxScore != null && (
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+            <span className="text-sm font-semibold text-neutral-600">Max score:</span>
+            <span className="text-lg font-black" style={{ color: "#4C1D95" }}>{maxScore}</span>
+            <input className="w-24 rounded-lg border border-neutral-300 px-3 py-2 text-base font-semibold text-neutral-800" type="number" value={maxScoreInput} onChange={(e) => setMaxScoreInput(e.target.value)} />
+            <button onClick={handleSetMaxScore} className="rounded-lg px-4 py-2 text-sm font-bold text-white" style={{ background: "#6B46FF" }}>Update</button>
+          </div>
+        )}
 
-      <div className="mb-3 flex gap-1.5 text-xs">
-        <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">A: {gradeCounts.A}</span>
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">B: {gradeCounts.B}</span>
-        <span className="rounded-full bg-purple-100 px-2 py-0.5 font-semibold text-purple-700">C: {gradeCounts.C}</span>
-        <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-semibold text-neutral-500">No grade: {gradeCounts.none}</span>
+        {selectedFc && (
+          <p className="min-w-[200px] flex-1 text-center text-base font-black sm:text-lg" style={{ color: "#1e1b4b" }}>
+            {formatCompetitionOptionLabel(selectedFc.competition.name, selectedFc.competition.gender, selectedFc.competition.competition_category?.name)}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
+          <span className="text-sm font-semibold text-neutral-600">Grades:</span>
+          {[
+            { label: "A", count: gradeCounts.A, dot: "#16A34A", bg: "#DCFCE7", text: "#15803D" },
+            { label: "B", count: gradeCounts.B, dot: "#D97706", bg: "#FEF3C7", text: "#92400E" },
+            { label: "C", count: gradeCounts.C, dot: "#7C3AED", bg: "#EDE9FE", text: "#5B21B6" },
+            { label: "—", count: gradeCounts.none, dot: "#9CA3AF", bg: "#F3F4F6", text: "#6B7280" },
+          ].map((g) => (
+            <span key={g.label} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold" style={{ background: g.bg, color: g.text }}>
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: g.dot }} />
+              {g.label} <span className="tabular-nums">{g.count}</span>
+            </span>
+          ))}
+        </div>
       </div>
 
       {loading ? (
@@ -609,6 +710,14 @@ export default function ResultsPage() {
 
       <style jsx>{`
         .input { border-radius: 0.5rem; border: 1px solid #d4d4d8; padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
+        .success-pulse { animation: successPulse 1.6s ease forwards; }
+        @keyframes successPulse {
+          0% { opacity: 0; transform: scale(0.4); }
+          18% { opacity: 1; transform: scale(1.1); }
+          30% { transform: scale(1); }
+          78% { opacity: 1; transform: scale(1); }
+          100% { opacity: 0; transform: scale(0.92); }
+        }
       `}</style>
     </div>
   );

@@ -2,12 +2,10 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const { signIn, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,12 +18,17 @@ export default function AdminLoginPage() {
     setSubmitting(true);
     setError(null);
     const { error } = await signIn(email, password);
-    setSubmitting(false);
     if (error) {
+      setSubmitting(false);
       setError(error);
       return;
     }
-    router.push("/admin");
+    // No router.push here — the layout's needsAwayFromLoginRedirect effect
+    // (src/app/admin/layout.tsx) redirects once `session` updates and picks
+    // the right destination per role. Navigating here too raced it and fired
+    // duplicate RSC fetches for both /admin/login and /admin. Leave
+    // `submitting` true so the button stays disabled until that redirect
+    // unmounts this page.
   }
 
   if (authLoading) {

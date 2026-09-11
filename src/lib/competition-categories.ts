@@ -57,6 +57,19 @@ export function fetchCompetitionCategories(): Promise<CompetitionCategory[]> {
   return cached;
 }
 
+// "Elocution | Sub Junior | Boy" — used by the competition dropdowns on
+// /admin/participants and /admin/results. Category/gender are omitted
+// (no dangling separator) when the competition doesn't carry one.
+export function formatCompetitionOptionLabel(
+  name: string,
+  gender: string | null | undefined,
+  categoryName: string | null | undefined
+): string {
+  const g = (gender ?? "").toLowerCase();
+  const genderLabel = g.startsWith("boy") || g === "male" ? "Boy" : g.startsWith("girl") || g === "female" ? "Girl" : null;
+  return [name, categoryName, genderLabel].filter(Boolean).join(" | ");
+}
+
 export function getCategorySlug(dob: string, categories: CompetitionCategory[]): CategorySlug | "" {
   if (!dob) return "";
   const d = new Date(dob + "T00:00:00");
