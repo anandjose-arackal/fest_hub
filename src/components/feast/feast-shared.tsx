@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, Trophy, Sparkles, Medal, Search, Home,
-  Loader2, PenTool, Palette, Zap, type LucideIcon,
+  Loader2, PenTool, Palette, Zap, HelpCircle, Code2, Globe, LogOut, type LucideIcon,
 } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
+import { useAuth } from "@/lib/auth-context";
 
 // FeastUI.icon (from use-feast.ts's FEAST_TYPE_CONFIG) is a Lucide icon
 // *name*, not an emoji — this resolves it to the actual component.
@@ -434,12 +436,107 @@ export function FeastTabs({
   );
 }
 
+// ── ProfileMenu — signed-in indicator, collapsed into a top-corner button
+// (was a full-width "Signed in as … Logout" panel eating prime space on the
+// home page; now one persistent, compact affordance across every portal
+// page since FeastShell renders it once for the whole Feast Portal).
+const CREDIT_LINKS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "https://github.com/anandjose-arackal/fest_hub", label: "GitHub Repo", icon: Code2 },
+  { href: "https://anandjose-arackal.github.io/", label: "Developer", icon: Globe },
+];
+
+export function ProfileMenu() {
+  const { session, profile, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  if (!session) return null;
+
+  const label = profile?.full_name || profile?.email || "Account";
+  const initial = label.trim().charAt(0).toUpperCase() || "?";
+
+  return (
+    <div ref={ref} className="fixed right-4 top-4 z-40 sm:right-6 sm:top-5">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white transition-transform active:scale-95"
+        style={{ background: "linear-gradient(135deg, #6B46FF, #A78BFA)", boxShadow: "0 8px 20px rgba(107,70,255,0.35)" }}
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {initial}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-56 overflow-hidden rounded-2xl p-1.5"
+          style={{ ...theme.glassStrong, boxShadow: theme.softShadow }}
+        >
+          <div className="truncate px-3 py-2">
+            <p className="truncate text-[12.5px] font-semibold" style={{ color: theme.text }}>{label}</p>
+            {profile?.shakha?.name && <p className="truncate text-[11px]" style={{ color: theme.faint }}>{profile.shakha.name}</p>}
+          </div>
+          <div className="my-1 h-px" style={{ background: theme.hairline }} />
+
+          <button
+            disabled
+            className="flex w-full cursor-not-allowed items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium opacity-50"
+            style={{ color: theme.text }}
+          >
+            <span className="flex items-center gap-2"><HelpCircle className="h-4 w-4" /> Help</span>
+            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: theme.fillStrong, color: theme.sub }}>Soon</span>
+          </button>
+
+          {CREDIT_LINKS.map((c) => (
+            <a
+              key={c.href}
+              href={c.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium"
+              style={{ color: theme.text }}
+            >
+              <c.icon className="h-4 w-4" style={{ color: theme.purple }} /> {c.label}
+            </a>
+          ))}
+
+          <div className="my-1 h-px" style={{ background: theme.hairline }} />
+
+          <button
+            onClick={() => {
+              setOpen(false);
+              signOut();
+            }}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-semibold"
+            style={{ color: "#DC2626" }}
+          >
+            <LogOut className="h-4 w-4" /> Logout
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Shell — full-bleed page wrapper every screen renders inside ─────────
 export function FeastShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-dvh w-full overflow-hidden" style={{ background: theme.pageBg }}>
       <Blobs />
       <FeastSideNav />
+      <ProfileMenu />
       <main className="relative pb-[110px] lg:pb-10 lg:pl-56">
         <div className="mx-auto w-full max-w-md px-4 pt-2 sm:max-w-2xl sm:px-6 lg:max-w-5xl lg:px-8">
           {children}

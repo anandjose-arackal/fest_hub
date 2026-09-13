@@ -37,6 +37,7 @@ export default function CompetitionsStatusBoard() {
   const [comps, setComps] = useState<FCRow[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [catFilter, setCatFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<CompStatus | "">("");
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -83,7 +84,11 @@ export default function CompetitionsStatusBoard() {
     [comps]
   );
 
-  const filtered = catFilter ? comps.filter((c) => c.competition.competition_category?.name === catFilter) : comps;
+  const filtered = comps.filter((c) => {
+    const catOk = !catFilter || c.competition.competition_category?.name === catFilter;
+    const statusOk = !statusFilter || (drafts[c.id]?.compStatus ?? c.comp_status) === statusFilter;
+    return catOk && statusOk;
+  });
 
   function setDraft(fcId: string, patch: Partial<Draft>) {
     setDrafts((prev) => ({ ...prev, [fcId]: { ...prev[fcId], ...patch } }));
@@ -121,7 +126,7 @@ export default function CompetitionsStatusBoard() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <div className="mb-6 flex items-center gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#6B46FF] to-[#A855F7] text-white">
           <Layers className="h-5 w-5" />
@@ -143,89 +148,130 @@ export default function CompetitionsStatusBoard() {
             ))}
           </select>
         )}
+        <select className="input max-w-xs" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as CompStatus | "")}>
+          <option value="">All Statuses</option>
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
       </div>
 
-      <div className="space-y-3">
+      {/* Desktop table */}
+      <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white shadow-md sm:block">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
+            <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
+              {["Competition", "Status", "Stage", "Time", "Progress %", ""].map((h) => (
+                <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((fc, i) => {
+              const d = drafts[fc.id];
+              if (!d) return null;
+              const gender = genderTag(fc.competition.gender);
+              const dirty = isDirty(fc);
+              const isEven = i % 2 === 0;
+              const status = STATUS_OPTIONS.find((s) => s.value === d.compStatus) ?? STATUS_OPTIONS[0];
+              return (
+                <tr
+                  key={fc.id}
+                  className="border-b align-top transition-colors"
+                  style={{ borderColor: "#e5e7eb", background: isEven ? "#fff" : "#f8f7ff" }}
+                  onMouseEnter={(ev) => (ev.currentTarget.style.background = "#ede9fe")}
+                  onMouseLeave={(ev) => (ev.currentTarget.style.background = isEven ? "#fff" : "#f8f7ff")}
+                >
+                  <td className="px-3 py-3"><CompetitionCell fc={fc} gender={gender} /></td>
+                  <td className="px-3 py-3">
+                    <select
+                      className="input min-w-[120px]"
+                      style={{ borderColor: status.color, color: status.color, fontWeight: 700 }}
+                      value={d.compStatus}
+                      onChange={(e) => setDraft(fc.id, { compStatus: e.target.value as CompStatus })}
+                    >
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s.value} value={s.value}>{s.label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3">
+                    <select className="input min-w-[150px]" value={d.stageId} onChange={(e) => setDraft(fc.id, { stageId: e.target.value })}>
+                      <option value="">No stage</option>
+                      {stages.map((s) => (
+                        <option key={s.id} value={s.id}>Stage {s.number} — {s.title}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-3">
+                    <input className="input min-w-[110px]" placeholder="e.g. 10:30 AM" value={d.scheduledTime} onChange={(e) => setDraft(fc.id, { scheduledTime: e.target.value })} />
+                  </td>
+                  <td className="px-3 py-3">
+                    {d.compStatus === "progressing" ? (
+                      <input
+                        className="input w-20"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={d.progressPct}
+                        onChange={(e) => setDraft(fc.id, { progressPct: e.target.value })}
+                      />
+                    ) : (
+                      <span className="text-neutral-300">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
+                    <SaveButton dirty={dirty} saving={saving === fc.id} saved={saved === fc.id} onClick={() => handleSave(fc)} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile cards */}
+      <div className="space-y-3 sm:hidden">
         {filtered.map((fc) => {
           const d = drafts[fc.id];
           if (!d) return null;
           const gender = genderTag(fc.competition.gender);
-          const status = STATUS_OPTIONS.find((s) => s.value === d.compStatus) ?? STATUS_OPTIONS[0];
           const dirty = isDirty(fc);
           return (
-            <div key={fc.id} className="rounded-xl border border-neutral-200 bg-white p-4">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold text-neutral-800">{fc.competition.name}</span>
-                  <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: gender.fg, background: gender.bg }}>
-                    {gender.label}
-                  </span>
-                  {fc.competition.competition_category && (
-                    <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-600">
-                      {fc.competition.competition_category.name}
-                    </span>
+            <div key={fc.id} className="overflow-hidden rounded-xl bg-white" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
+              <div className="p-3.5">
+                <CompetitionCell fc={fc} gender={gender} />
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <select className="input" value={d.compStatus} onChange={(e) => setDraft(fc.id, { compStatus: e.target.value as CompStatus })}>
+                    {STATUS_OPTIONS.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                  <select className="input" value={d.stageId} onChange={(e) => setDraft(fc.id, { stageId: e.target.value })}>
+                    <option value="">No stage</option>
+                    {stages.map((s) => (
+                      <option key={s.id} value={s.id}>Stage {s.number} — {s.title}</option>
+                    ))}
+                  </select>
+                  <input className="input" placeholder="Scheduled time" value={d.scheduledTime} onChange={(e) => setDraft(fc.id, { scheduledTime: e.target.value })} />
+                  {d.compStatus === "progressing" && (
+                    <input
+                      className="input"
+                      type="number"
+                      min={0}
+                      max={100}
+                      placeholder="Progress %"
+                      value={d.progressPct}
+                      onChange={(e) => setDraft(fc.id, { progressPct: e.target.value })}
+                    />
                   )}
                 </div>
-                <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: status.color }}>
-                  {status.label}
-                </span>
-              </div>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <select className="input" value={d.compStatus} onChange={(e) => setDraft(fc.id, { compStatus: e.target.value as CompStatus })}>
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-                <select className="input" value={d.stageId} onChange={(e) => setDraft(fc.id, { stageId: e.target.value })}>
-                  <option value="">No stage</option>
-                  {stages.map((s) => (
-                    <option key={s.id} value={s.id}>Stage {s.number} — {s.title}</option>
-                  ))}
-                </select>
-                <input className="input" placeholder="Scheduled time" value={d.scheduledTime} onChange={(e) => setDraft(fc.id, { scheduledTime: e.target.value })} />
-                {d.compStatus === "progressing" && (
-                  <input
-                    className="input"
-                    type="number"
-                    min={0}
-                    max={100}
-                    placeholder="Progress %"
-                    value={d.progressPct}
-                    onChange={(e) => setDraft(fc.id, { progressPct: e.target.value })}
-                  />
-                )}
-              </div>
-              <textarea
-                className="input mt-2"
-                rows={2}
-                placeholder="Info (venue / rules / announcements)"
-                value={d.info}
-                onChange={(e) => setDraft(fc.id, { info: e.target.value })}
-              />
-
-              {(dirty || saved === fc.id) && (
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-neutral-400">{dirty ? "Unsaved changes" : ""}</span>
-                  <button
-                    onClick={() => handleSave(fc)}
-                    disabled={saving === fc.id}
-                    className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
-                      saved === fc.id ? "bg-green-600" : "bg-[#6B46FF]"
-                    }`}
-                  >
-                    {saved === fc.id ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" /> Saved
-                      </>
-                    ) : saving === fc.id ? (
-                      "Saving…"
-                    ) : (
-                      "Save"
-                    )}
-                  </button>
+                <div className="mt-2.5">
+                  <SaveButton dirty={dirty} saving={saving === fc.id} saved={saved === fc.id} onClick={() => handleSave(fc)} full />
                 </div>
-              )}
+              </div>
             </div>
           );
         })}
@@ -235,5 +281,45 @@ export default function CompetitionsStatusBoard() {
         .input { width: 100%; border-radius: 0.5rem; border: 1px solid #d4d4d8; padding: 0.5rem 0.75rem; font-size: 0.8125rem; }
       `}</style>
     </div>
+  );
+}
+
+function CompetitionCell({ fc, gender }: { fc: FCRow; gender: { label: string; fg: string; bg: string } }) {
+  return (
+    <div className="border-l-4 pl-3" style={{ borderColor: gender.fg }}>
+      <p className="text-[16px] font-extrabold leading-snug tracking-tight" style={{ color: "#1e1b4b" }}>{fc.competition.name}</p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <span className="rounded-full px-3 py-1 text-[12.5px] font-bold text-white" style={{ background: gender.fg }}>
+          {gender.label}
+        </span>
+        {fc.competition.competition_category && (
+          <span className="rounded-full bg-[#6B46FF] px-3 py-1 text-[12.5px] font-bold text-white">
+            {fc.competition.competition_category.name}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SaveButton({ dirty, saving, saved, onClick, full }: { dirty: boolean; saving: boolean; saved: boolean; onClick: () => void; full?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={saving || (!dirty && !saved)}
+      className={`flex items-center justify-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 ${
+        full ? "w-full" : ""
+      } ${saved ? "bg-green-600" : "bg-[#6B46FF]"}`}
+    >
+      {saved ? (
+        <>
+          <Check className="h-3.5 w-3.5" /> Saved
+        </>
+      ) : saving ? (
+        "Saving…"
+      ) : (
+        "Save"
+      )}
+    </button>
   );
 }

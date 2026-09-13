@@ -140,7 +140,7 @@ export interface AdminRegInput {
   feastCompetitionIds: string[];
 }
 
-export async function createParticipantAdmin(input: AdminRegInput): Promise<{ error?: string; regNo?: string }> {
+export async function createParticipantAdmin(input: AdminRegInput): Promise<{ error?: string; regNo?: string; participantId?: string }> {
   try {
     const admin = getSupabaseAdmin();
 
@@ -189,7 +189,7 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
       if (regErr) return { error: regErr.message };
     }
 
-    return { regNo };
+    return { regNo, participantId: participant.id };
   } catch (err) {
     console.error("[createParticipantAdmin]", err);
     return { error: "Something went wrong." };

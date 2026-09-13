@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Sparkles, Users, ListChecks, Clock3, Trophy, LogOut } from "lucide-react";
+import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Sparkles, Users, ListChecks, Clock3, Trophy } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
-import { useAuth } from "@/lib/auth-context";
 import { GlassPanel, StatusPill, SectionTitle, theme } from "./feast-shared";
 import { LiveActivityFeed, TopShakhasWidget } from "./feast-dashboard-widgets";
 import type { OrgSettings } from "@/types";
 
 export function FeastLanding({ org }: { org: OrgSettings }) {
   const { feasts, loading } = useFeasts();
-  const { session, profile, signOut } = useAuth();
 
   return (
     <div>
@@ -40,21 +38,6 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
         <p className="mt-2 text-sm" style={{ color: theme.sub }}>
           Register, compete and follow live results across the season.
         </p>
-
-        {session && (
-          <div
-            className="mt-3 flex items-center justify-between gap-2 rounded-2xl px-4 py-2.5"
-            style={{ background: "rgba(107,70,255,0.08)", border: "1px solid rgba(107,70,255,0.16)" }}
-          >
-            <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: theme.text }}>
-              Signed in as {profile?.full_name || profile?.email}
-              {profile?.shakha?.name ? ` · ${profile.shakha.name}` : ""}
-            </span>
-            <button onClick={() => signOut()} className="flex shrink-0 items-center gap-1.5 text-[13px] font-semibold" style={{ color: "#DC2626" }}>
-              <LogOut className="h-3.5 w-3.5" /> Logout
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Dashboard: feast list (main) + live updates / top shakhas (sidebar on wide screens) */}

@@ -90,6 +90,7 @@ export interface FeastUI {
   daysLeft: number;
   competitions: FeastCompetitionUI[];
   registrationEditDeadline: string | null;
+  registrationDeadline: string | null;
 }
 
 export interface ShakhaOption {
@@ -162,6 +163,7 @@ export function useFeasts(options?: UseFeastsOptions) {
             daysLeft: daysLeft(row.end_date),
             competitions: [],
             registrationEditDeadline: row.registration_edit_deadline,
+            registrationDeadline: row.registration_deadline,
           };
         });
 
@@ -265,6 +267,7 @@ export function useFeast(slug: string) {
           daysLeft: daysLeft(feastRow.end_date),
           competitions: comps,
           registrationEditDeadline: feastRow.registration_edit_deadline,
+          registrationDeadline: feastRow.registration_deadline,
         });
       }
       setLoading(false);

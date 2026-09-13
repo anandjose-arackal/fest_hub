@@ -276,11 +276,21 @@ export default function ParticipantsPage() {
   }
 
   // ── Team panel ───────────────────────────────────────────────────────────
+  function openCreateTeam() {
+    setEditTeamId(null);
+    setTeamForm({ name: "", shakhaId: "", feastCompetitionId: "", memberIds: [] });
+    setTeamError(null);
+    setTeamConfirmingDelete(false);
+    setQuickAddOpen(false);
+    setTeamPanelOpen(true);
+  }
+
   function openEditTeam(t: (typeof teams)[number]) {
     setEditTeamId(t.id);
     setTeamForm({ name: t.teamName, shakhaId: t.shakhaId, feastCompetitionId: t.feastCompetitionId, memberIds: [] });
     setTeamError(null);
     setTeamConfirmingDelete(false);
+    setQuickAddOpen(false);
     // resolve member participant ids
     supabase
       .from("team_registration_members")
@@ -291,15 +301,59 @@ export default function ParticipantsPage() {
   }
 
   const [eligibleMembers, setEligibleMembers] = useState<Participant[]>([]);
+  const loadEligibleMembers = useCallback(async () => {
+    if (!teamForm.shakhaId) return;
+    const { data } = await supabase.from("participants").select("*").eq("feast_id", feastId).eq("shakha_id", teamForm.shakhaId);
+    setEligibleMembers(data ?? []);
+  }, [teamForm.shakhaId, feastId]);
   useEffect(() => {
     if (!teamPanelOpen || !teamForm.shakhaId) return;
-    supabase
-      .from("participants")
-      .select("*")
-      .eq("feast_id", feastId)
-      .eq("shakha_id", teamForm.shakhaId)
-      .then(({ data }) => setEligibleMembers(data ?? []));
+    loadEligibleMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamPanelOpen, teamForm.shakhaId, feastId]);
+
+  // Quick-add — for when the person being added to a team hasn't been
+  // registered as a participant yet. Creates a bare participant (shakha
+  // inherited from the team form, no gender/individual-competition entry —
+  // this is purely to unblock team member selection) and slots them
+  // straight into the eligible list + the team roster.
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({ name: "", houseName: "", dob: "" });
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+
+  function openQuickAdd() {
+    setQuickAddForm({ name: "", houseName: "", dob: "" });
+    setQuickAddError(null);
+    setQuickAddOpen(true);
+  }
+
+  async function handleQuickAddParticipant() {
+    if (!teamForm.shakhaId) return;
+    if (!quickAddForm.name.trim() || !quickAddForm.dob) {
+      setQuickAddError("Name and DOB are required.");
+      return;
+    }
+    setQuickAddSaving(true);
+    setQuickAddError(null);
+    const result = await createParticipantAdmin({
+      feastId,
+      shakhaId: teamForm.shakhaId,
+      name: quickAddForm.name,
+      houseName: quickAddForm.houseName,
+      dob: quickAddForm.dob,
+      gender: "",
+      feastCompetitionIds: [],
+    });
+    setQuickAddSaving(false);
+    if (result.error || !result.participantId) {
+      setQuickAddError(result.error ?? "Failed to add participant.");
+      return;
+    }
+    await loadEligibleMembers();
+    toggleMember(result.participantId);
+    setQuickAddOpen(false);
+  }
 
   const teamComp = feastComps.find((c) => c.id === teamForm.feastCompetitionId);
   const maxTeamSize = teamComp?.competition.max_team_size ?? DEFAULT_MAX_TEAM_MEMBERS;
@@ -313,10 +367,21 @@ export default function ParticipantsPage() {
   }
 
   async function handleSaveTeam() {
-    if (!editTeamId) return;
+    if (!editTeamId && (!teamForm.shakhaId || !teamForm.feastCompetitionId || !teamForm.name.trim())) {
+      setTeamError("Shakha, competition and team name are required.");
+      return;
+    }
     setSaving(true);
     setTeamError(null);
-    const result = await updateTeam({ teamId: editTeamId, teamName: teamForm.name, participantIds: teamForm.memberIds });
+    const result = editTeamId
+      ? await updateTeam({ teamId: editTeamId, teamName: teamForm.name, participantIds: teamForm.memberIds })
+      : await registerTeam({
+          feastId,
+          feastCompetitionId: teamForm.feastCompetitionId,
+          shakhaId: teamForm.shakhaId,
+          teamName: teamForm.name,
+          participantIds: teamForm.memberIds,
+        });
     setSaving(false);
     if (result.error) {
       setTeamError(result.error);
@@ -554,14 +619,19 @@ export default function ParticipantsPage() {
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-neutral-700">Team Events</h2>
-          <select className="input max-w-xs" value={teamCompFilter} onChange={(e) => setTeamCompFilter(e.target.value)}>
-            <option value="">All Team Events</option>
-            {teamFeastComps.map((c) => (
-              <option key={c.id} value={c.id}>
-                {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <select className="input max-w-xs" value={teamCompFilter} onChange={(e) => setTeamCompFilter(e.target.value)}>
+              <option value="">All Team Events</option>
+              {teamFeastComps.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
+                </option>
+              ))}
+            </select>
+            <button onClick={openCreateTeam} className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#6D28D9]">
+              Register Team
+            </button>
+          </div>
         </div>
 
         <div className="hidden overflow-x-auto rounded-xl border border-[#1e1b4b] bg-white shadow-md sm:block">
@@ -706,11 +776,38 @@ export default function ParticipantsPage() {
         <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setTeamPanelOpen(false)}>
           <div className="h-full w-full max-w-md overflow-y-auto bg-white p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold">Edit Team</h2>
+              <h2 className="text-base font-semibold">{editTeamId ? "Edit Team" : "Register Team"}</h2>
               <button onClick={() => setTeamPanelOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
             </div>
             <div className="space-y-3">
-              <p className="text-xs text-neutral-500">Competition: {teamComp?.competition.name}</p>
+              {editTeamId ? (
+                <p className="text-xs text-neutral-500">Competition: {teamComp?.competition.name}</p>
+              ) : (
+                <>
+                  <select
+                    className="input"
+                    value={teamForm.shakhaId}
+                    onChange={(e) => setTeamForm({ ...teamForm, shakhaId: e.target.value, memberIds: [] })}
+                  >
+                    <option value="">Select Shakha…</option>
+                    {shakhas.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    className="input"
+                    value={teamForm.feastCompetitionId}
+                    onChange={(e) => setTeamForm({ ...teamForm, feastCompetitionId: e.target.value, memberIds: [] })}
+                  >
+                    <option value="">Select Competition…</option>
+                    {teamFeastComps.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
               <input className="input" placeholder="Team name" value={teamForm.name} onChange={(e) => setTeamForm({ ...teamForm, name: e.target.value })} />
               <div>
                 <div className="mb-1.5 flex items-center justify-between">
@@ -724,18 +821,41 @@ export default function ParticipantsPage() {
                       {m.name}
                     </label>
                   ))}
+                  {eligibleMembers.length === 0 && <p className="text-xs text-neutral-400">{teamForm.shakhaId ? "No participants registered for this Shakha yet." : "Select a Shakha to see eligible participants."}</p>}
                 </div>
+
+                {teamForm.shakhaId && !quickAddOpen && (
+                  <button onClick={openQuickAdd} className="mt-1.5 text-xs font-semibold text-[#7C3AED] hover:underline">
+                    + Person not in this list? Add them
+                  </button>
+                )}
+
+                {quickAddOpen && (
+                  <div className="mt-2 space-y-2 rounded-lg border border-[#ddd6fe] bg-[#faf8ff] p-3">
+                    <p className="text-xs font-semibold text-neutral-600">Quick-add participant · {shakhas.find((s) => s.id === teamForm.shakhaId)?.name}</p>
+                    <input className="input" placeholder="Name" value={quickAddForm.name} onChange={(e) => setQuickAddForm({ ...quickAddForm, name: e.target.value })} />
+                    <input className="input" placeholder="House Name" value={quickAddForm.houseName} onChange={(e) => setQuickAddForm({ ...quickAddForm, houseName: e.target.value })} />
+                    <input type="date" className="input" value={quickAddForm.dob} onChange={(e) => setQuickAddForm({ ...quickAddForm, dob: e.target.value })} />
+                    {quickAddError && <p className="text-xs text-red-600">{quickAddError}</p>}
+                    <div className="flex gap-2">
+                      <button onClick={() => setQuickAddOpen(false)} className="flex-1 rounded-lg border border-neutral-300 py-1.5 text-xs font-semibold">Cancel</button>
+                      <button onClick={handleQuickAddParticipant} disabled={quickAddSaving} className="flex-1 rounded-lg bg-[#7C3AED] py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+                        {quickAddSaving ? "Adding…" : "Save & Add to Team"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               {teamError && <p className="text-sm text-red-600">{teamError}</p>}
               <button onClick={handleSaveTeam} disabled={saving} className="w-full rounded-lg bg-[#7C3AED] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
                 {saving ? "Saving…" : "Save"}
               </button>
-              {!teamConfirmingDelete && (
+              {editTeamId && !teamConfirmingDelete && (
                 <button onClick={() => setTeamConfirmingDelete(true)} className="w-full rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600">
                   Delete Team Registration
                 </button>
               )}
-              {teamConfirmingDelete && (
+              {editTeamId && teamConfirmingDelete && (
                 <div className="rounded-lg border border-red-300 bg-red-50 p-3">
                   <p className="mb-2 text-sm text-red-700">Permanently delete this team?</p>
                   <div className="flex gap-2">

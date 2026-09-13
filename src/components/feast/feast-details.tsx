@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, MapPin, Clock, Lock, Ticket, Users, Layers, Medal, ClipboardList, Trophy,
-  LogIn, LogOut, Eye, EyeOff, ChevronDown, ChevronRight, type LucideIcon,
+  LogIn, Eye, EyeOff, ChevronDown, ChevronRight, type LucideIcon,
 } from "lucide-react";
 import { useFeast } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
@@ -28,6 +28,17 @@ function statusPill(status: string) {
     case "published": return { label: "Published", bg: "rgba(107,70,255,0.18)", color: "#6B46FF" };
     default: return { label: "Upcoming", bg: "rgba(156,163,175,0.18)", color: "#6B7280" };
   }
+}
+
+// registration_deadline is a plain `date` (no time component) — the last
+// day registration is open, not the moment it closes. Comparing ISO date
+// strings (not Date objects) avoids the deadline day itself reading as
+// already closed for shakhas west of UTC.
+function isRegistrationClosed(deadline: string | null): boolean {
+  if (!deadline) return false;
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return todayIso > deadline.slice(0, 10);
 }
 
 function genderLabel(gender: string | null) {
@@ -231,7 +242,7 @@ function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>[
 export function FeastDetails({ slug }: { slug: string }) {
   const router = useRouter();
   const { feast, loading } = useFeast(slug);
-  const { session, profile, loading: authLoading, signOut } = useAuth();
+  const { session, profile, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const isMeAdmin = profile?.role === "me_admin";
@@ -250,6 +261,7 @@ export function FeastDetails({ slug }: { slug: string }) {
 
   const tab = activeTab ?? availableCats[0]?.slug ?? null;
   const hasTeamComp = feast?.competitions.some((c) => c.cat === "Team") ?? false;
+  const registrationClosed = isRegistrationClosed(feast?.registrationDeadline ?? null);
 
   const tabComps = feast?.competitions.filter((c) => c.cat === "Individual" && c.competitionCategorySlug === tab) ?? [];
 
@@ -296,28 +308,24 @@ export function FeastDetails({ slug }: { slug: string }) {
       {!authLoading && (
         <div className="mt-5 lg:flex lg:items-start lg:gap-3">
           <div className="lg:flex-1">
-            {!session ? (
+            {/* Once registration_deadline has passed, the Feast Portal drops
+                the login/register CTA entirely (admin can still register
+                participants past the deadline via /admin/participants,
+                unaffected by this). Stages/Results/My Regs below stay visible. */}
+            {registrationClosed ? null : !session ? (
               <GlowBtn variant="ghost" size="lg" className="w-full" icon={Lock} onClick={() => setLoginOpen(true)}>Login to Register</GlowBtn>
             ) : (
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between gap-2 rounded-2xl px-4 py-2.5" style={{ background: "rgba(107,70,255,0.08)", border: "1px solid rgba(107,70,255,0.16)" }}>
-                  <span className="min-w-0 truncate text-[13px] font-semibold" style={{ color: theme.text }}>
-                    Signed in as {profile?.full_name || profile?.email}
-                    {profile?.shakha?.name ? ` · ${profile.shakha.name}` : ""}
-                  </span>
-                  <button onClick={() => signOut()} className="flex shrink-0 items-center gap-1.5 text-[13px] font-semibold" style={{ color: "#DC2626" }}>
-                    <LogOut className="h-3.5 w-3.5" /> Logout
-                  </button>
+              // The "Signed in as … Logout" indicator already appears on the
+              // Feast Portal dashboard (feast-landing.tsx) — showing it here
+              // too was redundant.
+              canRegister && (
+                <div className={`grid grid-cols-1 gap-2.5 ${hasTeamComp ? "sm:grid-cols-2" : ""}`}>
+                  <GlowBtn variant="gold" size="lg" className="w-full" icon={Ticket} onClick={() => router.push(`/feast/${slug}/register`)}>Register Now</GlowBtn>
+                  {hasTeamComp && (
+                    <GlowBtn variant="pink" size="lg" className="w-full" icon={Users} onClick={() => router.push(`/feast/${slug}/register-team`)}>Register Team</GlowBtn>
+                  )}
                 </div>
-                {canRegister && (
-                  <div className={`grid grid-cols-1 gap-2.5 ${hasTeamComp ? "sm:grid-cols-2" : ""}`}>
-                    <GlowBtn variant="gold" size="lg" className="w-full" icon={Ticket} onClick={() => router.push(`/feast/${slug}/register`)}>Register Now</GlowBtn>
-                    {hasTeamComp && (
-                      <GlowBtn variant="pink" size="lg" className="w-full" icon={Users} onClick={() => router.push(`/feast/${slug}/register-team`)}>Register Team</GlowBtn>
-                    )}
-                  </div>
-                )}
-              </div>
+              )
             )}
           </div>
 
