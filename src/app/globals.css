@@ -128,3 +128,41 @@
     @apply font-sans;
   }
 }
+
+/* Feast Portal dashboard ribbon (feast-landing.tsx): a subtle cloth-flutter
+   (whole-bar skew) plus a diagonal light/shadow sweep that travels left to
+   right on a loop, reading as folds rippling across waving fabric. */
+@keyframes flag-wave {
+  0%, 100% { transform: skewX(0deg) scaleY(1); }
+  50% { transform: skewX(-1.5deg) scaleY(0.98); }
+}
+
+.flag-ribbon-wave {
+  animation: flag-wave 3s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+@keyframes fold-sweep-move {
+  from { background-position-x: 0; }
+  to { background-position-x: 120px; }
+}
+
+.fold-sweep {
+  background-image: repeating-linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(255, 255, 255, 0.4) 16px,
+    rgba(0, 0, 0, 0.16) 34px,
+    rgba(255, 255, 255, 0) 52px
+  );
+  background-size: 120px 100%;
+  mix-blend-mode: overlay;
+  animation: fold-sweep-move 2.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flag-ribbon-wave,
+  .fold-sweep {
+    animation: none;
+  }
+}

@@ -8,14 +8,14 @@ export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
-export const SITE_NAME = "Feast Hub";
-export const SITE_SHORT_NAME = "Feast Hub";
+export const SITE_NAME = "Fest Hub";
+export const SITE_SHORT_NAME = "Fest Hub";
 export const SITE_DESCRIPTION =
-  "Feast competition management — registrations, results, standings, and live displays for community feast competitions.";
+  "Fest competition management — registrations, results, standings, and live displays for community fest competitions.";
 export const SITE_KEYWORDS = [
-  "feast competitions",
-  "literature feast",
-  "arts feast",
+  "fest competitions",
+  "literature fest",
+  "arts fest",
   "competition management",
   "registrations",
   "results",

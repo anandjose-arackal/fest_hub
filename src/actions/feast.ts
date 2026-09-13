@@ -74,7 +74,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
       .select("id")
       .eq("slug", input.feastSlug)
       .single();
-    if (feastErr || !feast) return { error: "Feast not found." };
+    if (feastErr || !feast) return { error: "Fest not found." };
 
     if (input.feastCompetitionIds.length > 0) {
       const full = await findFullCompetitionsForShakha(supabase, input.feastCompetitionIds, input.shakhaId);

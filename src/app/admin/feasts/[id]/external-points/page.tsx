@@ -52,8 +52,8 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
   if (!feast?.is_external) {
     return (
       <div className="mx-auto max-w-lg rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-        This feast isn&apos;t marked as external. Mark it as external from the{" "}
-        <Link href="/admin/feasts" className="underline">Feasts</Link> list first.
+        This fest isn&apos;t marked as external. Mark it as external from the{" "}
+        <Link href="/admin/feasts" className="underline">Fests</Link> list first.
       </div>
     );
   }
@@ -61,7 +61,7 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
   return (
     <div className="mx-auto max-w-2xl">
       <Link href="/admin/feasts" className="mb-4 flex items-center gap-1 text-xs font-semibold text-neutral-500 hover:text-neutral-800">
-        <ArrowLeft className="h-3.5 w-3.5" /> Feasts
+        <ArrowLeft className="h-3.5 w-3.5" /> Fests
       </Link>
 
       <div className="mb-6 flex items-center gap-3">
@@ -70,13 +70,13 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
         </span>
         <div>
           <h1 className="text-xl font-semibold text-neutral-800">{feast.name}</h1>
-          <p className="text-xs text-neutral-500">External feast — enter each shakha&apos;s total points by hand</p>
+          <p className="text-xs text-neutral-500">External fest — enter each shakha&apos;s total points by hand</p>
         </div>
       </div>
 
       <p className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-500">
-        These totals get summed into <b>Overall Standings</b> alongside every app-tracked feast — there&apos;s no
-        category (Sub Jr / Junior / …) breakdown for an external feast, just the grand total per shakha.
+        These totals get summed into <b>Overall Standings</b> alongside every app-tracked fest — there&apos;s no
+        category (Sub Jr / Junior / …) breakdown for an external fest, just the grand total per shakha.
       </p>
 
       {/* Mobile cards */}

@@ -6,11 +6,11 @@ import type { OrgSettings } from "@/types";
 // place that used to hardcode an org/area name reads through this instead.
 const FALLBACK: OrgSettings = {
   id: true,
-  org_name_en: "Feast Hub",
+  org_name_en: "Fest Hub",
   org_name_local: "",
   area_name_en: "",
   area_name_local: "",
-  tagline: "Feast Portal",
+  tagline: "Fest Portal",
   logo_url: "/logo.png",
   created_at: "",
   updated_at: "",

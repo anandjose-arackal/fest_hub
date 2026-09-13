@@ -1,29 +1,68 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Sparkles, Users, ListChecks, Clock3, Trophy } from "lucide-react";
+import { useState } from "react";
+import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Users, ListChecks, Clock3, Trophy, LogIn } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
-import { GlassPanel, StatusPill, SectionTitle, theme } from "./feast-shared";
+import { useAuth } from "@/lib/auth-context";
+import { GlassPanel, GlowBtn, StatusPill, SectionTitle, LoginSheet, theme } from "./feast-shared";
 import { LiveActivityFeed, TopShakhasWidget } from "./feast-dashboard-widgets";
+import { MissionCountdown } from "./feast-countdown";
 import type { OrgSettings } from "@/types";
 
 export function FeastLanding({ org }: { org: OrgSettings }) {
   const { feasts, loading } = useFeasts();
+  const { session } = useAuth();
+  const [loginOpen, setLoginOpen] = useState(false);
 
   return (
     <div>
-      <div className="pt-4">
-        <p
-          className="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-wider"
-          style={{ color: theme.gold, fontFamily: "var(--font-poppins), sans-serif" }}
+      {/* Full-bleed flag ribbon pinned to the page's top edge — fixed (not
+          in-flow) so it spans the true viewport width regardless of
+          FeastShell's padded/max-width content column. The heading below
+          gets matching top padding to clear it. */}
+      <div className="fixed inset-x-0 top-0 z-20 h-11" style={{ boxShadow: "0 4px 14px rgba(0,0,0,0.18)" }}>
+        <div className="flag-ribbon-wave absolute inset-0 flex flex-col overflow-hidden">
+          <span className="w-full flex-1" style={{ background: "#F5C542" }} />
+          <span className="w-full flex-1" style={{ background: "#DC2626" }} />
+          <span className="w-full flex-1" style={{ background: "#F5C542" }} />
+          <span className="fold-sweep pointer-events-none absolute inset-0" />
+        </div>
+        {/* Login entry point for the public dashboard — same top-right slot
+            ProfileMenu's avatar occupies once signed in, so it hides there
+            instead of flipping sides. Reuses GlowBtn's own primary gradient
+            (same button used for "Sign In"/"Register Now" everywhere else)
+            rather than a one-off pill, so it reads as the app's button. */}
+        {!session && (
+          <GlowBtn
+            variant="primary"
+            size="sm"
+            icon={LogIn}
+            onClick={() => setLoginOpen(true)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 sm:right-4"
+          >
+            Login
+          </GlowBtn>
+        )}
+        {/* Anchored to the ribbon's top edge (not vertically centered) —
+            the ribbon itself sits flush at the viewport's top-0, so a
+            centered badge taller than the ribbon would push its top half
+            above y=0 and get clipped by the viewport edge, not any
+            overflow-hidden. Anchoring to top-0 keeps 100% of it visible and
+            lets all the extra height overflow downward instead. */}
+        <div
+          className="absolute left-1/2 top-0 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full bg-white"
+          style={{ boxShadow: "0 4px 14px rgba(0,0,0,0.28)" }}
         >
-          <Sparkles className="h-3 w-3 fill-current" /> {org.tagline || "Feast Portal"}
-        </p>
+          <img src={org.logo_url} alt={org.org_name_en || "Fest Hub"} className="h-12 w-12 rounded-full object-cover" />
+        </div>
+      </div>
+      <div className="pt-16">
         <h1
           className="mt-1 text-[32px] font-bold leading-[1.08] tracking-tight sm:text-[40px]"
           style={{ fontFamily: "var(--font-anek), sans-serif" }}
         >
-          <span style={{ color: theme.text }}>{org.org_name_en || "Feast Hub"}</span>
+          <span style={{ color: theme.text }}>{org.org_name_en || "Fest Hub"}</span>
           <br />
           <span
             style={{
@@ -43,8 +82,12 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
       {/* Dashboard: feast list (main) + live updates / top shakhas (sidebar on wide screens) */}
       <div className="mt-2 lg:grid lg:grid-cols-[1fr_340px] lg:items-start lg:gap-6">
         <div className="min-w-0">
+          {/* Same column as the feast listing below, so it matches the feast
+              cards' width exactly instead of the full-width heading above. */}
+          <MissionCountdown startDate={feasts[0]?.startDate ?? null} feastName={feasts[0]?.name} />
+
           <SectionTitle right={loading ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: theme.lavender }} /> : <span className="text-xs" style={{ color: theme.sub }}>{feasts.length} active</span>}>
-            Active Feasts
+            Active Fests
           </SectionTitle>
 
           <div className="grid grid-cols-1 gap-4">
@@ -133,7 +176,7 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
               </GlassPanel>
             ))}
             {!loading && feasts.length === 0 && (
-              <p className="col-span-full text-sm" style={{ color: theme.sub }}>No active feasts right now — check back soon.</p>
+              <p className="col-span-full text-sm" style={{ color: theme.sub }}>No active fests right now — check back soon.</p>
             )}
           </div>
 
@@ -164,6 +207,8 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
           <TopShakhasWidget />
         </div>
       </div>
+
+      {loginOpen && <LoginSheet onClose={() => setLoginOpen(false)} />}
     </div>
   );
 }

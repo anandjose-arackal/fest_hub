@@ -140,7 +140,7 @@ export function FeastRegisterTeam({ slug }: { slug: string }) {
                   </button>
                 );
               })}
-              {feast.competitions.filter((c) => c.cat === "Team").length === 0 && <p className="py-4 text-center text-[12.5px]" style={{ color: theme.faint }}>No team competitions in this feast.</p>}
+              {feast.competitions.filter((c) => c.cat === "Team").length === 0 && <p className="py-4 text-center text-[12.5px]" style={{ color: theme.faint }}>No team competitions in this fest.</p>}
             </div>
             <label className="mb-1.5 block text-[11.5px] font-semibold" style={{ color: theme.sub }}>Team Name</label>
             <div className="flex items-center gap-2.5 rounded-[14px] px-3.5" style={{ background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>

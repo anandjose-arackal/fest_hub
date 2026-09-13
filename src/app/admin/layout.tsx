@@ -32,7 +32,7 @@ const FULL_NAV_SECTIONS: NavSection[] = [
     items: [{ href: "/admin", label: "Dashboard", icon: LayoutDashboard, color: "#6B46FF" }],
   },
   {
-    title: "Feast",
+    title: "Fest",
     items: [
       { href: "/admin/participants", label: "Participants", icon: UserCheck, color: "#0891B2" },
       { href: "/admin/participation", label: "Attendance", icon: ClipboardCheck, color: "#BE185D" },
@@ -45,7 +45,7 @@ const FULL_NAV_SECTIONS: NavSection[] = [
     title: "Fest Util",
     items: [
       { href: "/admin/users", label: "Users", icon: Users, color: "#0369A1" },
-      { href: "/admin/feasts", label: "Feasts", icon: CalendarDays, color: "#9333EA" },
+      { href: "/admin/feasts", label: "Fests", icon: CalendarDays, color: "#9333EA" },
       { href: "/admin/competitions", label: "Competitions", icon: Layers, color: "#475569" },
       { href: "/admin/shakhas", label: "Shakhas", icon: Landmark, color: "#0F766E" },
       { href: "/admin/org-settings", label: "Organization", icon: Settings, color: "#6B7280" },
@@ -125,7 +125,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-[#6B46FF] to-[#A855F7] text-sm font-bold text-white">
             FH
           </div>
-          <span className="text-sm font-semibold text-neutral-800">Feast Hub Admin</span>
+          <span className="text-sm font-semibold text-neutral-800">Fest Hub Admin</span>
         </div>
         <div className="border-b border-neutral-200 px-5 py-3">
           <p className="truncate text-sm font-medium text-neutral-800">{profile?.full_name || profile?.email}</p>

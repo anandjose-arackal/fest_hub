@@ -208,20 +208,20 @@ export default function StandingsPage() {
 
       <div className="mb-3 flex items-center gap-2">
         <Globe className="h-[15px] w-[15px] text-gray-400" />
-        <h2 className="text-sm font-bold text-gray-800">Overall Standings — All Feasts</h2>
+        <h2 className="text-sm font-bold text-gray-800">Overall Standings — All Fests</h2>
       </div>
       <div className="mb-8">
-        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any feast." shakhaColor={shakhaColor} />
+        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any fest." shakhaColor={shakhaColor} />
       </div>
 
       <div className="mb-8 h-px bg-gray-100" />
 
       <div className="mb-3 flex items-center gap-2">
         <Trophy className="h-[15px] w-[15px] text-gray-400" />
-        <h2 className="text-sm font-bold text-gray-800">Feast Standings</h2>
+        <h2 className="text-sm font-bold text-gray-800">Fest Standings</h2>
       </div>
       <div className="mb-5">
-        <label className="mb-1 block text-xs font-medium text-gray-500">Feast</label>
+        <label className="mb-1 block text-xs font-medium text-gray-500">Fest</label>
         <select className={selectCls} value={feastId} onChange={(e) => setFeastId(e.target.value)}>
           {feasts.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>

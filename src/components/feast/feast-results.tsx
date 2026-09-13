@@ -127,7 +127,7 @@ function FeastContent({ slug }: { slug: string }) {
   const activeColor = available.find((c) => c.slug === resolved)?.color ?? theme.purple;
 
   if (loading && !feast?.competitions.length) return <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" style={{ color: theme.lavender }} /></div>;
-  if (!feast?.competitions.length) return <p className="py-10 text-center text-sm" style={{ color: theme.sub }}>No competitions found for this feast.</p>;
+  if (!feast?.competitions.length) return <p className="py-10 text-center text-sm" style={{ color: theme.sub }}>No competitions found for this fest.</p>;
 
   return (
     <div className="relative overflow-hidden rounded-[20px] p-3" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#faf5ff,#ede9fe)", border: "1px solid rgba(107,70,255,0.12)" }}>
@@ -205,7 +205,7 @@ export function FeastResults() {
           <div className="mb-4 lg:hidden">{searchCta}</div>
 
           {!feastsLoading && feasts.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16"><BookOpen className="h-7 w-7" style={{ color: theme.faint }} /><p className="text-sm" style={{ color: theme.sub }}>No feasts found.</p></div>
+            <div className="flex flex-col items-center gap-3 py-16"><BookOpen className="h-7 w-7" style={{ color: theme.faint }} /><p className="text-sm" style={{ color: theme.sub }}>No fests found.</p></div>
           ) : !feastsLoading && feasts.length > 0 && !feasts.some((f) => f.slug === activeSlug) ? (
             <div className="flex justify-center py-16"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
           ) : activeSlug ? (

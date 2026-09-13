@@ -154,7 +154,7 @@ function toLeaderboardRow(r: StandingsRow, rank: number): LeaderboardRow {
 export async function getLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
   const admin = getSupabaseAdmin();
   const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
   const rows = await getFeastStandings(feast.id);
   return { data: rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1)) };
 }
@@ -458,7 +458,7 @@ export async function saveExternalFeastPoints(
   const admin = getSupabaseAdmin();
 
   const { data: feast, error: feastErr } = await admin.from("feasts").select("is_external").eq("id", feastId).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
   if (!feast.is_external) return { error: "This feast isn't marked as external." };
 
   const sorted = [...rows].sort((a, b) => b.points - a.points);
@@ -511,7 +511,7 @@ export async function searchParticipantResults(
 ): Promise<{ data?: ParticipantSearchRow[]; error?: string }> {
   const admin = getSupabaseAdmin();
   const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
 
   const { data, error } = await admin
     .from("participants")
@@ -573,7 +573,7 @@ export interface ScreenData { competitions: ScreenCompetitionResult[] }
 export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenData; error?: string }> {
   const admin = getSupabaseAdmin();
   const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Feast not found" };
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
 
   const { data: fcs, error: fcErr } = await admin
     .from("feast_competitions")

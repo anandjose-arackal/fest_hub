@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, Trophy, Sparkles, Medal, Search, Home,
-  Loader2, PenTool, Palette, Zap, HelpCircle, Code2, Globe, LogOut, type LucideIcon,
+  Loader2, PenTool, Palette, Zap, HelpCircle, Code2, Globe, LogOut, LogIn, Eye, EyeOff, type LucideIcon,
 } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
@@ -246,7 +246,7 @@ export function FeastTopBar({ title, onBack }: { title: string; onBack?: () => v
       )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-[16px] font-semibold" style={{ color: theme.text, fontFamily: "var(--font-poppins), sans-serif" }}>{title}</p>
-        <p className="text-[11px]" style={{ color: theme.faint }}>Feast Portal</p>
+        <p className="text-[11px]" style={{ color: theme.faint }}>Fest Portal</p>
       </div>
       <Link
         href="/"
@@ -261,7 +261,7 @@ export function FeastTopBar({ title, onBack }: { title: string; onBack?: () => v
 
 // ── FeastNav — bottom nav (real routes, per spec Sec4.5) ────────────────
 const NAV_ITEMS = [
-  { href: "/", label: "Feasts", icon: Sparkles, match: (p: string) => p === "/" || p.startsWith("/feast") },
+  { href: "/", label: "Fests", icon: Sparkles, match: (p: string) => p === "/" || p.startsWith("/feast") },
   { href: "/results", label: "Results", icon: Medal, match: (p: string) => p.startsWith("/results") },
   { href: "/rankings", label: "Ranks", icon: Trophy, match: (p: string) => p.startsWith("/rankings") },
   { href: "/search", label: "Search", icon: Search, match: (p: string) => p.startsWith("/search") },
@@ -526,6 +526,54 @@ export function ProfileMenu() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── LoginSheet — shared admin sign-in bottom sheet (feast-details.tsx's
+// registration gate + feast-landing.tsx's dashboard login button) ───────
+export function LoginSheet({ onClose }: { onClose: () => void }) {
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    const res = await signIn(email, password);
+    setBusy(false);
+    if (res.error) setError(res.error);
+    else onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-t-[28px] bg-white p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold" style={{ color: theme.text }}>Admin Login</h2>
+        <p className="mb-4 text-sm" style={{ color: theme.sub }}>Sign in to register participants</p>
+        <div className="space-y-3">
+          <input className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <div className="relative">
+            <input
+              className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 pr-9 text-sm"
+              type={show ? "text" : "password"}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <button onClick={() => setShow((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400">
+              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          {error && <p className="text-sm" style={{ color: "#EF4444" }}>{error}</p>}
+          <GlowBtn variant="primary" size="lg" className="w-full" icon={LogIn} onClick={submit} loading={busy}>
+            Sign In
+          </GlowBtn>
+        </div>
+      </div>
     </div>
   );
 }

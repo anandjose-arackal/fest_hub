@@ -218,7 +218,7 @@ export function FeastLeaderboard() {
       <FeastTopBar title="Rankings" />
 
       <div className="mb-3 flex gap-2 rounded-[14px] p-1" style={{ background: "rgba(107,70,255,0.06)" }}>
-        {([["feast", "Feasts"], ["overall", "Overall"]] as const).map(([m, label]) => (
+        {([["feast", "Fests"], ["overall", "Overall"]] as const).map(([m, label]) => (
           <button key={m} onClick={() => setMode(m)} className="flex-1 rounded-[11px] py-2 text-[13px] font-bold" style={mode === m ? { background: "linear-gradient(135deg, #6B46FF, #A78BFA)", color: "#fff" } : { color: "#6D5BA6" }}>{label}</button>
         ))}
       </div>
@@ -232,7 +232,7 @@ export function FeastLeaderboard() {
           <div className="flex w-full max-w-[320px] flex-col items-center rounded-[24px] px-7 pb-8 pt-9 text-center" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#fdf4ff)", border: "1px solid rgba(107,70,255,0.12)" }}>
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "linear-gradient(135deg,#6B46FF,#A78BFA)" }}><Trophy className="h-7 w-7 text-white" /></div>
             <p className="mb-1.5 text-[18px] font-black" style={{ color: theme.text }}>No standings yet</p>
-            <p className="text-[13.5px] leading-relaxed" style={{ color: "#6D5BA6" }}>Rankings will appear here once competition results are published for this feast.</p>
+            <p className="text-[13.5px] leading-relaxed" style={{ color: "#6D5BA6" }}>Rankings will appear here once competition results are published for this fest.</p>
           </div>
         </div>
       ) : (

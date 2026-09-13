@@ -53,7 +53,7 @@ export async function bootstrapFirstAdmin(input: BootstrapInput): Promise<Bootst
     await admin
       .from("org_settings")
       .update({
-        org_name_en: orgNameEn || "Feast Hub",
+        org_name_en: orgNameEn || "Fest Hub",
         area_name_en: areaNameEn || "",
       })
       .eq("id", true);

@@ -83,6 +83,7 @@ export interface FeastUI {
   accent: string;
   status: string;
   date: string;
+  startDate: string | null;
   venue: string;
   blurb: string;
   registrations: number;
@@ -156,6 +157,7 @@ export function useFeasts(options?: UseFeastsOptions) {
             accent: cfg.accent,
             status: statusLabel(row.status),
             date: formatDateRange(row.start_date, row.end_date),
+            startDate: row.start_date,
             venue: row.venue ?? "",
             blurb: row.description ?? "",
             registrations: regCountMap[row.id] ?? 0,
@@ -261,6 +263,7 @@ export function useFeast(slug: string) {
           accent: cfg.accent,
           status: statusLabel(feastRow.status),
           date: formatDateRange(feastRow.start_date, feastRow.end_date),
+          startDate: feastRow.start_date,
           venue: feastRow.venue ?? "",
           blurb: feastRow.description ?? "",
           registrations: regsCount ?? 0,

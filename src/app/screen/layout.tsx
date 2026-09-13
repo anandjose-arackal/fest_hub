@@ -23,7 +23,7 @@ const barlow = Barlow({
 });
 
 export const metadata: Metadata = {
-  title: "Feast Hub — Big Screen Display",
+  title: "Fest Hub — Big Screen Display",
   robots: { index: false, follow: false },
 };
 

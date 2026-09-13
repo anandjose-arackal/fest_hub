@@ -19,7 +19,7 @@ export default function AdminDashboardPage() {
       <h1 className="text-xl font-semibold text-neutral-800">
         Welcome{profile?.full_name ? `, ${profile.full_name}` : ""}
       </h1>
-      <p className="mt-1 text-sm text-neutral-500">Feast management at a glance.</p>
+      <p className="mt-1 text-sm text-neutral-500">Fest management at a glance.</p>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {CARDS.map((c) => (

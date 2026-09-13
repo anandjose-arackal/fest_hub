@@ -71,7 +71,7 @@ export default function OrgSettingsPage() {
         </span>
         <div>
           <h1 className="text-xl font-semibold text-neutral-800">Organization Settings</h1>
-          <p className="text-xs text-neutral-500">Shown across the admin panel, Feast Portal, and /screen display.</p>
+          <p className="text-xs text-neutral-500">Shown across the admin panel, Fest Portal, and /screen display.</p>
         </div>
       </div>
 

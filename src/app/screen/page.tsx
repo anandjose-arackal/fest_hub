@@ -517,7 +517,7 @@ function ScreenHeader({
   }, []);
 
   let title = "SHAKHA <b>RANKINGS</b>";
-  let eyebrow = "Overall Standings — All Feasts";
+  let eyebrow = "Overall Standings — All Fests";
   if (section.kind === "stages") { title = "STAGE <b>BOARD</b>"; eyebrow = "Live Competition Board"; }
   else if (section.kind === "feast") {
     if (screenIdx === 0) eyebrow = "Live Standings";
@@ -735,7 +735,7 @@ function ScreenPageInner() {
   }, [activeKey, screenIdx]);
 
   const busy = feastsLoading || (activeSection.kind === "overall" ? overallLoading : feastDataLoading);
-  const feastName = activeSection.kind === "overall" ? "Overall Standings" : activeSection.kind === "stages" ? activeSection.feastName : activeSection.feastName || "Feast";
+  const feastName = activeSection.kind === "overall" ? "Overall Standings" : activeSection.kind === "stages" ? activeSection.feastName : activeSection.feastName || "Fest";
   const activeComp = activeSection.kind === "feast" && screenIdx > 0 ? screenData.competitions[screenIdx - 1] : null;
 
   return (

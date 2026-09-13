@@ -78,7 +78,7 @@ export default function FeastLineupPage({ params }: { params: Promise<{ id: stri
   }
 
   async function handleRemove(fcId: string) {
-    if (!confirm("Remove this competition from the feast?")) return;
+    if (!confirm("Remove this competition from the fest?")) return;
     await supabase.from("feast_competitions").delete().eq("id", fcId);
     load();
   }
@@ -123,7 +123,7 @@ export default function FeastLineupPage({ params }: { params: Promise<{ id: stri
     <div className="mx-auto max-w-3xl space-y-8">
       <div>
         <h1 className="text-xl font-semibold text-neutral-800">{feast?.name}</h1>
-        <p className="text-sm text-neutral-500">Add, reorder and configure events for this feast.</p>
+        <p className="text-sm text-neutral-500">Add, reorder and configure events for this fest.</p>
       </div>
 
       {/* Stages */}

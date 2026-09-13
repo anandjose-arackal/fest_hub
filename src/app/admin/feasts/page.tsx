@@ -117,7 +117,7 @@ export default function FeastsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this feast and all its data? This cannot be undone.")) return;
+    if (!confirm("Delete this fest and all its data? This cannot be undone.")) return;
     await supabase.from("feasts").delete().eq("id", id);
     load();
   }
@@ -129,20 +129,20 @@ export default function FeastsPage() {
           <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#7C3AED] to-[#A855F7] text-white">
             <CalendarDays className="h-5 w-5" />
           </span>
-          <h1 className="text-xl font-semibold text-neutral-800">Feasts</h1>
+          <h1 className="text-xl font-semibold text-neutral-800">Fests</h1>
         </div>
         <button
           onClick={openCreate}
           className="flex items-center gap-1.5 rounded-lg bg-[#7C3AED] px-3 py-2 text-sm font-semibold text-white hover:bg-[#6D28D9]"
         >
-          <Plus className="h-4 w-4" /> New Feast
+          <Plus className="h-4 w-4" /> New Fest
         </button>
       </div>
 
       {loading ? (
         <p className="text-sm text-neutral-500">Loading…</p>
       ) : feasts.length === 0 ? (
-        <p className="text-sm text-neutral-500">No feasts yet. Create your first one.</p>
+        <p className="text-sm text-neutral-500">No fests yet. Create your first one.</p>
       ) : (
         <div className="space-y-3">
           {feasts.map((f) => {
@@ -201,7 +201,7 @@ export default function FeastsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold">{editId ? "Edit Feast" : "New Feast"}</h2>
+              <h2 className="text-base font-semibold">{editId ? "Edit Fest" : "New Fest"}</h2>
               <button onClick={() => setModalOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
             </div>
 
@@ -256,9 +256,9 @@ export default function FeastsPage() {
                   onChange={(e) => setForm({ ...form, is_external: e.target.checked })}
                 />
                 <span>
-                  <span className="font-semibold">External feast</span> — competitions happened outside this app.
+                  <span className="font-semibold">External fest</span> — competitions happened outside this app.
                   Instead of a competition lineup, you&apos;ll enter each shakha&apos;s total points by hand, and
-                  they&apos;ll be summed into Overall Standings alongside the app-tracked feasts.
+                  they&apos;ll be summed into Overall Standings alongside the app-tracked fests.
                 </span>
               </label>
             </div>

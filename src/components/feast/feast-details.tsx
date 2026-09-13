@@ -4,13 +4,13 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, MapPin, Clock, Lock, Ticket, Users, Layers, Medal, ClipboardList, Trophy,
-  LogIn, Eye, EyeOff, ChevronDown, ChevronRight, type LucideIcon,
+  ChevronDown, ChevronRight, type LucideIcon,
 } from "lucide-react";
 import { useFeast } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { getPublishedResults } from "@/actions/results";
 import { getPublishedTeamResults } from "@/actions/team-results";
-import { GlassPanel, GlowBtn, StatusPill, FeastTopBar, theme, CATEGORY_COLORS } from "./feast-shared";
+import { GlassPanel, GlowBtn, StatusPill, FeastTopBar, LoginSheet, theme, CATEGORY_COLORS } from "./feast-shared";
 import { ResultTable, sortResults, type PublicResultRow } from "./feast-shared-results";
 
 const CAT_CONFIG: { slug: string; label: string; color: string }[] = [
@@ -20,6 +20,11 @@ const CAT_CONFIG: { slug: string; label: string; color: string }[] = [
   { slug: "super_senior", label: "Super Senior", color: CATEGORY_COLORS.super_senior },
   { slug: "elder", label: "Elder", color: CATEGORY_COLORS.elder },
 ];
+// Team competitions have no age category (see AGENTS.md: they mirror the
+// participant chain via team_registrations instead) — same pattern as
+// feast-results.tsx's TEAM_TAB, appended as its own tab rather than folded
+// into one of the age-category ones.
+const TEAM_TAB = { slug: "team", label: "Team", color: theme.pink };
 
 function statusPill(status: string) {
   switch (status) {
@@ -72,62 +77,16 @@ function QuickTile({ icon: Icon, label, color, onClick }: { icon: LucideIcon; la
   );
 }
 
-function LoginSheet({ onClose }: { onClose: () => void }) {
-  const { signIn } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    const res = await signIn(email, password);
-    setBusy(false);
-    if (res.error) setError(res.error);
-    else onClose();
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-t-[28px] bg-white p-6" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold" style={{ color: theme.text }}>Admin Login</h2>
-        <p className="mb-4 text-sm" style={{ color: theme.sub }}>Sign in to register participants</p>
-        <div className="space-y-3">
-          <input className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-sm" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <div className="relative">
-            <input
-              className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 pr-9 text-sm"
-              type={show ? "text" : "password"}
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button onClick={() => setShow((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400">
-              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          {error && <p className="text-sm" style={{ color: "#EF4444" }}>{error}</p>}
-          <GlowBtn variant="primary" size="lg" className="w-full" icon={LogIn} onClick={submit} loading={busy}>
-            Sign In
-          </GlowBtn>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>["feast"] extends infer F ? (F extends { competitions: (infer C)[] } ? C : never) : never; feastId: string }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [results, setResults] = useState<PublicResultRow[] | null>(null);
   const [loadingResults, setLoadingResults] = useState(false);
+  const isTeam = comp.cat === "Team";
   const cat = CAT_CONFIG.find((c) => c.slug === comp.competitionCategorySlug);
-  const catColor = cat?.color ?? theme.purple;
+  const catColor = isTeam ? TEAM_TAB.color : cat?.color ?? theme.purple;
   const pill = statusPill(comp.compStatus);
   const gender = genderLabel(comp.gender);
-  const isTeam = comp.cat === "Team";
 
   async function toggleResults() {
     if (!resultsOpen && results === null) {
@@ -255,15 +214,18 @@ export function FeastDetails({ slug }: { slug: string }) {
 
   const availableCats = useMemo(() => {
     if (!feast) return [];
-    const slugs = new Set(feast.competitions.map((c) => c.competitionCategorySlug).filter(Boolean));
-    return CAT_CONFIG.filter((c) => slugs.has(c.slug));
+    const slugs = new Set(feast.competitions.filter((c) => c.cat !== "Team").map((c) => c.competitionCategorySlug).filter(Boolean));
+    const cats = CAT_CONFIG.filter((c) => slugs.has(c.slug));
+    return feast.competitions.some((c) => c.cat === "Team") ? [...cats, TEAM_TAB] : cats;
   }, [feast]);
 
   const tab = activeTab ?? availableCats[0]?.slug ?? null;
   const hasTeamComp = feast?.competitions.some((c) => c.cat === "Team") ?? false;
   const registrationClosed = isRegistrationClosed(feast?.registrationDeadline ?? null);
 
-  const tabComps = feast?.competitions.filter((c) => c.cat === "Individual" && c.competitionCategorySlug === tab) ?? [];
+  const tabComps = tab === "team"
+    ? feast?.competitions.filter((c) => c.cat === "Team") ?? []
+    : feast?.competitions.filter((c) => c.cat === "Individual" && c.competitionCategorySlug === tab) ?? [];
 
   if (loading && !feast) {
     return (
