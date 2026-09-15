@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Users, ListChecks, Clock3, Trophy, LogIn } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
@@ -10,10 +10,40 @@ import { LiveActivityFeed, TopShakhasWidget } from "./feast-dashboard-widgets";
 import { MissionCountdown } from "./feast-countdown";
 import type { OrgSettings } from "@/types";
 
+// Small confetti burst, contained within the announcement banner (not a
+// full-page effect like FeastSuccess's) — colors pull from the org's own
+// --fp-* theme vars so it matches whichever palette is active, not a
+// hardcoded purple.
+interface ConfettiPiece {
+  left: number; delay: number; duration: number; color: string; size: number; rotation: number; round: boolean;
+}
+const BANNER_CONFETTI_COLORS = ["var(--fp-gold)", "var(--fp-primary-light)", "var(--fp-accent)", "#fff"];
+// Generated client-side only (after mount): Math.random() values baked in
+// during SSR would differ from the client's re-render and trigger a
+// hydration mismatch, so this starts empty and fills in via useEffect.
+function useBannerConfetti(): ConfettiPiece[] {
+  const [pieces, setPieces] = useState<ConfettiPiece[]>([]);
+  useEffect(() => {
+    setPieces(
+      Array.from({ length: 20 }, () => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 0.8,
+        duration: 1.6 + Math.random() * 1.2,
+        color: BANNER_CONFETTI_COLORS[Math.floor(Math.random() * BANNER_CONFETTI_COLORS.length)],
+        size: 4 + Math.random() * 5,
+        rotation: Math.random() * 360,
+        round: Math.random() > 0.5,
+      }))
+    );
+  }, []);
+  return pieces;
+}
+
 export function FeastLanding({ org }: { org: OrgSettings }) {
   const { feasts, loading } = useFeasts();
   const { session } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
+  const bannerConfetti = useBannerConfetti();
 
   return (
     <div>
@@ -85,6 +115,42 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
           {/* Same column as the feast listing below, so it matches the feast
               cards' width exactly instead of the full-width heading above. */}
           <MissionCountdown startDate={feasts[0]?.startDate ?? null} feastName={feasts[0]?.name} />
+
+          <Link
+            href="/results?feast=literature_fest"
+            className="relative mb-4 flex items-center gap-3 overflow-hidden rounded-2xl px-4 py-3.5 transition-transform active:scale-[0.98]"
+            style={{
+              background: "linear-gradient(110deg, var(--fp-gold), var(--fp-accent) 55%, var(--fp-primary) 100%)",
+              boxShadow: "0 8px 22px rgba(var(--fp-primary-rgb),0.35)",
+            }}
+          >
+            {bannerConfetti.map((p, i) => (
+              <span
+                key={i}
+                className="pointer-events-none absolute top-0"
+                style={{
+                  left: `${p.left}%`,
+                  width: p.size,
+                  height: p.size,
+                  background: p.color,
+                  borderRadius: p.round ? "50%" : 2,
+                  transform: `rotate(${p.rotation}deg)`,
+                  animation: `bannerConfetti ${p.duration}s ease-in ${p.delay}s infinite`,
+                }}
+              />
+            ))}
+            <style>{`@keyframes bannerConfetti { 0% { transform: translateY(-8px) rotate(0); opacity: 1; } 100% { transform: translateY(60px) rotate(340deg); opacity: 0; } }`}</style>
+
+            <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: "rgba(255,255,255,0.28)" }}>
+              <Trophy className="h-5 w-5 text-white" />
+            </span>
+            <span className="relative min-w-0 flex-1 truncate text-[17px] font-bold text-white" style={{ fontFamily: "var(--font-anek), sans-serif", textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
+              സാഹിത്യമത്സരം Result Published
+            </span>
+            <span className="relative flex shrink-0 items-center gap-1 text-[14.5px] font-bold text-white" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
+              Click to view <ArrowRight className="h-[18px] w-[18px]" />
+            </span>
+          </Link>
 
           <SectionTitle right={loading ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: theme.lavender }} /> : <span className="text-xs" style={{ color: theme.sub }}>{feasts.length} active</span>}>
             Active Fests
