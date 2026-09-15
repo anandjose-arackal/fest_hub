@@ -10,6 +10,14 @@ React 19, TypeScript, Tailwind CSS v4, shadcn (`base-nova` preset, `lucide-react
 
 Unlike the source app this was extracted from, **nothing here is hardcoded to one organization**. Org name, area name, tagline, logo, shakha list (with colors), and competition stages are admin-configurable through the database (`org_settings`, `shakhas`, `stages` tables), not literal strings or SQL seeds. When adding a new screen, never hardcode an org/area name — read it from `org_settings`.
 
+## Org hierarchy (optional): Diocese → Meghala → Shakha
+
+Shakha is the default/leaf level for every org. An org can additionally opt into a Meghala tier (`meghalas`, `shakhas.meghala_id`) or a full Diocese → Meghala tier (`dioceses`, `meghalas.diocese_id`) via `org_settings.hierarchy_level` (`'shakha' | 'meghala' | 'diocese'`, default `'shakha'`) — see `/admin/org-settings`. `useOrgHierarchy()` (`src/hooks/use-feast.ts`) is the one hook that returns `{ dioceses, meghalas, shakhas, hierarchyLevel, loading }` together; reach for it (not three separate fetches) anywhere a picker, nav item, or tier toggle needs to branch on the configured level.
+
+Two reusable pickers in `src/components/admin/`: `HierarchyPicker` (`hierarchy-picker.tsx`) always resolves to a leaf shakha id via 1–3 cascading `<select>`s (collapses to a single plain shakha select at `hierarchy_level === 'shakha'` — zero behavior change for orgs that don't opt in); `ScopePicker` (`scope-picker.tsx`) picks exactly one node at whichever tier is current (used only for assigning an sa_admin's own scope, never a cascade). Every free-pick shakha `<select>` in admin (`/admin/participants`, `/admin/participation`, `/admin/users`) goes through one of these now — don't add a new raw `supabase.from("shakhas").select(...)`-backed `<select>`.
+
+Meghala/Diocese-wise point rollups are computed on read (`getMeghalaStandings`/`getDioceseStandings`/overall variants in `src/actions/results.ts`) by grouping the existing `shakha_feast_standings` rows through `shakhas.meghala_id`/`meghalas.diocese_id` — there is no separate ledger or standings table per tier, and `rebuildStandings`'s write path is untouched. A shakha never assigned into the org's chosen hierarchy surfaces as a `"__unassigned__"` group rather than being silently dropped.
+
 ## Commands
 
 - `npm run dev` — dev server
@@ -25,11 +33,11 @@ Scoring: scores land in `competition_results`/`team_results`; publishing compute
 
 ## Auth / roles
 
-`useAuth()` (`src/lib/auth-context.tsx`) exposes the signed-in admin's profile. `UserRole = admin | me_admin | sa_admin`, profiles joined to `shakhas`. The very first admin is created through `/setup` (only reachable while `profiles` is empty).
+`useAuth()` (`src/lib/auth-context.tsx`) exposes the signed-in admin's profile plus a derived `adminScope: { level: 'shakha'|'meghala'|'diocese'; id; name } | null` (`src/lib/org-hierarchy.ts`) — whichever of `profile.shakha_id`/`meghala_id`/`diocese_id` is set (a DB constraint guarantees at most one is). `UserRole = admin | me_admin | sa_admin`; an sa_admin's single assignment sits at whichever tier is the org's configured top level (a shakha by default, unchanged) and administers every shakha beneath that node — there's still one admin role, not a separate tier per level. Registration/`"My Registrations"` code should read `adminScope` (and `getDescendantShakhaIds()` for the shakha set it covers), not `profile.shakha_id` directly. The very first admin is created through `/setup` (only reachable while `profiles` is empty).
 
 ## RLS convention
 
-Public-read tables (`shakhas`, `feasts`, `feast_competitions`, `competitions`, `competition_categories`, `participants`, `participant_registrations`, `stages`) are queried directly client-side with the anon client. Tables with no write policy — including `competition_results`, `team_results`, `shakha_point_ledger`, `shakha_feast_standings` (RLS intentionally off on these 4, by convention not enforcement) — must be written through a `"use server"` action using `getSupabaseAdmin()` (service-role client, server-only, never imported client-side), returning `{ error?: string }`.
+Public-read tables (`shakhas`, `dioceses`, `meghalas`, `feasts`, `feast_competitions`, `competitions`, `competition_categories`, `participants`, `participant_registrations`, `stages`) are queried directly client-side with the anon client. Tables with no write policy — including `competition_results`, `team_results`, `shakha_point_ledger`, `shakha_feast_standings`, `dioceses`, `meghalas` (RLS intentionally off on these, by convention not enforcement) — must be written through a `"use server"` action using `getSupabaseAdmin()` (service-role client, server-only, never imported client-side), returning `{ error?: string }`.
 
 Supabase nested-relation results need defensive unwrapping: `Array.isArray(x) ? x[0] : x`.
 

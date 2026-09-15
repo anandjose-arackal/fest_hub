@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import type { HierarchyLevel, PortalTheme } from "@/types";
 
 export interface OrgSettingsInput {
   orgNameEn: string;
@@ -9,6 +10,8 @@ export interface OrgSettingsInput {
   areaNameLocal?: string;
   tagline?: string;
   logoUrl?: string;
+  hierarchyLevel?: HierarchyLevel;
+  theme?: PortalTheme;
 }
 
 export async function updateOrgSettings(input: OrgSettingsInput): Promise<{ error?: string }> {
@@ -22,6 +25,8 @@ export async function updateOrgSettings(input: OrgSettingsInput): Promise<{ erro
       area_name_local: input.areaNameLocal ?? "",
       tagline: input.tagline ?? "",
       logo_url: input.logoUrl || "/logo.png",
+      hierarchy_level: input.hierarchyLevel ?? "shakha",
+      theme: input.theme ?? "violet",
     })
     .eq("id", true);
   if (error) return { error: error.message };

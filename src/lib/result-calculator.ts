@@ -57,13 +57,23 @@ export function calcGrade(score: number, maxScore: number, points: GradePointSca
 // not 1,1,3).
 // Only 1st, 2nd, 3rd earn position points (scale below).
 // Beyond 3rd: position = null, positionPoints = 0.
+// Fewer than 3 entries total: no positions at all (every entry gets
+// position = null, positionPoints = 0) — a competition with only 1 or 2
+// participants doesn't have enough of a field to award 2nd/3rd honestly,
+// so it's graded only, not ranked.
 
 export function calcPositions(
   entries: CalcEntry[],
   points: PositionPointScale = DEFAULT_POSITION_POINTS
 ): Map<string, PositionResult> {
-  const sorted = [...entries].sort((a, b) => b.score - a.score);
   const result = new Map<string, PositionResult>();
+
+  if (entries.length < 3) {
+    for (const e of entries) result.set(e.id, { position: null, positionPoints: 0 });
+    return result;
+  }
+
+  const sorted = [...entries].sort((a, b) => b.score - a.score);
 
   let currentPos = 1;
   for (let i = 0; i < sorted.length; i++) {

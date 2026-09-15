@@ -6,9 +6,11 @@ import {
   useState,
   useEffect,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import type { AdminScope } from "@/lib/org-hierarchy";
 import type { Profile, UserRole } from "@/types";
 import type { Session } from "@supabase/supabase-js";
 
@@ -22,6 +24,11 @@ interface AuthContextValue extends AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   hasRole: (...roles: UserRole[]) => boolean;
+  // Generalizes profile.shakha_id: an sa_admin's single assignment sits at
+  // whichever tier is the org's configured top level (see
+  // src/lib/org-hierarchy.ts). null for admin/me_admin, who aren't tied to
+  // any node (matching profile.shakha_id being optional for them today).
+  adminScope: AdminScope | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -36,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from("profiles")
-      .select("*, shakha:shakhas(*)")
+      .select("*, shakha:shakhas(*), meghala:meghalas(*), diocese:dioceses(*)")
       .eq("id", userId)
       .single();
     return data as Profile | null;
@@ -96,8 +103,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [state.profile]
   );
 
+  // Priority diocese > meghala > shakha is defensive only —
+  // profiles_single_scope_check guarantees at most one is ever set.
+  const adminScope: AdminScope | null = useMemo(() => {
+    const p = state.profile;
+    if (!p) return null;
+    if (p.diocese_id && p.diocese) return { level: "diocese", id: p.diocese_id, name: p.diocese.name };
+    if (p.meghala_id && p.meghala) return { level: "meghala", id: p.meghala_id, name: p.meghala.name };
+    if (p.shakha_id && p.shakha) return { level: "shakha", id: p.shakha_id, name: p.shakha.name };
+    return null;
+  }, [state.profile]);
+
   return (
-    <AuthContext.Provider value={{ ...state, signIn, signOut, hasRole }}>
+    <AuthContext.Provider value={{ ...state, signIn, signOut, hasRole, adminScope }}>
       {children}
     </AuthContext.Provider>
   );

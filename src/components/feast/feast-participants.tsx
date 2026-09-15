@@ -15,7 +15,7 @@ function feastKind(f: FeastUI): FeastKind | null {
   if (t.includes("arts")) return "arts";
   return null;
 }
-const KIND_GRAD: Record<FeastKind, string> = { literature: "linear-gradient(135deg,#6B46FF,#A78BFA)", arts: "linear-gradient(135deg,#A855F7,#EC4899)" };
+const KIND_GRAD: Record<FeastKind, string> = { literature: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", arts: "linear-gradient(135deg,var(--fp-accent),var(--fp-primary-light))" };
 const KIND_COLOR: Record<FeastKind, string> = { literature: "#7C3AED", arts: "#C026D3" };
 
 const POS_STYLE: Record<number, { bg: string; border: string; text: string; emoji: string }> = {
@@ -23,7 +23,7 @@ const POS_STYLE: Record<number, { bg: string; border: string; text: string; emoj
   2: { bg: "#F9FAFB", border: "#9CA3AF", text: "#374151", emoji: "🥈" },
   3: { bg: "#FFF7ED", border: "#E0936A", text: "#7C2D12", emoji: "🥉" },
 };
-const GRADE_BG: Record<string, string> = { A: "#16A34A", B: "#D97706", C: "#6B46FF" };
+const GRADE_BG: Record<string, string> = { A: "#16A34A", B: "#D97706", C: "var(--fp-primary)" };
 
 function PosBadge({ pos }: { pos: number }) {
   const s = POS_STYLE[pos];
@@ -47,11 +47,11 @@ function ParticipantCard({ row, color }: { row: ParticipantSearchRow; color: str
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-baseline gap-2">
               <p className="text-[16px] leading-tight" style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 700, color: theme.text }}>{row.name}</p>
-              {row.houseName && <span className="text-[13.5px]" style={{ color: "#7C3AED" }}><span style={{ color: "#DDD6FE" }}>| </span>{row.houseName}</span>}
+              {row.houseName && <span className="text-[13.5px]" style={{ color: "var(--fp-primary)" }}><span style={{ color: "var(--fp-primary-light)" }}>| </span>{row.houseName}</span>}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-sm" style={{ background: `${color}1a`, color }}>⛪ {row.shakha}</span>
-              {row.category && <span className="rounded-lg px-2 py-0.5 text-xs" style={{ background: "rgba(124,58,237,0.12)", color: "#6D28D9" }}>{CATEGORY_LABELS[row.category] ?? row.category}</span>}
+              {row.category && <span className="rounded-lg px-2 py-0.5 text-xs" style={{ background: "rgba(var(--fp-primary-rgb),0.12)", color: "var(--fp-ink)" }}>{CATEGORY_LABELS[row.category] ?? row.category}</span>}
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
@@ -74,7 +74,7 @@ function ParticipantCard({ row, color }: { row: ParticipantSearchRow; color: str
                 <span className="absolute -right-[5px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full" style={{ background: "rgba(255,255,255,0.9)", boxShadow: "0 0 0 1px rgba(120,53,15,0.2)" }} aria-hidden="true" />
               </span>
             )}
-            {totalPts > 0 && <span className="text-[11px]" style={{ color: "#7C3AED" }}>{totalPts} pts</span>}
+            {totalPts > 0 && <span className="text-[11px]" style={{ color: "var(--fp-primary)" }}>{totalPts} pts</span>}
           </div>
         </div>
         <div className="mt-2 flex items-center gap-3">
@@ -87,11 +87,11 @@ function ParticipantCard({ row, color }: { row: ParticipantSearchRow; color: str
         </div>
       </button>
       {open && (
-        <div className="mx-3 mb-3 overflow-hidden rounded-xl" style={{ background: "rgba(107,70,255,0.04)" }}>
+        <div className="mx-3 mb-3 overflow-hidden rounded-xl" style={{ background: "rgba(var(--fp-primary-rgb),0.04)" }}>
           {row.results.length === 0 ? (
             <p className="py-5 text-center text-[13px]" style={{ color: "#9CA3AF" }}>No competitions registered</p>
           ) : (
-            <div className="divide-y" style={{ borderColor: "rgba(107,70,255,0.07)" }}>
+            <div className="divide-y" style={{ borderColor: "rgba(var(--fp-primary-rgb),0.07)" }}>
               {row.results.map((item, i) => (
                 <div key={i} className="flex items-center gap-2.5 px-3 py-2.5">
                   <div className="min-w-0 flex-1">
@@ -103,7 +103,7 @@ function ParticipantCard({ row, color }: { row: ParticipantSearchRow; color: str
                       <>
                         {item.position != null && item.position <= 3 && <PosBadge pos={item.position} />}
                         {item.grade && <GradeBadge grade={item.grade} />}
-                        {!item.grade && !item.position && <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(107,70,255,0.1)", color: "#8B5CF6" }}>{item.totalPoints > 0 ? `${item.totalPoints} pts` : "—"}</span>}
+                        {!item.grade && !item.position && <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.1)", color: "var(--fp-primary)" }}>{item.totalPoints > 0 ? `${item.totalPoints} pts` : "—"}</span>}
                       </>
                     ) : (
                       <span className="rounded-full px-2 py-0.5 text-[11px] font-medium" style={{ background: "rgba(156,163,175,0.15)", color: "#9CA3AF" }}>Pending</span>
@@ -167,7 +167,7 @@ export function FeastParticipants() {
     setSearched(false);
   }
 
-  const shakhaColor = (name: string) => shakhas.find((s) => s.name === name)?.color ?? "#A78BFA";
+  const shakhaColor = (name: string) => shakhas.find((s) => s.name === name)?.color ?? "var(--fp-primary-light)";
 
   return (
     <div>
@@ -183,7 +183,7 @@ export function FeastParticipants() {
                 key={f.slug}
                 onClick={() => handleFeastChange(f.slug)}
                 className="shrink-0 rounded-[11px] px-3.5 py-1.5 text-[13px] font-bold"
-                style={on ? { background: k ? KIND_GRAD[k] : "linear-gradient(135deg,#6B46FF,#A78BFA)", color: "#fff", boxShadow: `0 4px 14px ${k ? KIND_COLOR[k] : "#6B46FF"}44` } : { background: "rgba(255,255,255,0.7)", color: "#4B5563", border: "1px solid rgba(107,70,255,0.12)" }}
+                style={on ? { background: k ? KIND_GRAD[k] : "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", color: "#fff", boxShadow: `0 4px 14px ${k ? KIND_COLOR[k] : "#6B46FF"}44` } : { background: "rgba(255,255,255,0.7)", color: "#4B5563", border: "1px solid rgba(var(--fp-primary-rgb),0.12)" }}
               >
                 {f.name}
               </button>
@@ -192,8 +192,8 @@ export function FeastParticipants() {
         </div>
       )}
 
-      <div className="mb-4 flex items-center gap-2.5 rounded-[14px] px-3.5 py-2.5" style={{ background: "rgba(255,255,255,0.82)", border: `1.5px solid ${focus ? "rgba(107,70,255,0.45)" : "rgba(107,70,255,0.18)"}` }}>
-        <Search className="h-4 w-4" style={{ color: "#A78BFA" }} />
+      <div className="mb-4 flex items-center gap-2.5 rounded-[14px] px-3.5 py-2.5" style={{ background: "rgba(255,255,255,0.82)", border: `1.5px solid ${focus ? "rgba(var(--fp-primary-rgb),0.45)" : "rgba(var(--fp-primary-rgb),0.18)"}` }}>
+        <Search className="h-4 w-4" style={{ color: "var(--fp-primary-light)" }} />
         <input
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
@@ -214,13 +214,13 @@ export function FeastParticipants() {
         <div className="flex flex-col items-center gap-2 py-12"><Search className="h-[26px] w-[26px]" style={{ color: theme.faint }} /><p className="text-sm" style={{ color: theme.sub }}>No participants found for &quot;{query}&quot;</p></div>
       ) : !searched ? (
         <div className="flex flex-col items-center gap-3 py-12">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "rgba(107,70,255,0.08)" }}><Search className="h-7 w-7" style={{ color: "#A78BFA" }} /></div>
+          <div className="flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "rgba(var(--fp-primary-rgb),0.08)" }}><Search className="h-7 w-7" style={{ color: "var(--fp-primary-light)" }} /></div>
           <p className="text-[15px] font-semibold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Search Participants</p>
           <p className="max-w-[220px] text-center text-[13px]" style={{ color: theme.sub }}>Type a participant name to see their competitions and results</p>
         </div>
       ) : (
         <>
-          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest" style={{ color: "#A78BFA" }}>{results.length} participant{results.length !== 1 ? "s" : ""} found</p>
+          <p className="mb-3 text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--fp-primary-light)" }}>{results.length} participant{results.length !== 1 ? "s" : ""} found</p>
           {results.map((row) => <ParticipantCard key={row.participantId} row={row} color={shakhaColor(row.shakha)} />)}
         </>
       )}

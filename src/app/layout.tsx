@@ -6,7 +6,19 @@ import {
   SITE_KEYWORDS, SITE_LOCALE, OG_IMAGE,
   ORGANIZATION_SCHEMA, WEBSITE_SCHEMA,
 } from "@/lib/site-config";
+import { getOrgSettings } from "@/lib/org-settings";
+import type { PortalTheme } from "@/types";
 import "./globals.css";
+
+// Browser-chrome tint (mobile address bar / task switcher) per portal theme —
+// keep in sync with globals.css's [data-fp-theme] --fp-primary values. This
+// can't reference the CSS variable directly since it renders as a <meta>
+// tag's static content, not DOM-scoped styling.
+const THEME_COLORS: Record<PortalTheme, string> = {
+  violet: "#6B46FF",
+  ocean: "#0D9488",
+  sunset: "#E11D48",
+};
 
 // --font-poppins is used throughout the Feast Portal/admin UI for body text;
 // --font-anek is relied on by /screen and several feast components for
@@ -33,15 +45,19 @@ const gayathri = Gayathri({
   display: "swap",
 });
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 5,
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#6B46FF" },
-    { media: "(prefers-color-scheme: dark)", color: "#6B46FF" },
-  ],
-};
+export async function generateViewport(): Promise<Viewport> {
+  const { theme } = await getOrgSettings();
+  const color = THEME_COLORS[theme] ?? THEME_COLORS.violet;
+  return {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 5,
+    themeColor: [
+      { media: "(prefers-color-scheme: light)", color },
+      { media: "(prefers-color-scheme: dark)", color },
+    ],
+  };
+}
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -80,7 +96,8 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const { theme } = await getOrgSettings();
   return (
     <html
       lang="en"
@@ -96,7 +113,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_SCHEMA) }}
         />
       </head>
-      <body className="min-h-full flex flex-col bg-[#FAFAFC]" style={{ fontFamily: "var(--font-inter), sans-serif" }}>
+      <body
+        data-fp-theme={theme}
+        className="min-h-full flex flex-col bg-[#FAFAFC]"
+        style={{ fontFamily: "var(--font-inter), sans-serif" }}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

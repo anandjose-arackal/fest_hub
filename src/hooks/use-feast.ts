@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import type { Stage } from "@/types";
+import { getOrgSettings } from "@/lib/org-settings";
+import type { Stage, Diocese, Meghala, Shakha, HierarchyLevel } from "@/types";
 
 // Multi-org: no hardcoded per-slug visual config (the source app had a
 // literature-feast-2026/arts-feast-2026 special case) — icon/tint/accent
@@ -296,6 +297,41 @@ export function useShakhas() {
   }, []);
 
   return { shakhas };
+}
+
+// ── useOrgHierarchy — Diocese/Meghala/Shakha + the org's configured level ─
+// One combined hook (not three separate ones) since every real consumer —
+// cascading pickers, admin nav, the standings tier toggle — needs all four
+// together; splitting them would just make every caller re-combine them.
+// useShakhas() above stays untouched for its existing display-only
+// (color/name lookup) consumers, which don't need any of this.
+export function useOrgHierarchy() {
+  const [dioceses, setDioceses] = useState<Diocese[]>([]);
+  const [meghalas, setMeghalas] = useState<Meghala[]>([]);
+  const [shakhas, setShakhas] = useState<Shakha[]>([]);
+  const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>("shakha");
+  const [loading, setLoading] = useState(isSupabaseConfigured);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) { setLoading(false); return; }
+    let cancelled = false;
+    Promise.all([
+      supabase.from("dioceses").select("*").order("name"),
+      supabase.from("meghalas").select("*").order("name"),
+      supabase.from("shakhas").select("*").order("name"),
+      getOrgSettings(),
+    ]).then(([d, m, s, org]) => {
+      if (cancelled) return;
+      setDioceses((d.data as Diocese[] | null) ?? []);
+      setMeghalas((m.data as Meghala[] | null) ?? []);
+      setShakhas((s.data as Shakha[] | null) ?? []);
+      setHierarchyLevel(org.hierarchy_level);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  return { dioceses, meghalas, shakhas, hierarchyLevel, loading };
 }
 
 // ── useFeastId ───────────────────────────────────────────────────────────

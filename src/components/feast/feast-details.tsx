@@ -30,7 +30,7 @@ function statusPill(status: string) {
   switch (status) {
     case "progressing": return { label: "Live", bg: "rgba(251,146,60,0.18)", color: "#D97706" };
     case "completed": return { label: "Completed", bg: "rgba(34,197,94,0.18)", color: "#16A34A" };
-    case "published": return { label: "Published", bg: "rgba(107,70,255,0.18)", color: "#6B46FF" };
+    case "published": return { label: "Published", bg: "rgba(var(--fp-primary-rgb),0.18)", color: "var(--fp-primary)" };
     default: return { label: "Upcoming", bg: "rgba(156,163,175,0.18)", color: "#6B7280" };
   }
 }
@@ -201,16 +201,18 @@ function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>[
 export function FeastDetails({ slug }: { slug: string }) {
   const router = useRouter();
   const { feast, loading } = useFeast(slug);
-  const { session, profile, loading: authLoading } = useAuth();
+  const { session, profile, adminScope, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<string | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const isMeAdmin = profile?.role === "me_admin";
-  // Registering a participant always assigns them to the signed-in admin's
-  // own shakha (see feast-register.tsx's adminShakha lookup, which has no
-  // manual shakha picker at all) — so an admin with no shakha_id has no
-  // branch to register into, regardless of role. me_admin oversees every
-  // branch and is excluded outright, same as before.
-  const canRegister = !!session && !isMeAdmin && !!profile?.shakha_id;
+  // Registering a participant assigns them to the signed-in admin's own
+  // scope node — a shakha by default (see feast-register.tsx's adminShakha
+  // lookup, no manual picker), or a shakha *beneath* their node once the org
+  // runs at meghala/diocese level (feast-register.tsx then shows a picker
+  // scoped to their descendants). An admin with no scope at all has nothing
+  // to register into, regardless of role. me_admin oversees everything and
+  // is excluded outright, same as before.
+  const canRegister = !!session && !isMeAdmin && !!adminScope;
 
   const availableCats = useMemo(() => {
     if (!feast) return [];
@@ -304,11 +306,11 @@ export function FeastDetails({ slug }: { slug: string }) {
       )}
 
       {/* Competitions */}
-      <div className="mt-6 rounded-[26px] border p-4 lg:mt-8 lg:p-6" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#faf5ff,#ede9fe)", borderColor: "rgba(107,70,255,0.12)" }}>
+      <div className="mt-6 rounded-[26px] border p-4 lg:mt-8 lg:p-6" style={{ background: "linear-gradient(145deg,rgba(var(--fp-primary-rgb),0.08),rgba(var(--fp-primary-rgb),0.03),rgba(var(--fp-primary-rgb),0.02),rgba(var(--fp-primary-rgb),0.08))", borderColor: "rgba(var(--fp-primary-rgb),0.12)" }}>
         <div className="mb-3 flex items-center justify-between">
           <p className="text-[15px] font-semibold" style={{ color: theme.text }}>Competitions</p>
           {tabComps.length > 0 && (
-            <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(107,70,255,0.12)", color: theme.purple }}>
+            <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.12)", color: theme.purple }}>
               {tabComps.length} {tabComps.length === 1 ? "event" : "events"}
             </span>
           )}
@@ -322,7 +324,7 @@ export function FeastDetails({ slug }: { slug: string }) {
                   key={c.slug}
                   onClick={() => setActiveTab(c.slug)}
                   className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold"
-                  style={active ? { background: "linear-gradient(135deg, #6B46FF, #A78BFA)", color: "#fff", boxShadow: "0 4px 14px rgba(107,70,255,0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(107,70,255,0.15)" }}
+                  style={active ? { background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
                 >
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: active ? "#fff" : c.color }} />
                   {c.label}

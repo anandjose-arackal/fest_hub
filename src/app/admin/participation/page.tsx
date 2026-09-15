@@ -9,7 +9,9 @@ import { CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/competition-categories";
 import { getScoreHeadings } from "@/lib/scoresheet-headings";
 import { getCompetitionSubject } from "@/lib/competition-subjects";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, Shakha } from "@/types";
+import { useOrgHierarchy } from "@/hooks/use-feast";
+import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
+import type { Competition, CompetitionCategory, Feast, FeastCompetition } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 
@@ -92,7 +94,7 @@ export default function ParticipationPage() {
   const [feastId, setFeastId] = useState("");
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [compId, setCompId] = useState("");
-  const [shakhas, setShakhas] = useState<Shakha[]>([]);
+  const hierarchy = useOrgHierarchy();
   const [shakhaFilter, setShakhaFilter] = useState("");
   const [search, setSearch] = useState("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
@@ -106,7 +108,6 @@ export default function ParticipationPage() {
       setFeasts(data ?? []);
       if (data && data.length > 0) setFeastId(data[0].id);
     });
-    supabase.from("shakhas").select("*").order("name").then(({ data }) => setShakhas(data ?? []));
   }, []);
 
   useEffect(() => {
@@ -362,12 +363,7 @@ export default function ParticipationPage() {
             </option>
           ))}
         </select>
-        <select className="input max-w-xs" value={shakhaFilter} onChange={(e) => setShakhaFilter(e.target.value)}>
-          <option value="">All Shakhas</option>
-          {shakhas.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+        <HierarchyPicker value={shakhaFilter} onChange={setShakhaFilter} hierarchy={hierarchy} className="input max-w-xs" emptyLabel="All Shakhas" />
         <input className="input max-w-xs" placeholder="Search name or reg no…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 

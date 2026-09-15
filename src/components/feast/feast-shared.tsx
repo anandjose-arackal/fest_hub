@@ -15,26 +15,27 @@ import { useAuth } from "@/lib/auth-context";
 // *name*, not an emoji — this resolves it to the actual component.
 const FEAST_ICONS: Record<string, LucideIcon> = { PenTool, Palette, Zap, Sparkles };
 
-// The Feast Portal's own palette — resolved once from the source app's
-// single production theme instantiation (aurora-glass/dusk/28). Since this
-// is now a standalone product with one fixed theme (not a Mission Hub
-// sub-app taking a parent theme prop), this is a flat constant rather than
-// a buildFeastTheme(parent) function.
+// The Feast Portal's own palette. Values are CSS custom-property references
+// (see globals.css's [data-fp-theme="..."] blocks), not literal hex, so the
+// whole portal repaints when org_settings.theme changes — the actual color
+// is resolved by the browser from whichever data-fp-theme attribute the root
+// layout put on <body>, not by this object. /admin never sets that attribute
+// and never reads these tokens, so it's unaffected by the org's theme choice.
 export const theme = {
   radius: 28,
-  text: "#1E1B4B",
-  sub: "#6B6792",
-  faint: "#9D99BC",
-  gold: "#F5C542",
-  purple: "#6B46FF",
-  lavender: "#A78BFA",
-  pink: "#EC4899",
-  cyan: "#0EA5C4",
-  fill: "#F1EEFB",
-  fillStrong: "rgba(107,70,255,0.10)",
-  hairline: "rgba(30,27,75,0.07)",
-  track: "rgba(30,27,75,0.08)",
-  softShadow: "0 14px 32px rgba(120,90,200,0.15)",
+  text: "var(--fp-ink)",
+  sub: "var(--fp-sub)",
+  faint: "var(--fp-faint)",
+  gold: "var(--fp-gold)",
+  purple: "var(--fp-primary)",
+  lavender: "var(--fp-primary-light)",
+  pink: "var(--fp-accent)",
+  cyan: "var(--fp-cyan)",
+  fill: "var(--fp-fill)",
+  fillStrong: "rgba(var(--fp-primary-rgb), 0.10)",
+  hairline: "rgba(var(--fp-primary-rgb), 0.12)",
+  track: "rgba(var(--fp-primary-rgb), 0.10)",
+  softShadow: "0 14px 32px rgba(var(--fp-primary-rgb), 0.15)",
   glass: {
     background: "rgba(255,255,255,0.55)",
     border: "1px solid rgba(255,255,255,0.9)",
@@ -45,14 +46,14 @@ export const theme = {
     border: "1px solid rgba(255,255,255,0.9)",
     backdropFilter: "blur(16px) saturate(180%)",
   } as React.CSSProperties,
-  pageBg: "linear-gradient(165deg, #ECE4FF 0%, #F6E5F6 46%, #FFEADC 100%)",
+  pageBg: "linear-gradient(165deg, var(--fp-bg-1) 0%, var(--fp-bg-2) 46%, var(--fp-bg-3) 100%)",
   navBg: "rgba(255,255,255,0.55)",
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
   sub_junior: "#34D3EE",
   junior: "#22C55E",
-  senior: "#6B46FF",
+  senior: "var(--fp-primary)",
   super_senior: "#F5A742",
   elder: "#9D99BC",
 };
@@ -68,7 +69,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 export function gradeColor(grade: "A" | "B" | "C" | null): string {
   if (grade === "A") return "#16A34A";
   if (grade === "B") return "#D97706";
-  if (grade === "C") return "#6B46FF";
+  if (grade === "C") return "var(--fp-primary)";
   return "#9CA3AF";
 }
 
@@ -78,15 +79,15 @@ export function Blobs() {
     <>
       <div
         className="pointer-events-none absolute -top-24 -left-16 h-72 w-72 rounded-full opacity-60 blur-3xl"
-        style={{ background: "radial-gradient(circle, rgba(167,139,250,0.45), transparent 70%)" }}
+        style={{ background: "radial-gradient(circle, rgba(var(--fp-primary-light-rgb),0.45), transparent 70%)" }}
       />
       <div
         className="pointer-events-none absolute top-1/3 -right-20 h-80 w-80 rounded-full opacity-50 blur-3xl"
-        style={{ background: "radial-gradient(circle, rgba(236,72,153,0.35), transparent 70%)" }}
+        style={{ background: "radial-gradient(circle, rgba(var(--fp-accent-rgb),0.35), transparent 70%)" }}
       />
       <div
         className="pointer-events-none absolute bottom-0 left-1/4 h-72 w-72 rounded-full opacity-40 blur-3xl"
-        style={{ background: "radial-gradient(circle, rgba(245,197,66,0.35), transparent 70%)" }}
+        style={{ background: "radial-gradient(circle, rgba(var(--fp-gold-rgb),0.35), transparent 70%)" }}
       />
     </>
   );
@@ -105,7 +106,7 @@ export function GlassPanel({
 } & React.HTMLAttributes<HTMLDivElement>) {
   const base = strong ? theme.glassStrong : theme.glass;
   const boxShadow = glow
-    ? `0 12px 32px rgba(120,70,160,0.16), 0 0 0 1px ${glow}26, 0 10px 28px ${glow}33`
+    ? `0 12px 32px rgba(var(--fp-primary-rgb),0.16), 0 0 0 1px ${glow}26, 0 10px 28px ${glow}33`
     : theme.softShadow;
   return (
     <div
@@ -123,10 +124,10 @@ type BtnVariant = "primary" | "gold" | "ghost" | "pink";
 type BtnSize = "sm" | "md" | "lg";
 
 const VARIANT_STYLE: Record<BtnVariant, React.CSSProperties> = {
-  primary: { background: "linear-gradient(135deg, #6B46FF, #A78BFA)", color: "#fff", boxShadow: "0 10px 28px rgba(107,70,255,0.4)" },
-  gold: { background: "linear-gradient(135deg, #F7D26B, #F0A500)", color: "#3a2a00", boxShadow: "0 10px 28px rgba(245,197,66,0.38)" },
-  ghost: { background: "rgba(107,70,255,0.09)", color: "#1E1B4B", border: "1px solid rgba(107,70,255,0.2)" },
-  pink: { background: "linear-gradient(135deg, #C026D3, #EC4899)", color: "#fff", boxShadow: "0 10px 28px rgba(236,72,153,0.4)" },
+  primary: { background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", color: "#fff", boxShadow: "0 10px 28px rgba(var(--fp-primary-rgb),0.4)" },
+  gold: { background: "linear-gradient(135deg, #F7D26B, #F0A500)", color: "#3a2a00", boxShadow: "0 10px 28px rgba(var(--fp-gold-rgb),0.38)" },
+  ghost: { background: "rgba(var(--fp-primary-rgb),0.09)", color: "var(--fp-ink)", border: "1px solid rgba(var(--fp-primary-rgb),0.2)" },
+  pink: { background: "linear-gradient(135deg, var(--fp-primary), var(--fp-accent))", color: "#fff", boxShadow: "0 10px 28px rgba(var(--fp-accent-rgb),0.4)" },
 };
 const SIZE_STYLE: Record<BtnSize, React.CSSProperties> = {
   sm: { padding: "10px 14px", fontSize: 13 },
@@ -173,9 +174,9 @@ export function StepDots({ steps, current }: { steps: string[]; current: number 
             <div
               className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
               style={{
-                background: done || active ? "linear-gradient(135deg,#6B46FF,#A78BFA)" : theme.fillStrong,
+                background: done || active ? "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))" : theme.fillStrong,
                 color: done || active ? "#fff" : theme.faint,
-                boxShadow: active ? "0 6px 16px rgba(107,70,255,0.4)" : "none",
+                boxShadow: active ? "0 6px 16px rgba(var(--fp-primary-rgb),0.4)" : "none",
               }}
             >
               {done ? "✓" : i + 1}
@@ -239,7 +240,7 @@ export function FeastTopBar({ title, onBack }: { title: string; onBack?: () => v
       ) : (
         <div
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px]"
-          style={{ background: "linear-gradient(135deg, #7C3AED, #EC4899)" }}
+          style={{ background: "linear-gradient(135deg, var(--fp-primary), var(--fp-accent))" }}
         >
           <Trophy className="h-5 w-5 text-white" />
         </div>
@@ -276,9 +277,9 @@ export function FeastNav() {
       <div
         className="pointer-events-auto relative flex w-full max-w-[420px] items-center rounded-[26px] px-1.5 py-2.5 sm:max-w-[520px]"
         style={{
-          background: `linear-gradient(135deg, rgba(167,139,250,0.72), rgba(190,24,147,0.4) 45%, rgba(107,70,255,0.8)), ${theme.navBg}`,
+          background: `linear-gradient(135deg, rgba(var(--fp-primary-light-rgb),0.72), rgba(var(--fp-accent-rgb),0.4) 45%, rgba(var(--fp-primary-rgb),0.8)), ${theme.navBg}`,
           border: "1px solid rgba(255,255,255,0.45)",
-          boxShadow: "0 12px 34px rgba(107,70,255,0.28), inset 0 1px 1px rgba(255,255,255,0.5)",
+          boxShadow: "0 12px 34px rgba(var(--fp-primary-rgb),0.28), inset 0 1px 1px rgba(255,255,255,0.5)",
           backdropFilter: "blur(8px) saturate(140%)",
         }}
       >
@@ -292,8 +293,8 @@ export function FeastNav() {
                   layoutId="feast-nav-bubble"
                   className="absolute -top-4 flex h-[54px] w-[54px] items-center justify-center rounded-full"
                   style={{
-                    background: "linear-gradient(145deg, #A78BFA, #6B46FF)",
-                    boxShadow: "0 8px 20px rgba(140,100,230,0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
+                    background: "linear-gradient(145deg, var(--fp-primary-light), var(--fp-primary))",
+                    boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
                   }}
                   transition={{ type: "spring", stiffness: 380, damping: 32 }}
                 >
@@ -301,9 +302,9 @@ export function FeastNav() {
                 </motion.div>
               )}
               <span style={{ opacity: active ? 0 : 1, height: 32, display: "flex", alignItems: "center" }}>
-                <Icon className="h-[20px] w-[20px]" style={{ color: "#0B2545" }} />
+                <Icon className="h-[20px] w-[20px]" style={{ color: "var(--fp-ink)" }} />
               </span>
-              <span className="text-[10px] font-semibold" style={{ color: active ? "#4C1D95" : "#0B2545" }}>{item.label}</span>
+              <span className="text-[10px] font-semibold" style={{ color: active ? "var(--fp-primary)" : "var(--fp-ink)" }}>{item.label}</span>
             </Link>
           );
         })}
@@ -327,9 +328,9 @@ export function FeastSideNav() {
       <div
         className="flex flex-col gap-1.5 rounded-[26px] p-3"
         style={{
-          background: `linear-gradient(165deg, rgba(167,139,250,0.72), rgba(190,24,147,0.4) 45%, rgba(107,70,255,0.8)), ${theme.navBg}`,
+          background: `linear-gradient(165deg, rgba(var(--fp-primary-light-rgb),0.72), rgba(var(--fp-accent-rgb),0.4) 45%, rgba(var(--fp-primary-rgb),0.8)), ${theme.navBg}`,
           border: "1px solid rgba(255,255,255,0.45)",
-          boxShadow: "0 12px 34px rgba(107,70,255,0.28), inset 0 1px 1px rgba(255,255,255,0.5)",
+          boxShadow: "0 12px 34px rgba(var(--fp-primary-rgb),0.28), inset 0 1px 1px rgba(255,255,255,0.5)",
           backdropFilter: "blur(8px) saturate(140%)",
         }}
       >
@@ -344,16 +345,16 @@ export function FeastSideNav() {
                     layoutId="feast-nav-bubble-side"
                     className="absolute inset-0 rounded-2xl"
                     style={{
-                      background: "linear-gradient(145deg, #A78BFA, #6B46FF)",
-                      boxShadow: "0 8px 20px rgba(140,100,230,0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
+                      background: "linear-gradient(145deg, var(--fp-primary-light), var(--fp-primary))",
+                      boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
                     }}
                     transition={{ type: "spring", stiffness: 380, damping: 32 }}
                   />
                 )}
                 <span className="relative flex h-5 w-5 shrink-0 items-center justify-center">
-                  <Icon className="h-[20px] w-[20px]" style={{ color: active ? "#fff" : "#0B2545" }} />
+                  <Icon className="h-[20px] w-[20px]" style={{ color: active ? "#fff" : "var(--fp-ink)" }} />
                 </span>
-                <span className="relative text-[13.5px] font-semibold" style={{ color: active ? "#fff" : "#0B2545" }}>{item.label}</span>
+                <span className="relative text-[13.5px] font-semibold" style={{ color: active ? "#fff" : "var(--fp-ink)" }}>{item.label}</span>
               </Link>
 
               {/* Under "Feasts" — direct links to every active feast */}
@@ -379,7 +380,7 @@ export function FeastSideNav() {
                         >
                           <FeastIcon className="h-[15px] w-[15px]" style={{ color: feastActive ? "#fff" : f.accent }} />
                         </span>
-                        <span className="min-w-0 truncate text-[12.5px] font-bold" style={{ color: feastActive ? "#fff" : "#3D2E6B" }}>
+                        <span className="min-w-0 truncate text-[12.5px] font-bold" style={{ color: feastActive ? "#fff" : "var(--fp-ink)" }}>
                           {f.name}
                         </span>
                       </Link>
@@ -425,7 +426,7 @@ export function FeastTabs({
             style={
               on
                 ? { background: `linear-gradient(135deg, ${f.tint[0]}, ${f.tint[1]})`, color: "#fff", boxShadow: `0 8px 22px ${f.accent}55` }
-                : { background: "rgba(255,255,255,0.7)", color: "#4B5563", border: "1px solid rgba(107,70,255,0.14)" }
+                : { background: "rgba(255,255,255,0.7)", color: "#4B5563", border: "1px solid rgba(var(--fp-primary-rgb),0.14)" }
             }
           >
             {f.name}
@@ -469,7 +470,7 @@ export function ProfileMenu() {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white transition-transform active:scale-95"
-        style={{ background: "linear-gradient(135deg, #6B46FF, #A78BFA)", boxShadow: "0 8px 20px rgba(107,70,255,0.35)" }}
+        style={{ background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.35)" }}
         aria-label="Account menu"
         aria-haspopup="menu"
         aria-expanded={open}

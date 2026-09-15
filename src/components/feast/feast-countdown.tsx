@@ -90,13 +90,13 @@ export function MissionCountdown({ startDate, feastName }: { startDate: string |
   return (
     <div
       className="relative mt-4 overflow-hidden rounded-[22px] p-4"
-      style={{ background: "linear-gradient(135deg, rgba(107,70,255,0.10), rgba(236,72,153,0.10) 55%, rgba(245,197,66,0.14))", border: "1px solid rgba(107,70,255,0.14)" }}
+      style={{ background: "linear-gradient(135deg, rgba(var(--fp-primary-rgb),0.10), rgba(var(--fp-accent-rgb),0.10) 55%, rgba(var(--fp-gold-rgb),0.14))", border: "1px solid rgba(var(--fp-primary-rgb),0.14)" }}
     >
       <p className="relative flex items-center gap-2 text-[19px] font-extrabold leading-tight sm:text-[24px]" style={{ fontFamily: "var(--font-anek), sans-serif" }}>
         <span className="inline-block" style={{ fontSize: "1.15em", animation: "rocket-bounce 1.6s ease-in-out infinite" }}>🚀</span>
         <span
           style={{
-            background: "linear-gradient(100deg, #6B46FF, #EC4899, #F5C542)",
+            background: "linear-gradient(100deg, var(--fp-primary), var(--fp-accent), var(--fp-gold))",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
           }}

@@ -1,10 +1,150 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Trophy, Medal, Globe } from "lucide-react";
+import { Trophy, Medal, Globe, Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getFeastStandings, getOverallStandings, type StandingsRow } from "@/actions/results";
-import type { Feast, Shakha } from "@/types";
+import {
+  getFeastStandings, getOverallStandings,
+  getMeghalaStandings, getOverallMeghalaStandings,
+  getDioceseStandings, getOverallDioceseStandings,
+  type StandingsRow, type GroupStandingsRow,
+} from "@/actions/results";
+import { useOrgHierarchy } from "@/hooks/use-feast";
+import { getOrgSettings } from "@/lib/org-settings";
+import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
+import type { Diocese, Feast, HierarchyLevel, Meghala, OrgSettings, Shakha } from "@/types";
+
+type Tier = "shakha" | "meghala" | "diocese";
+
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Builds a print-ready hierarchical standings report — flat at the shakha
+// tier (no standings export exists today at all, so this is new even for a
+// 'shakha'-level org), grouped by Meghala with member shakhas nested
+// beneath at the meghala tier, and Diocese > Meghala > Shakha nested at the
+// diocese tier. Always computed from fresh per-shakha rows (not whatever
+// tier happens to be selected on screen) since nesting needs shakha-level
+// granularity regardless of which tier is being exported.
+function buildStandingsHtml(
+  title: string,
+  orgLine: string,
+  shakhaRows: StandingsRow[],
+  tier: Tier,
+  hierarchy: { shakhas: Shakha[]; meghalas: Meghala[]; dioceses: Diocese[] }
+): string {
+  const shakhaMeghalaId = new Map(hierarchy.shakhas.map((s) => [s.id, s.meghala_id]));
+  const meghalaById = new Map(hierarchy.meghalas.map((m) => [m.id, m]));
+  const dioceseNameById = new Map(hierarchy.dioceses.map((d) => [d.id, d.name]));
+  const UNASSIGNED = "__unassigned__";
+
+  const shakhaTableHtml = (rows: StandingsRow[]) => {
+    const sorted = [...rows].sort((a, b) => b.grandTotal - a.grandTotal || a.shakhaName.localeCompare(b.shakhaName));
+    return `<table><thead><tr><th>#</th><th>Shakha</th><th class="num">Total</th></tr></thead><tbody>${sorted
+      .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.shakhaName)}</td><td class="num">${r.grandTotal}</td></tr>`)
+      .join("")}</tbody></table>`;
+  };
+
+  let bodyHtml: string;
+
+  if (tier === "shakha") {
+    bodyHtml = shakhaTableHtml(shakhaRows);
+  } else if (tier === "meghala") {
+    const groups = new Map<string, { name: string; total: number; rows: StandingsRow[] }>();
+    for (const r of shakhaRows) {
+      const mId = shakhaMeghalaId.get(r.shakhaId) || UNASSIGNED;
+      const name = mId === UNASSIGNED ? "Unassigned" : meghalaById.get(mId)?.name ?? "Unassigned";
+      const g = groups.get(mId) ?? { name, total: 0, rows: [] };
+      g.total += r.grandTotal;
+      g.rows.push(r);
+      groups.set(mId, g);
+    }
+    const sortedGroups = [...groups.entries()].sort(([idA, a], [idB, b]) =>
+      idA === UNASSIGNED ? 1 : idB === UNASSIGNED ? -1 : b.total - a.total
+    );
+    bodyHtml = sortedGroups
+      .map(([id, g], i) => `<h2>${id === UNASSIGNED ? "" : `${i + 1}. `}${esc(g.name)} — ${g.total} pts</h2>${shakhaTableHtml(g.rows)}`)
+      .join("");
+  } else {
+    const dioceseGroups = new Map<string, { name: string; total: number; meghalas: Map<string, { name: string; total: number; rows: StandingsRow[] }> }>();
+    for (const r of shakhaRows) {
+      const mId = shakhaMeghalaId.get(r.shakhaId) || UNASSIGNED;
+      const meghala = mId === UNASSIGNED ? undefined : meghalaById.get(mId);
+      const dId = meghala?.diocese_id || UNASSIGNED;
+      const dName = dId === UNASSIGNED ? "Unassigned" : dioceseNameById.get(dId) ?? "Unassigned";
+      const dGroup = dioceseGroups.get(dId) ?? { name: dName, total: 0, meghalas: new Map() };
+      dGroup.total += r.grandTotal;
+      const mName = mId === UNASSIGNED ? "Unassigned" : meghala?.name ?? "Unassigned";
+      const mGroup = dGroup.meghalas.get(mId) ?? { name: mName, total: 0, rows: [] };
+      mGroup.total += r.grandTotal;
+      mGroup.rows.push(r);
+      dGroup.meghalas.set(mId, mGroup);
+      dioceseGroups.set(dId, dGroup);
+    }
+    const sortedDioceses = [...dioceseGroups.entries()].sort(([idA, a], [idB, b]) =>
+      idA === UNASSIGNED ? 1 : idB === UNASSIGNED ? -1 : b.total - a.total
+    );
+    bodyHtml = sortedDioceses
+      .map(([dId, d], i) => {
+        const sortedMeghalas = [...d.meghalas.entries()].sort(([idA, a], [idB, b]) =>
+          idA === UNASSIGNED ? 1 : idB === UNASSIGNED ? -1 : b.total - a.total
+        );
+        const meghalaHtml = sortedMeghalas
+          .map(([, m]) => `<h3>${esc(m.name)} — ${m.total} pts</h3>${shakhaTableHtml(m.rows)}`)
+          .join("");
+        return `<h2>${dId === UNASSIGNED ? "" : `${i + 1}. `}${esc(d.name)} — ${d.total} pts</h2>${meghalaHtml}`;
+      })
+      .join("");
+  }
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+    @page { size: A4 portrait; margin: 16mm 14mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, sans-serif; }
+    .hdr { text-align: center; margin-bottom: 18px; }
+    h2 { margin: 18px 0 6px; font-size: 15px; color: #6B46FF; break-after: avoid; page-break-after: avoid; }
+    h3 { margin: 10px 0 4px; font-size: 12.5px; color: #0F766E; break-after: avoid; page-break-after: avoid; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+    thead tr { background: linear-gradient(90deg,#ede9fe,#f5f3ff); text-transform: uppercase; }
+    th, td { border: 1px solid #333; padding: 5px 6px; font-size: 11px; text-align: left; }
+    .num { text-align: right; font-weight: 700; }
+    tbody tr { break-inside: avoid; page-break-inside: avoid; }
+    tbody tr:nth-child(even) { background: #f8f7ff; }
+    </style></head><body>${PRINT_FALLBACK_BUTTON}
+    <div class="hdr">
+      ${orgLine ? `<div style="font-size:13px;font-weight:700;color:#6B46FF;">${esc(orgLine)}</div>` : ""}
+      <div style="font-size:18px;font-weight:700;margin-top:6px;">${esc(title)}</div>
+    </div>
+    ${bodyHtml}
+    </body></html>`;
+}
+
+function groupToStandingsRow(r: GroupStandingsRow): StandingsRow {
+  return {
+    shakhaId: r.groupId,
+    shakhaName: r.groupName,
+    subJuniorPoints: r.subJuniorPoints,
+    juniorPoints: r.juniorPoints,
+    seniorPoints: r.seniorPoints,
+    superSeniorPoints: r.superSeniorPoints,
+    elderPoints: r.elderPoints,
+    teamPoints: r.teamPoints,
+    grandTotal: r.grandTotal,
+    firstPlaceCount: r.firstPlaceCount,
+    secondPlaceCount: r.secondPlaceCount,
+    thirdPlaceCount: r.thirdPlaceCount,
+    aGradeCount: r.aGradeCount,
+    bGradeCount: r.bGradeCount,
+    cGradeCount: r.cGradeCount,
+    rank: r.rank,
+  };
+}
+
+function tiersFor(level: HierarchyLevel): Tier[] {
+  if (level === "diocese") return ["shakha", "meghala", "diocese"];
+  if (level === "meghala") return ["shakha", "meghala"];
+  return ["shakha"];
+}
 
 const RANK_COLORS: Record<number, string> = { 1: "#F5C542", 2: "#C9CDD6", 3: "#E0936A" };
 
@@ -17,7 +157,7 @@ const CAT_COLS = [
   { key: "teamPoints", label: "Team" },
 ] as const;
 
-function StandingsBlock({ rows, loading, emptyText, shakhaColor }: { rows: StandingsRow[]; loading: boolean; emptyText: string; shakhaColor: (id: string) => string }) {
+function StandingsBlock({ rows, loading, emptyText, shakhaColor, groupLabel = "Shakha" }: { rows: StandingsRow[]; loading: boolean; emptyText: string; shakhaColor: (id: string) => string; groupLabel?: string }) {
   return (
     <>
       {/* Top 3 podium cards */}
@@ -93,7 +233,7 @@ function StandingsBlock({ rows, loading, emptyText, shakhaColor }: { rows: Stand
               <thead className="border-b border-gray-100 bg-gray-50">
                 <tr>
                   <th className="w-10 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">#</th>
-                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">Shakha</th>
+                  <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400">{groupLabel}</th>
                   {CAT_COLS.map((c) => (
                     <th key={c.key} className="px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-400">{c.label}</th>
                   ))}
@@ -153,43 +293,91 @@ function StandingsBlock({ rows, loading, emptyText, shakhaColor }: { rows: Stand
   );
 }
 
+const TIER_LABEL: Record<Tier, string> = { shakha: "Shakha", meghala: "Meghala", diocese: "Diocese" };
+
 export default function StandingsPage() {
+  const hierarchy = useOrgHierarchy();
+  const [tier, setTier] = useState<Tier>("shakha");
+  const availableTiers = tiersFor(hierarchy.hierarchyLevel);
+
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
-  const [shakhas, setShakhas] = useState<Shakha[]>([]);
   const [overall, setOverall] = useState<StandingsRow[]>([]);
   const [overallLoading, setOverallLoading] = useState(true);
   const [feastRows, setFeastRows] = useState<StandingsRow[]>([]);
   const [feastLoading, setFeastLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [org, setOrg] = useState<OrgSettings | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      supabase.from("feasts").select("*").order("start_date"),
-      supabase.from("shakhas").select("*"),
-      getOverallStandings(),
-    ]).then(([{ data: fs }, { data: shks }, overallRows]) => {
+    getOrgSettings().then(setOrg);
+    supabase.from("feasts").select("*").order("start_date").then(({ data: fs }) => {
       setFeasts(fs ?? []);
-      setShakhas(shks ?? []);
-      setOverall(overallRows);
-      setOverallLoading(false);
       if (fs && fs.length > 0) setFeastId(fs[0].id);
       setLoading(false);
     });
   }, []);
 
-  const loadFeastRows = useCallback(async (id: string) => {
+  const loadOverall = useCallback(async (t: Tier) => {
+    setOverallLoading(true);
+    const rows =
+      t === "shakha" ? await getOverallStandings() :
+      t === "meghala" ? (await getOverallMeghalaStandings()).map(groupToStandingsRow) :
+      (await getOverallDioceseStandings()).map(groupToStandingsRow);
+    setOverall(rows);
+    setOverallLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadOverall(tier);
+  }, [tier, loadOverall]);
+
+  const loadFeastRows = useCallback(async (id: string, t: Tier) => {
     if (!id) return;
     setFeastLoading(true);
-    setFeastRows(await getFeastStandings(id));
+    const rows =
+      t === "shakha" ? await getFeastStandings(id) :
+      t === "meghala" ? (await getMeghalaStandings(id)).map(groupToStandingsRow) :
+      (await getDioceseStandings(id)).map(groupToStandingsRow);
+    setFeastRows(rows);
     setFeastLoading(false);
   }, []);
 
   useEffect(() => {
-    loadFeastRows(feastId);
-  }, [feastId, loadFeastRows]);
+    loadFeastRows(feastId, tier);
+  }, [feastId, tier, loadFeastRows]);
 
-  const shakhaColor = (id: string) => shakhas.find((s) => s.id === id)?.color ?? "#A78BFA";
+  const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
+
+  // Always fetched fresh at shakha granularity regardless of the currently
+  // selected on-screen tier — the Meghala/Diocese nesting needs per-shakha
+  // rows to group, and `overall`/`feastRows` state above may already be
+  // tier-adapted (see loadOverall/loadFeastRows) if a non-Shakha tier is
+  // currently selected on screen.
+  async function exportOverallPdf() {
+    const shakhaRows = await getOverallStandings();
+    const html = buildStandingsHtml("Overall Standings — All Fests", orgLine, shakhaRows, tier, hierarchy);
+    openPrintWindow(html);
+  }
+
+  async function exportFeastPdf() {
+    if (!feastId) return;
+    const shakhaRows = await getFeastStandings(feastId);
+    const feastName = feasts.find((f) => f.id === feastId)?.name ?? "Fest";
+    const html = buildStandingsHtml(`${feastName} Standings`, orgLine, shakhaRows, tier, hierarchy);
+    openPrintWindow(html);
+  }
+
+  // "Shakha" tier falls back to hierarchy.shakhas' own colors (unchanged);
+  // Meghala/Diocese tiers key off their own color, and the synthetic
+  // "unassigned" bucket (a shakha never linked into the org's hierarchy)
+  // gets a flat neutral gray rather than the default-fallback purple.
+  const rowColor = (id: string) => {
+    if (id === "__unassigned__") return "#9CA3AF";
+    if (tier === "meghala") return hierarchy.meghalas.find((m) => m.id === id)?.color ?? "#A78BFA";
+    if (tier === "diocese") return hierarchy.dioceses.find((d) => d.id === id)?.color ?? "#A78BFA";
+    return hierarchy.shakhas.find((s) => s.id === id)?.color ?? "#A78BFA";
+  };
   const selectCls = "rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-200";
 
   if (loading) return <p className="text-sm text-neutral-500">Loading…</p>;
@@ -202,23 +390,49 @@ export default function StandingsPage() {
         </span>
         <div>
           <h1 className="text-xl font-bold text-gray-900">Standings</h1>
-          <p className="text-xs text-gray-500">Shakha rankings aggregated from published results</p>
+          <p className="text-xs text-gray-500">{TIER_LABEL[tier]} rankings aggregated from published results</p>
         </div>
       </div>
 
-      <div className="mb-3 flex items-center gap-2">
-        <Globe className="h-[15px] w-[15px] text-gray-400" />
-        <h2 className="text-sm font-bold text-gray-800">Overall Standings — All Fests</h2>
+      {availableTiers.length > 1 && (
+        <div className="mb-5 flex gap-2">
+          {availableTiers.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTier(t)}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                tier === t ? "bg-gray-900 text-white" : "border border-gray-200 bg-white text-gray-600 hover:border-gray-400"
+              }`}
+            >
+              {TIER_LABEL[t]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Globe className="h-[15px] w-[15px] text-gray-400" />
+          <h2 className="text-sm font-bold text-gray-800">Overall Standings — All Fests</h2>
+        </div>
+        <button onClick={exportOverallPdf} className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:border-gray-400">
+          <Download className="h-3.5 w-3.5" /> Export PDF
+        </button>
       </div>
       <div className="mb-8">
-        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any fest." shakhaColor={shakhaColor} />
+        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any fest." shakhaColor={rowColor} groupLabel={TIER_LABEL[tier]} />
       </div>
 
       <div className="mb-8 h-px bg-gray-100" />
 
-      <div className="mb-3 flex items-center gap-2">
-        <Trophy className="h-[15px] w-[15px] text-gray-400" />
-        <h2 className="text-sm font-bold text-gray-800">Fest Standings</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Trophy className="h-[15px] w-[15px] text-gray-400" />
+          <h2 className="text-sm font-bold text-gray-800">Fest Standings</h2>
+        </div>
+        <button onClick={exportFeastPdf} className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:border-gray-400">
+          <Download className="h-3.5 w-3.5" /> Export PDF
+        </button>
       </div>
       <div className="mb-5">
         <label className="mb-1 block text-xs font-medium text-gray-500">Fest</label>
@@ -229,7 +443,7 @@ export default function StandingsPage() {
         </select>
       </div>
 
-      <StandingsBlock rows={feastRows} loading={feastLoading} emptyText="No standings yet. Publish some results first." shakhaColor={shakhaColor} />
+      <StandingsBlock rows={feastRows} loading={feastLoading} emptyText="No standings yet. Publish some results first." shakhaColor={rowColor} groupLabel={TIER_LABEL[tier]} />
     </div>
   );
 }

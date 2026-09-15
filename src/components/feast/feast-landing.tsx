@@ -23,9 +23,9 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
           gets matching top padding to clear it. */}
       <div className="fixed inset-x-0 top-0 z-20 h-11" style={{ boxShadow: "0 4px 14px rgba(0,0,0,0.18)" }}>
         <div className="flag-ribbon-wave absolute inset-0 flex flex-col overflow-hidden">
-          <span className="w-full flex-1" style={{ background: "#F5C542" }} />
+          <span className="w-full flex-1" style={{ background: "var(--fp-gold)" }} />
           <span className="w-full flex-1" style={{ background: "#DC2626" }} />
-          <span className="w-full flex-1" style={{ background: "#F5C542" }} />
+          <span className="w-full flex-1" style={{ background: "var(--fp-gold)" }} />
           <span className="fold-sweep pointer-events-none absolute inset-0" />
         </div>
         {/* Login entry point for the public dashboard — same top-right slot
@@ -66,7 +66,7 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
           <br />
           <span
             style={{
-              background: "linear-gradient(100deg, #F5C542, #EC4899, #A855F7)",
+              background: "linear-gradient(100deg, var(--fp-gold), var(--fp-accent), var(--fp-primary-light))",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
             }}

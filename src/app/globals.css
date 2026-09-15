@@ -166,3 +166,68 @@
     animation: none;
   }
 }
+
+/* Fest Portal color themes — admin-configurable (org_settings.theme),
+   public-facing pages only (never /admin, which keeps its own fixed look).
+   src/components/feast/feast-shared.tsx's `theme` export resolves its
+   values through these variables, so every portal component that already
+   reads `theme.purple`/`theme.sub`/etc. repaints automatically; a handful of
+   components with their own inline hex also reference these directly.
+   Defaults to "violet" (the original palette) when no data-fp-theme is set. */
+:root,
+[data-fp-theme="violet"] {
+  --fp-ink: #1E1B4B;
+  --fp-sub: #6B6792;
+  --fp-faint: #9D99BC;
+  --fp-gold: #F5C542;
+  --fp-gold-rgb: 245, 197, 66;
+  --fp-primary: #6B46FF;
+  --fp-primary-rgb: 107, 70, 255;
+  --fp-primary-light: #A78BFA;
+  --fp-primary-light-rgb: 167, 139, 250;
+  --fp-accent: #EC4899;
+  --fp-accent-rgb: 236, 72, 153;
+  --fp-cyan: #0EA5C4;
+  --fp-fill: #F1EEFB;
+  --fp-bg-1: #ECE4FF;
+  --fp-bg-2: #F6E5F6;
+  --fp-bg-3: #FFEADC;
+}
+
+[data-fp-theme="ocean"] {
+  --fp-ink: #0B2E33;
+  --fp-sub: #4C7A80;
+  --fp-faint: #96BDC1;
+  --fp-gold: #FBBF24;
+  --fp-gold-rgb: 251, 191, 36;
+  --fp-primary: #0D9488;
+  --fp-primary-rgb: 13, 148, 136;
+  --fp-primary-light: #5EEAD4;
+  --fp-primary-light-rgb: 94, 234, 212;
+  --fp-accent: #FB7185;
+  --fp-accent-rgb: 251, 113, 133;
+  --fp-cyan: #38BDF8;
+  --fp-fill: #E6FFFA;
+  --fp-bg-1: #CCFBF1;
+  --fp-bg-2: #FFE4E1;
+  --fp-bg-3: #FEF3C7;
+}
+
+[data-fp-theme="sunset"] {
+  --fp-ink: #431407;
+  --fp-sub: #9A6B5C;
+  --fp-faint: #D3B4A8;
+  --fp-gold: #FACC15;
+  --fp-gold-rgb: 250, 204, 21;
+  --fp-primary: #E11D48;
+  --fp-primary-rgb: 225, 29, 72;
+  --fp-primary-light: #FDA4AF;
+  --fp-primary-light-rgb: 253, 164, 175;
+  --fp-accent: #8B5CF6;
+  --fp-accent-rgb: 139, 92, 246;
+  --fp-cyan: #FB923C;
+  --fp-fill: #FFF1F2;
+  --fp-bg-1: #FFE4E9;
+  --fp-bg-2: #EDE3FF;
+  --fp-bg-3: #FEF9C3;
+}

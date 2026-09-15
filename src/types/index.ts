@@ -5,12 +5,39 @@
 
 export type UserRole = "admin" | "me_admin" | "sa_admin";
 
-export interface Shakha {
+// Optional org hierarchy (see supabase/migrations/014_org_hierarchy.sql):
+// Diocese -> Meghala -> Shakha, Shakha is the default/leaf level. Which
+// tiers are in play for an org is org_settings.hierarchy_level, not a
+// per-row flag — dioceses/meghalas simply sit unused for a 'shakha'-level
+// org rather than being conditionally absent from the schema.
+export type HierarchyLevel = "shakha" | "meghala" | "diocese";
+
+export interface Diocese {
   id: string;
   name: string;
   slug: string;
   color: string;
   created_at: string;
+}
+
+export interface Meghala {
+  id: string;
+  name: string;
+  slug: string;
+  diocese_id: string | null;
+  color: string;
+  created_at: string;
+  diocese?: Diocese | null;
+}
+
+export interface Shakha {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  meghala_id: string | null;
+  created_at: string;
+  meghala?: Meghala | null;
 }
 
 export interface Profile {
@@ -19,9 +46,13 @@ export interface Profile {
   full_name: string;
   role: UserRole;
   shakha_id: string | null;
+  meghala_id: string | null;
+  diocese_id: string | null;
   created_at: string;
   updated_at: string;
   shakha?: Shakha | null;
+  meghala?: Meghala | null;
+  diocese?: Diocese | null;
 }
 
 export type FeastStatus = "draft" | "registration_open" | "ongoing" | "completed";
@@ -207,6 +238,8 @@ export interface ShakhaFeastStanding {
   shakha?: Shakha;
 }
 
+export type PortalTheme = "violet" | "ocean" | "sunset";
+
 export interface OrgSettings {
   id: true;
   org_name_en: string;
@@ -215,6 +248,8 @@ export interface OrgSettings {
   area_name_local: string;
   tagline: string;
   logo_url: string;
+  hierarchy_level: HierarchyLevel;
+  theme: PortalTheme;
   created_at: string;
   updated_at: string;
 }

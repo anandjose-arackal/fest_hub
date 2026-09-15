@@ -13,6 +13,10 @@ create table if not exists org_settings (
   area_name_local text not null default '',
   tagline         text not null default 'Feast Portal',
   logo_url        text not null default '/logo.png',
+  -- Which org-hierarchy tier this org opts into (see 001_shared_auth.sql's
+  -- dioceses/meghalas/shakhas). 'shakha' (the default) is a flat org with
+  -- no grouping above branch level.
+  hierarchy_level text not null default 'shakha' check (hierarchy_level in ('shakha', 'meghala', 'diocese')),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   constraint org_settings_singleton check (id)

@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { email, password, full_name, role, shakha_id } = body;
+    const { email, password, full_name, role, scope_id } = body;
 
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
@@ -67,14 +67,24 @@ export async function POST(req: NextRequest) {
     }
 
     // The on_auth_user_created trigger auto-creates the profile row (default
-    // role 'admin'); update it with the requested role & shakha.
+    // role 'admin'); update it with the requested role & scope. The scope
+    // column (shakha_id/meghala_id/diocese_id) is resolved from the org's
+    // *current* hierarchy_level server-side, not trusted from the client —
+    // a crafted request otherwise could write scope_id into an arbitrary
+    // column of the caller's choosing.
     if (newUser.user) {
+      const { data: org } = await getSupabaseAdmin().from("org_settings").select("hierarchy_level").eq("id", true).single();
+      const level = org?.hierarchy_level ?? "shakha";
+      const scopeColumn = level === "diocese" ? "diocese_id" : level === "meghala" ? "meghala_id" : "shakha_id";
       await getSupabaseAdmin()
         .from("profiles")
         .update({
           full_name: full_name || "",
           role: role || "admin",
-          shakha_id: shakha_id || null,
+          shakha_id: null,
+          meghala_id: null,
+          diocese_id: null,
+          [scopeColumn]: scope_id || null,
         })
         .eq("id", newUser.user.id);
     }

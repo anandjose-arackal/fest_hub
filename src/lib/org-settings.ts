@@ -12,6 +12,8 @@ const FALLBACK: OrgSettings = {
   area_name_local: "",
   tagline: "Fest Portal",
   logo_url: "/logo.png",
+  hierarchy_level: "shakha",
+  theme: "violet",
   created_at: "",
   updated_at: "",
 };

@@ -93,7 +93,7 @@ export function LiveActivityFeed() {
       </div>
       <style jsx>{`
         @keyframes feastPulseIn {
-          from { background-color: rgba(107, 70, 255, 0.08); }
+          from { background-color: rgba(var(--fp-primary-rgb), 0.08); }
           to { background-color: transparent; }
         }
       `}</style>

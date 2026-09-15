@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { UserCheck, Pencil, X, Download, Printer } from "lucide-react";
+import { UserCheck, Pencil, X, Download, Printer, IdCard } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createParticipantAdmin, updateParticipant, deleteParticipant } from "@/actions/feast";
 import { registerTeam, updateTeam, deleteTeam } from "@/actions/team";
@@ -9,7 +9,9 @@ import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCom
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { getOrgSettings } from "@/lib/org-settings";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, OrgSettings, Participant, Shakha } from "@/types";
+import { useOrgHierarchy } from "@/hooks/use-feast";
+import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
+import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, HierarchyLevel, Meghala, OrgSettings, Participant, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 type ParticipantRow = Participant & { shakha: Shakha | null; events: number };
@@ -54,11 +56,151 @@ function RegNoBadge({ regNo }: { regNo: string | null }) {
   );
 }
 
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+const CARDS_PER_PAGE = 8;
+const PIN_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6B46FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
+const COMP_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="#6B46FF" style="flex-shrink:0"><path d="M12 2l2.9 6.9L22 9.3l-5.5 4.8L18 22l-6-3.6L6 22l1.5-7.9L2 9.3l7.1-.4L12 2z"/></svg>`;
+
+// Cuttable A4 registration cards, 8 per page (2x4 grid) — the same
+// landscape layout (name/regno side by side, icon-accented meta rows)
+// scaled down to fit a half-width cell. Each card carries its own Shakha
+// (+ Meghala/Diocese, if that level is enabled) name rather than relying
+// on a page-level group header — once cards are cut apart for handout, a
+// shared header would be lost, so every card has to be self-contained.
+// Cards are still sorted Diocese > Meghala > Shakha > reg number so
+// same-group cards land contiguously on the sheet, satisfying "group by"
+// without needing fragile cross-page grid/section-header logic.
+function buildRegistrationCardsHtml(
+  rows: ParticipantRow[],
+  org: OrgSettings | null,
+  hierarchy: { shakhas: Shakha[]; meghalas: Meghala[]; dioceses: Diocese[]; hierarchyLevel: HierarchyLevel },
+  participantRegs: Record<string, string[]>,
+  individualFeastComps: FCRow[],
+  categories: CompetitionCategory[]
+): string {
+  const compNameById = new Map(individualFeastComps.map((c) => [c.id, c.competition.name]));
+  const shakhaById = new Map(hierarchy.shakhas.map((s) => [s.id, s]));
+  const meghalaById = new Map(hierarchy.meghalas.map((m) => [m.id, m]));
+  const dioceseNameById = new Map(hierarchy.dioceses.map((d) => [d.id, d.name]));
+
+  // At the diocese (3-level) hierarchy, the full breadcrumb can run too long
+  // for the card's narrow location line, so it prints as two lines — Diocese
+  // name alone, then "Meghala | Shakha" — rather than one long pipe-joined
+  // string. Shakha/Meghala-level orgs stay a single line, as before.
+  function groupInfo(shakhaId: string | null): { sortKey: [string, string, string]; line1: string; line2: string | null } {
+    const shakha = shakhaId ? shakhaById.get(shakhaId) : undefined;
+    const shakhaName = shakha?.name ?? "—";
+    const meghala = shakha?.meghala_id ? meghalaById.get(shakha.meghala_id) : undefined;
+    const dioceseName = meghala?.diocese_id ? dioceseNameById.get(meghala.diocese_id) : undefined;
+
+    if (hierarchy.hierarchyLevel === "diocese") {
+      const line1 = dioceseName ?? shakhaName;
+      const line2 = dioceseName ? [meghala?.name, shakhaName].filter(Boolean).join(" | ") : null;
+      return { sortKey: [dioceseName ?? "", meghala?.name ?? "", shakhaName], line1, line2 };
+    }
+    if (hierarchy.hierarchyLevel === "meghala") {
+      const line1 = [meghala?.name, shakhaName].filter(Boolean).join(" | ");
+      return { sortKey: ["", meghala?.name ?? "", shakhaName], line1, line2: null };
+    }
+    return { sortKey: ["", "", shakhaName], line1: shakhaName, line2: null };
+  }
+
+  // "Senior Boy" / "Sub Junior Girl" — the age category alone doesn't say
+  // which competitions a participant is eligible for without the gender
+  // half too, so both are shown together, not gender alone.
+  function categoryGenderLabel(p: ParticipantRow): string {
+    const catName = categories.find((c) => c.id === p.competition_category_id)?.name;
+    const gender = normGender(p.gender);
+    const genderLabel = gender === "boy" ? "Boy" : gender === "girl" ? "Girl" : "";
+    return [catName, genderLabel].filter(Boolean).join(" ") || "—";
+  }
+
+  const sorted = [...rows].sort((a, b) => {
+    const ka = groupInfo(a.shakha_id).sortKey;
+    const kb = groupInfo(b.shakha_id).sortKey;
+    for (let i = 0; i < 3; i++) {
+      const c = ka[i].localeCompare(kb[i]);
+      if (c !== 0) return c;
+    }
+    return (a.registration_number ?? "").localeCompare(b.registration_number ?? "");
+  });
+
+  const orgName = org?.org_name_en ?? "";
+  const areaName = org?.area_name_en ?? "";
+
+  const cardHtml = (p: ParticipantRow) => {
+    const regIds = participantRegs[p.id] ?? [];
+    const compNames = regIds.map((id) => compNameById.get(id)).filter((n): n is string => !!n).slice(0, 2);
+    const { line1, line2 } = groupInfo(p.shakha_id);
+    const compsHtml =
+      compNames.length > 0
+        ? compNames.map((c) => `<span class="comp">${COMP_SVG}${esc(c)}</span>`).join("")
+        : `<span class="comp muted">No individual events</span>`;
+    return `<div class="card">
+      <div class="hdr">
+        ${orgName ? `<div class="org">${esc(orgName)}</div>` : ""}
+        ${areaName ? `<div class="area">${esc(areaName)}</div>` : ""}
+      </div>
+      <div class="row-main">
+        <div class="name-block">
+          <div class="name">${esc(p.name)}</div>
+          ${p.house_name ? `<div class="house">${esc(p.house_name)}</div>` : ""}
+        </div>
+        <div class="vdiv"></div>
+        <div class="regno">${esc(p.registration_number ?? "—")}</div>
+      </div>
+      <div class="row-meta">
+        <span>${esc(categoryGenderLabel(p))}</span>
+        <span class="hdiv"></span>
+        <span class="shakha">${PIN_SVG}<span class="shakha-text"><span>${esc(line1)}</span>${line2 ? `<span class="shakha-sub">${esc(line2)}</span>` : ""}</span></span>
+      </div>
+      <div class="row-comps">${compsHtml}</div>
+    </div>`;
+  };
+
+  const pages: ParticipantRow[][] = [];
+  for (let i = 0; i < sorted.length; i += CARDS_PER_PAGE) pages.push(sorted.slice(i, i + CARDS_PER_PAGE));
+
+  const pagesHtml = pages
+    .map((pageRows, i) => `<div class="page${i > 0 ? " brk" : ""}"><div class="grid">${pageRows.map(cardHtml).join("")}</div></div>`)
+    .join("");
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Registration Cards</title><style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, sans-serif; }
+    body { margin: 0; }
+    .page.brk { page-break-before: always; break-before: page; }
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 65mm; gap: 4mm; padding: 0 5px; }
+    .card { border: 1.5px solid #6B46FF; border-radius: 10px; padding: 10px; break-inside: avoid; page-break-inside: avoid; display: flex; flex-direction: column; overflow: hidden; }
+    .hdr { padding-bottom: 4px; margin-bottom: 7px; border-bottom: 1px solid #E5E7EB; }
+    .org { font-size: 12px; font-weight: 800; color: #6B46FF; line-height: 1.2; }
+    .area { font-size: 10px; font-weight: 600; color: #6B7280; margin-top: 1px; }
+    .row-main { display: flex; align-items: center; gap: 6px; }
+    .name-block { flex: 1; min-width: 0; }
+    .name { font-size: 18.5px; font-weight: 800; color: #1E1B4B; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .house { font-size: 14px; font-weight: 800; color: #6B46FF; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .vdiv { width: 1px; align-self: stretch; background: #E5E7EB; }
+    .regno { font-weight: 800; font-size: 28px; color: #4C1D95; background: #FDE68A; letter-spacing: 0.01em; padding: 5px 9px; border-radius: 8px; white-space: nowrap; flex-shrink: 0; }
+    .row-meta { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 16px; font-weight: 800; color: #1E1B4B; flex-wrap: wrap; }
+    .shakha { display: flex; align-items: flex-start; gap: 4px; font-size: 12px; }
+    .shakha-text { display: flex; flex-direction: column; gap: 1px; }
+    .shakha-sub { font-size: 10.5px; font-weight: 700; color: #6B7280; }
+    .row-comps { display: flex; flex: 1; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; margin-top: 10px; padding-top: 7px; border-top: 1px solid #E5E7EB; }
+    .comp { display: flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 700; color: #1E1B4B; }
+    .comp.muted { color: #9CA3AF; font-weight: 500; font-style: italic; }
+    .hdiv { width: 1px; height: 12px; background: #D1D5DB; flex-shrink: 0; }
+    </style></head><body>${PRINT_FALLBACK_BUTTON}${pagesHtml}</body></html>`;
+}
+
 export default function ParticipantsPage() {
   const [org, setOrg] = useState<OrgSettings | null>(null);
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
-  const [shakhas, setShakhas] = useState<Shakha[]>([]);
+  const hierarchy = useOrgHierarchy();
+  const { shakhas } = hierarchy;
   const [categories, setCategories] = useState<CompetitionCategory[]>([]);
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
@@ -92,7 +234,6 @@ export default function ParticipantsPage() {
   useEffect(() => {
     getOrgSettings().then(setOrg);
     fetchCompetitionCategories().then(setCategories);
-    supabase.from("shakhas").select("*").order("name").then(({ data }) => setShakhas(data ?? []));
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
       setFeasts(data ?? []);
       if (data && data.length > 0) setFeastId(data[0].id);
@@ -477,6 +618,11 @@ export default function ParticipantsPage() {
     openPrintWindow(html);
   }
 
+  function exportRegistrationCards() {
+    const html = buildRegistrationCardsHtml(filtered, org, hierarchy, participantRegs, individualFeastComps, categories);
+    openPrintWindow(html);
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
@@ -493,6 +639,9 @@ export default function ParticipantsPage() {
           <button onClick={exportPDF} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <Printer className="h-3.5 w-3.5" /> PDF
           </button>
+          <button onClick={exportRegistrationCards} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
+            <IdCard className="h-3.5 w-3.5" /> Cards
+          </button>
           <button onClick={openCreate} className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#6D28D9]">
             Register
           </button>
@@ -505,12 +654,7 @@ export default function ParticipantsPage() {
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
         </select>
-        <select className="input max-w-xs" value={shakhaFilter} onChange={(e) => setShakhaFilter(e.target.value)}>
-          <option value="">All Shakhas</option>
-          {shakhas.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
+        <HierarchyPicker value={shakhaFilter} onChange={setShakhaFilter} hierarchy={hierarchy} className="input max-w-xs" emptyLabel="All Shakhas" />
         <select className="input max-w-xs" value={compFilter} onChange={(e) => setCompFilter(e.target.value)}>
           <option value="">All Competitions</option>
           {individualFeastComps.map((c) => (
@@ -697,12 +841,12 @@ export default function ParticipantsPage() {
             </div>
 
             <div className="space-y-3">
-              <select className="input" value={form.shakhaId} onChange={(e) => setForm({ ...form, shakhaId: e.target.value })} disabled={!!editId}>
-                <option value="">Select Shakha…</option>
-                {shakhas.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <HierarchyPicker
+                value={form.shakhaId}
+                onChange={(shakhaId) => setForm({ ...form, shakhaId })}
+                hierarchy={hierarchy}
+                disabled={!!editId}
+              />
               <input className="input" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               <input className="input" placeholder="House Name" value={form.houseName} onChange={(e) => setForm({ ...form, houseName: e.target.value })} />
               <div>
@@ -784,16 +928,11 @@ export default function ParticipantsPage() {
                 <p className="text-xs text-neutral-500">Competition: {teamComp?.competition.name}</p>
               ) : (
                 <>
-                  <select
-                    className="input"
+                  <HierarchyPicker
                     value={teamForm.shakhaId}
-                    onChange={(e) => setTeamForm({ ...teamForm, shakhaId: e.target.value, memberIds: [] })}
-                  >
-                    <option value="">Select Shakha…</option>
-                    {shakhas.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                    onChange={(shakhaId) => setTeamForm({ ...teamForm, shakhaId, memberIds: [] })}
+                    hierarchy={hierarchy}
+                  />
                   <select
                     className="input"
                     value={teamForm.feastCompetitionId}

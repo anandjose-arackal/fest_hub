@@ -10,7 +10,7 @@ interface ConfettiPiece {
   left: number; delay: number; duration: number; color: string; size: number; rotation: number; round: boolean;
 }
 
-const CONFETTI_COLORS = ["#F5C542", "#A855F7", "#EC4899", "#34D3EE", "#7C3AED", "#fff"];
+const CONFETTI_COLORS = ["var(--fp-gold)", "var(--fp-primary-light)", "var(--fp-accent)", "#34D3EE", "var(--fp-primary)", "#fff"];
 
 function useConfetti(): ConfettiPiece[] {
   const ref = useRef<ConfettiPiece[] | null>(null);
@@ -97,7 +97,7 @@ export function FeastSuccess({ slug }: { slug: string }) {
           <p className="mb-2 text-[12.5px]" style={{ color: theme.faint }}>Your competitions ({r.comps.length})</p>
           <div className="flex flex-wrap gap-[7px]">
             {r.comps.map((name) => (
-              <span key={name} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: `${theme.purple}2e`, border: `1px solid ${theme.purple}55` }}>{name}</span>
+              <span key={name} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: "rgba(var(--fp-primary-rgb),0.18)", border: "1px solid rgba(var(--fp-primary-rgb),0.33)" }}>{name}</span>
             ))}
           </div>
         </div>

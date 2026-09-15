@@ -12,11 +12,11 @@ import { ResultTable, sortResults, type PublicResultRow } from "./feast-shared-r
 const CAT_CONFIG = [
   { slug: "sub_junior", label: "Sub Jr", color: "#34D3EE" },
   { slug: "junior", label: "Junior", color: "#22C55E" },
-  { slug: "senior", label: "Senior", color: "#6B46FF" },
+  { slug: "senior", label: "Senior", color: "var(--fp-primary)" },
   { slug: "super_senior", label: "Super Sr", color: "#F5A742" },
   { slug: "elder", label: "Elder", color: "#9D99BC" },
 ] as const;
-const TEAM_TAB = { slug: "team", label: "Team", color: "#EC4899" } as const;
+const TEAM_TAB = { slug: "team", label: "Team", color: "var(--fp-accent)" } as const;
 
 function mapRow(r: Record<string, unknown>, isTeam: boolean): PublicResultRow {
   if (isTeam) {
@@ -80,11 +80,11 @@ function CompCard({ comp, catColor }: { comp: FeastCompetitionUI; catColor: stri
           <p className="flex-1 text-[18px] leading-tight" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{comp.name}</p>
           <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
             {isPublished ? (
-              <span className="flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(107,70,255,0.14)", color: theme.purple }}><Trophy className="mr-0.5 h-2.5 w-2.5" />Results</span>
+              <span className="flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.14)", color: theme.purple }}><Trophy className="mr-0.5 h-2.5 w-2.5" />Results</span>
             ) : (
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(156,163,175,0.15)", color: "#9CA3AF" }}>Pending</span>
             )}
-            <span className="flex h-6 w-6 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(107,70,255,0.1)", transform: open ? "rotate(180deg)" : undefined }}>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(var(--fp-primary-rgb),0.1)", transform: open ? "rotate(180deg)" : undefined }}>
               <ChevronDown className="h-3.5 w-3.5" style={{ color: theme.purple }} />
             </span>
           </div>
@@ -98,9 +98,9 @@ function CompCard({ comp, catColor }: { comp: FeastCompetitionUI; catColor: stri
           {loading ? (
             <div className="flex justify-center py-6"><Loader2 className="h-[18px] w-[18px] animate-spin" style={{ color: catColor }} /></div>
           ) : !isPublished ? (
-            <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: `${catColor}10`, color: "#9CA3AF" }}>Results not yet published</div>
+            <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: theme.fill, color: "#9CA3AF" }}>Results not yet published</div>
           ) : (results?.length ?? 0) === 0 ? (
-            <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: `${catColor}10`, color: "#9CA3AF" }}>No results recorded</div>
+            <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: theme.fill, color: "#9CA3AF" }}>No results recorded</div>
           ) : (
             <div className="lg:grid lg:grid-cols-2 lg:gap-5">
               <ResultTable title="Positions" rows={positions} color={catColor} />
@@ -130,7 +130,7 @@ function FeastContent({ slug }: { slug: string }) {
   if (!feast?.competitions.length) return <p className="py-10 text-center text-sm" style={{ color: theme.sub }}>No competitions found for this fest.</p>;
 
   return (
-    <div className="relative overflow-hidden rounded-[20px] p-3" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#faf5ff,#ede9fe)", border: "1px solid rgba(107,70,255,0.12)" }}>
+    <div className="relative overflow-hidden rounded-[20px] p-3" style={{ background: "linear-gradient(145deg,rgba(var(--fp-primary-rgb),0.08),rgba(var(--fp-primary-rgb),0.03),rgba(var(--fp-primary-rgb),0.02),rgba(var(--fp-primary-rgb),0.08))", border: "1px solid rgba(var(--fp-primary-rgb),0.12)" }}>
       {available.length === 0 ? (
         <p className="py-8 text-center text-[15px]" style={{ color: "#6B7280" }}>No competitions yet.</p>
       ) : (
@@ -143,7 +143,7 @@ function FeastContent({ slug }: { slug: string }) {
                   key={cat.slug}
                   onClick={() => setActiveTab(cat.slug)}
                   className="flex shrink-0 items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-[16px] font-extrabold"
-                  style={on ? { background: "linear-gradient(135deg,#6B46FF,#A78BFA)", color: "#fff", boxShadow: "0 4px 14px rgba(107,70,255,0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(107,70,255,0.15)" }}
+                  style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
                 >
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: on ? "rgba(255,255,255,0.7)" : cat.color }} />
                   {cat.label}
@@ -184,14 +184,14 @@ export function FeastResults() {
     <button
       onClick={() => router.push(`/search?feast=${activeSlug}`)}
       className="flex w-full items-center gap-2.5 rounded-[14px] px-4 py-3"
-      style={{ background: "rgba(255,255,255,0.72)", border: "1.5px solid rgba(107,70,255,0.14)", backdropFilter: "blur(12px)" }}
+      style={{ background: "rgba(255,255,255,0.72)", border: "1.5px solid rgba(var(--fp-primary-rgb),0.14)", backdropFilter: "blur(12px)" }}
     >
-      <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "rgba(107,70,255,0.1)" }}><Search className="h-[15px] w-[15px]" style={{ color: "#8B5CF6" }} /></div>
+      <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }}><Search className="h-[15px] w-[15px]" style={{ color: "var(--fp-primary)" }} /></div>
       <div className="flex-1 text-left">
         <p className="text-sm font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Search Participants</p>
         <p className="text-[11px]" style={{ color: "#9CA3AF" }}>Find a participant and see their results</p>
       </div>
-      <ChevronDown className="h-3.5 w-3.5" style={{ color: "#C4B5FD", transform: "rotate(-90deg)" }} />
+      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--fp-primary-light)", transform: "rotate(-90deg)" }} />
     </button>
   );
 

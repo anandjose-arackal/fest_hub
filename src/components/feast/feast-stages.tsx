@@ -17,8 +17,8 @@ const RUN_STATE_STYLE: Record<RunState, { label: string; bg: string; color: stri
 };
 
 function ProgressBar({ pct, state }: { pct: number; state: RunState }) {
-  const fill = state === "completed" ? "#16A34A" : state === "running" ? "linear-gradient(90deg,#F59E0B,#FBBF24)" : "rgba(107,70,255,0.25)";
-  return <div className="h-2 overflow-hidden rounded-full" style={{ background: "rgba(107,70,255,0.1)" }}><div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: fill }} /></div>;
+  const fill = state === "completed" ? "#16A34A" : state === "running" ? "linear-gradient(90deg,#F59E0B,#FBBF24)" : "rgba(var(--fp-primary-rgb),0.25)";
+  return <div className="h-2 overflow-hidden rounded-full" style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }}><div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: fill }} /></div>;
 }
 
 function ItemStatusIcon({ status, color }: { status: RunState; color: string }) {
@@ -33,8 +33,8 @@ function ItemStatusIcon({ status, color }: { status: RunState; color: string }) 
 }
 
 function StageBadge({ number, status }: { number: number; status: RunState }) {
-  const bg = status === "completed" ? "linear-gradient(135deg,#16A34A,#22C55E)" : status === "running" ? "linear-gradient(135deg,#F59E0B,#FBBF24)" : "linear-gradient(135deg,#C4B5FD,#A78BFA)";
-  const glow = status === "completed" ? "rgba(22,163,74,0.4)" : status === "running" ? "rgba(245,158,11,0.5)" : "rgba(167,139,250,0.35)";
+  const bg = status === "completed" ? "linear-gradient(135deg,#16A34A,#22C55E)" : status === "running" ? "linear-gradient(135deg,#F59E0B,#FBBF24)" : "linear-gradient(135deg,rgba(var(--fp-primary-rgb),0.55),rgba(var(--fp-primary-rgb),0.4))";
+  const glow = status === "completed" ? "rgba(22,163,74,0.4)" : status === "running" ? "rgba(245,158,11,0.5)" : "rgba(var(--fp-primary-rgb),0.35)";
   return (
     <div className="relative shrink-0">
       {status === "running" && <span className="absolute inset-0 animate-ping rounded-full" style={{ background: "#F59E0B", opacity: 0.35 }} />}
@@ -71,7 +71,7 @@ function LiveNowPanel({ runningItems, upNext, allDone }: { runningItems: Running
   if (runningItems.length > 0) return <div className="mb-5">{runningItems.map((item) => <RunningCard key={item.competition.id} item={item} />)}</div>;
   if (allDone) return <div className="mb-5 rounded-2xl p-5 text-center" style={{ background: "rgba(34,197,94,0.1)", border: "1.5px solid rgba(34,197,94,0.35)" }}><p className="text-[17px]" style={{ color: "#16A34A", ...anekBold }}>🎉 All competitions completed!</p></div>;
   return (
-    <div className="mb-5 rounded-2xl p-4" style={{ background: "rgba(107,70,255,0.06)", border: `1px solid ${theme.hairline}` }}>
+    <div className="mb-5 rounded-2xl p-4" style={{ background: "rgba(var(--fp-primary-rgb),0.06)", border: `1px solid ${theme.hairline}` }}>
       <p className="mb-1 text-sm" style={{ color: theme.sub, ...anek }}>No competition is currently running.</p>
       {upNext && (
         <>
@@ -91,7 +91,7 @@ function OverallProgress({ completed, total, pct }: { completed: number; total: 
         <span className="text-[11px] uppercase tracking-wider" style={{ color: theme.faint, ...anekBold }}>Overall Progress</span>
         <span className="text-[12.5px]" style={{ color: theme.sub, ...anek }}>{completed} / {total} completed · {pct}%</span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-full" style={{ background: "rgba(107,70,255,0.1)" }}><div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: "linear-gradient(90deg,#6B46FF,#A78BFA)" }} /></div>
+      <div className="h-2.5 overflow-hidden rounded-full" style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }}><div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: "linear-gradient(90deg,var(--fp-primary),var(--fp-primary-light))" }} /></div>
     </div>
   );
 }
@@ -100,7 +100,7 @@ function CompetitionRow({ comp, last }: { comp: StageCompetition; last: boolean 
   const style = RUN_STATE_STYLE[comp.status];
   const showAttendance = comp.status === "running" && comp.itemProgressPct != null;
   return (
-    <div className="py-2.5" style={{ borderBottom: last ? "none" : "1px solid rgba(30,27,75,0.06)" }}>
+    <div className="py-2.5" style={{ borderBottom: last ? "none" : "1px solid rgba(var(--fp-primary-rgb),0.06)" }}>
       <div className="flex items-center gap-2.5">
         <ItemStatusIcon status={comp.status} color={comp.categoryColor} />
         <span className="min-w-0 flex-1 truncate text-[15px]" style={{ color: theme.text, ...anek }}>{comp.label}</span>
@@ -119,7 +119,7 @@ function CompetitionRow({ comp, last }: { comp: StageCompetition; last: boolean 
 function StageCard({ stage, expanded, onToggle }: { stage: CompetitionStage; expanded: boolean; onToggle: () => void }) {
   const style = RUN_STATE_STYLE[stage.status];
   const pillLabel = stage.hasPartialProgress ? "In Progress" : style.label;
-  const accent = stage.status === "completed" ? "#16A34A" : stage.status === "running" ? "#D97706" : "#9D99BC";
+  const accent = stage.status === "completed" ? "#16A34A" : stage.status === "running" ? "#D97706" : "var(--fp-faint)";
   return (
     <div className="relative mb-3 overflow-hidden rounded-[18px]" style={{ background: stage.status === "running" ? "rgba(245,158,11,0.06)" : "rgba(255,255,255,0.52)", border: stage.status === "running" ? "1.5px solid rgba(245,158,11,0.4)" : "1px solid rgba(255,255,255,0.7)" }}>
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: accent }} />
@@ -148,7 +148,7 @@ function StageCard({ stage, expanded, onToggle }: { stage: CompetitionStage; exp
         )}
       </button>
       {expanded && (
-        <div className="px-4 pb-3 pt-0.5" style={{ borderTop: "1px solid rgba(30,27,75,0.06)" }}>
+        <div className="px-4 pb-3 pt-0.5" style={{ borderTop: "1px solid rgba(var(--fp-primary-rgb),0.06)" }}>
           {stage.competitions.map((c, i) => <CompetitionRow key={c.id} comp={c} last={i === stage.competitions.length - 1} />)}
         </div>
       )}
@@ -193,7 +193,7 @@ export function FeastStages({ slug }: { slug: string }) {
       {loading && stages.length === 0 ? (
         <div className="flex items-center justify-center pt-24"><Loader2 className="h-7 w-7 animate-spin" style={{ color: theme.lavender }} /></div>
       ) : stages.length === 0 ? (
-        <div className="rounded-2xl px-4 py-16 text-center" style={{ background: "rgba(107,70,255,0.05)", border: `1px dashed ${theme.hairline}` }}>
+        <div className="rounded-2xl px-4 py-16 text-center" style={{ background: "rgba(var(--fp-primary-rgb),0.05)", border: `1px dashed ${theme.hairline}` }}>
           <p className="text-sm" style={{ color: theme.sub, ...anek }}>Stage schedule hasn&rsquo;t been published yet.</p>
           <p className="mt-1 text-[12.5px]" style={{ color: theme.faint }}>Check back closer to the event.</p>
         </div>

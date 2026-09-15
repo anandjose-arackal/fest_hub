@@ -5,9 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, UserCheck, ClipboardCheck, Medal, Trophy, Users, CalendarDays,
-  Layers, Landmark, Settings, Menu, X, LogOut, Award,
+  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { getOrgSettings } from "@/lib/org-settings";
+import type { HierarchyLevel } from "@/types";
 
 interface NavItem {
   href: string;
@@ -26,32 +28,38 @@ interface NavSection {
 // branch, so it can't register participants — see feast-details.tsx's
 // registration gate). Only sa_admin gets fully bounced from /admin;
 // me_admin still gets its own restricted slice below.
-const FULL_NAV_SECTIONS: NavSection[] = [
-  {
-    title: null,
-    items: [{ href: "/admin", label: "Dashboard", icon: LayoutDashboard, color: "#6B46FF" }],
-  },
-  {
-    title: "Fest",
-    items: [
-      { href: "/admin/participants", label: "Participants", icon: UserCheck, color: "#0891B2" },
-      { href: "/admin/participation", label: "Attendance", icon: ClipboardCheck, color: "#BE185D" },
-      { href: "/admin/results", label: "Results", icon: Medal, color: "#D97706" },
-      { href: "/admin/standings", label: "Standings", icon: Trophy, color: "#7C3AED" },
-      { href: "/admin/certificates", label: "Certificates", icon: Award, color: "#A16207" },
-    ],
-  },
-  {
-    title: "Fest Util",
-    items: [
-      { href: "/admin/users", label: "Users", icon: Users, color: "#0369A1" },
-      { href: "/admin/feasts", label: "Fests", icon: CalendarDays, color: "#9333EA" },
-      { href: "/admin/competitions", label: "Competitions", icon: Layers, color: "#475569" },
-      { href: "/admin/shakhas", label: "Shakhas", icon: Landmark, color: "#0F766E" },
-      { href: "/admin/org-settings", label: "Organization", icon: Settings, color: "#6B7280" },
-    ],
-  },
-];
+// Diocese/Meghala nav entries are conditional on the org's configured
+// hierarchy_level (see /admin/org-settings) — a 'shakha'-level org (the
+// default) sees this list exactly as it always has.
+function buildFullNavSections(hierarchyLevel: HierarchyLevel): NavSection[] {
+  const utilItems: NavItem[] = [{ href: "/admin/users", label: "Users", icon: Users, color: "#0369A1" }];
+  if (hierarchyLevel === "diocese") utilItems.push({ href: "/admin/dioceses", label: "Dioceses", icon: Church, color: "#6B46FF" });
+  if (hierarchyLevel !== "shakha") utilItems.push({ href: "/admin/meghalas", label: "Meghalas", icon: Building2, color: "#0F766E" });
+  utilItems.push(
+    { href: "/admin/feasts", label: "Fests", icon: CalendarDays, color: "#9333EA" },
+    { href: "/admin/competitions", label: "Competitions", icon: Layers, color: "#475569" },
+    { href: "/admin/shakhas", label: "Shakhas", icon: Landmark, color: "#0F766E" },
+    { href: "/admin/org-settings", label: "Organization", icon: Settings, color: "#6B7280" }
+  );
+
+  return [
+    {
+      title: null,
+      items: [{ href: "/admin", label: "Dashboard", icon: LayoutDashboard, color: "#6B46FF" }],
+    },
+    {
+      title: "Fest",
+      items: [
+        { href: "/admin/participants", label: "Participants", icon: UserCheck, color: "#0891B2" },
+        { href: "/admin/participation", label: "Attendance", icon: ClipboardCheck, color: "#BE185D" },
+        { href: "/admin/results", label: "Results", icon: Medal, color: "#D97706" },
+        { href: "/admin/standings", label: "Standings", icon: Trophy, color: "#7C3AED" },
+        { href: "/admin/certificates", label: "Certificates", icon: Award, color: "#A16207" },
+      ],
+    },
+    { title: "Fest Util", items: utilItems },
+  ];
+}
 
 const ME_ADMIN_ALLOWED_PATHS = ["/admin", "/admin/participants", "/admin/participation", "/admin/standings"];
 const ME_ADMIN_NAV_SECTIONS: NavSection[] = [
@@ -75,6 +83,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const { session, profile, loading, signOut } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>("shakha");
+
+  useEffect(() => {
+    getOrgSettings().then((org) => setHierarchyLevel(org.hierarchy_level));
+  }, []);
 
   const isLoginPage = pathname === "/admin/login";
   const isMeAdmin = profile?.role === "me_admin";
@@ -112,7 +125,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   if (isLoginPage) return <>{children}</>;
 
-  const navSections = isMeAdmin ? ME_ADMIN_NAV_SECTIONS : FULL_NAV_SECTIONS;
+  const navSections = isMeAdmin ? ME_ADMIN_NAV_SECTIONS : buildFullNavSections(hierarchyLevel);
   const flatItems = navSections.flatMap((s) => s.items);
   const currentTitle = flatItems.find((i) => isActive(i.href, pathname))?.label ?? "Admin";
   const bottomNavItems = isMeAdmin ? flatItems.slice(0, 3) : flatItems.slice(0, 3);

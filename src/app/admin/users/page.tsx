@@ -4,24 +4,48 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Pencil, Plus, X, Eye, EyeOff, Users as UsersIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
-import type { Profile, Shakha, UserRole } from "@/types";
+import { useOrgHierarchy } from "@/hooks/use-feast";
+import { ScopePicker } from "@/components/admin/scope-picker";
+import type { HierarchyLevel, Profile, UserRole } from "@/types";
 
-const ROLES: { value: UserRole; label: string; desc: string; classes: string }[] = [
-  { value: "admin", label: "Admin", desc: "Full back-office access — not tied to a branch, can't register participants", classes: "bg-blue-100 text-blue-700" },
-  { value: "me_admin", label: "ME Admin", desc: "Can view all branches", classes: "bg-purple-100 text-purple-700" },
-  { value: "sa_admin", label: "SA Admin", desc: "Shakha admin — registers participants for their assigned branch via the public site, no back-office access", classes: "bg-red-100 text-red-700" },
-];
+// sa_admin's single assignment sits at whichever tier is the org's
+// configured top level (see src/lib/org-hierarchy.ts's AdminScope) — a
+// Shakha by default (unchanged), a Meghala, or a Diocese. Exactly one of
+// profiles.shakha_id/meghala_id/diocese_id is ever set (enforced by
+// profiles_single_scope_check).
+function scopeLabel(level: HierarchyLevel): string {
+  return level === "diocese" ? "Diocese" : level === "meghala" ? "Meghala" : "Shakha";
+}
+function scopeColumn(level: HierarchyLevel): "diocese_id" | "meghala_id" | "shakha_id" {
+  return level === "diocese" ? "diocese_id" : level === "meghala" ? "meghala_id" : "shakha_id";
+}
+function profileScopeName(p: Profile): string | undefined {
+  return p.diocese?.name ?? p.meghala?.name ?? p.shakha?.name;
+}
+function profileScopeId(p: Profile): string {
+  return p.diocese_id ?? p.meghala_id ?? p.shakha_id ?? "";
+}
+
+function roles(level: HierarchyLevel): { value: UserRole; label: string; desc: string; classes: string }[] {
+  const label = scopeLabel(level).toLowerCase();
+  return [
+    { value: "admin", label: "Admin", desc: `Full back-office access — not tied to a ${label}, can't register participants`, classes: "bg-blue-100 text-blue-700" },
+    { value: "me_admin", label: "ME Admin", desc: `Can view all ${label}s`, classes: "bg-purple-100 text-purple-700" },
+    { value: "sa_admin", label: "SA Admin", desc: `${scopeLabel(level)} admin — registers participants for their assigned ${label} via the public site, no back-office access`, classes: "bg-red-100 text-red-700" },
+  ];
+}
 
 export default function UsersPage() {
   const { session, profile: currentUser } = useAuth();
+  const hierarchy = useOrgHierarchy();
+  const ROLES = roles(hierarchy.hierarchyLevel);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [shakhas, setShakhas] = useState<Shakha[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
   const [editRole, setEditRole] = useState<UserRole>("admin");
-  const [editShakha, setEditShakha] = useState("");
+  const [editScopeId, setEditScopeId] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -31,18 +55,17 @@ export default function UsersPage() {
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [newRole, setNewRole] = useState<UserRole>("admin");
-  const [newShakha, setNewShakha] = useState("");
+  const [newScopeId, setNewScopeId] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: profs }, { data: shks }] = await Promise.all([
-      supabase.from("profiles").select("*, shakha:shakhas(*)").order("full_name"),
-      supabase.from("shakhas").select("*").order("name"),
-    ]);
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("*, shakha:shakhas(*), meghala:meghalas(*), diocese:dioceses(*)")
+      .order("full_name");
     setProfiles(profs ?? []);
-    setShakhas(shks ?? []);
     setLoading(false);
   }, []);
 
@@ -61,21 +84,29 @@ export default function UsersPage() {
   function openEdit(p: Profile) {
     setEditProfile(p);
     setEditRole(p.role);
-    setEditShakha(p.shakha_id ?? "");
+    setEditScopeId(profileScopeId(p));
     setEditError(null);
   }
 
   async function handleSaveEdit() {
     if (!editProfile) return;
     setEditError(null);
-    if (editRole === "sa_admin" && !editShakha) {
-      setEditError("SA Admin needs a branch selected — they register participants for that branch and can't reach the admin panel otherwise.");
+    const label = scopeLabel(hierarchy.hierarchyLevel);
+    if (editRole === "sa_admin" && !editScopeId) {
+      setEditError(`SA Admin needs a ${label} selected — they register participants for that ${label.toLowerCase()} and can't reach the admin panel otherwise.`);
       return;
     }
     setEditSaving(true);
     const { error } = await supabase
       .from("profiles")
-      .update({ full_name: editProfile.full_name, role: editRole, shakha_id: editShakha || null })
+      .update({
+        full_name: editProfile.full_name,
+        role: editRole,
+        shakha_id: null,
+        meghala_id: null,
+        diocese_id: null,
+        [scopeColumn(hierarchy.hierarchyLevel)]: editScopeId || null,
+      })
       .eq("id", editProfile.id);
     setEditSaving(false);
     if (error) {
@@ -88,8 +119,9 @@ export default function UsersPage() {
 
   async function handleCreate() {
     setCreateError(null);
-    if (newRole === "sa_admin" && !newShakha) {
-      setCreateError("SA Admin needs a branch selected — they register participants for that branch and can't reach the admin panel otherwise.");
+    const label = scopeLabel(hierarchy.hierarchyLevel);
+    if (newRole === "sa_admin" && !newScopeId) {
+      setCreateError(`SA Admin needs a ${label} selected — they register participants for that ${label.toLowerCase()} and can't reach the admin panel otherwise.`);
       return;
     }
     setCreating(true);
@@ -104,7 +136,7 @@ export default function UsersPage() {
         password: newPassword,
         full_name: newName,
         role: newRole,
-        shakha_id: newShakha || null,
+        scope_id: newScopeId || null,
       }),
     });
     const json = await res.json();
@@ -118,7 +150,7 @@ export default function UsersPage() {
     setNewEmail("");
     setNewPassword("");
     setNewRole("admin");
-    setNewShakha("");
+    setNewScopeId("");
     load();
   }
 
@@ -165,12 +197,12 @@ export default function UsersPage() {
                   <p className="truncate text-xs text-neutral-500">{p.email}</p>
                   <div className="mt-1 flex gap-1.5 sm:hidden">
                     <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${role.classes}`}>{role.label}</span>
-                    {p.shakha && <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[9px] font-semibold text-neutral-600">{p.shakha.name}</span>}
+                    {profileScopeName(p) && <span className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[9px] font-semibold text-neutral-600">{profileScopeName(p)}</span>}
                   </div>
                 </div>
                 <div className="hidden items-center gap-1.5 sm:flex">
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${role.classes}`}>{role.label}</span>
-                  {p.shakha && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">{p.shakha.name}</span>}
+                  {profileScopeName(p) && <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">{profileScopeName(p)}</span>}
                 </div>
                 {canManage && (
                   <button onClick={() => openEdit(p)} className="text-neutral-400 hover:text-neutral-700">
@@ -203,12 +235,7 @@ export default function UsersPage() {
                   <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
                 ))}
               </select>
-              <select className="input" value={editShakha} onChange={(e) => setEditShakha(e.target.value)}>
-                <option value="">None</option>
-                {shakhas.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <ScopePicker value={editScopeId} onChange={setEditScopeId} hierarchy={hierarchy} emptyLabel="None" />
               {editError && <p className="text-sm text-red-600">{editError}</p>}
               <button onClick={handleSaveEdit} disabled={editSaving} className="w-full rounded-lg bg-[#6B46FF] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
                 {editSaving ? "Saving…" : "Save"}
@@ -245,12 +272,7 @@ export default function UsersPage() {
                   <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
                 ))}
               </select>
-              <select className="input" value={newShakha} onChange={(e) => setNewShakha(e.target.value)}>
-                <option value="">None</option>
-                {shakhas.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <ScopePicker value={newScopeId} onChange={setNewScopeId} hierarchy={hierarchy} emptyLabel="None" />
               {createError && <p className="text-sm text-red-600">{createError}</p>}
               <button
                 onClick={handleCreate}

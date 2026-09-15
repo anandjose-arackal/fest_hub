@@ -3,9 +3,24 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Trophy, ChevronDown } from "lucide-react";
-import { getLeaderboard, getOverallLeaderboard, type LeaderboardRow } from "@/actions/results";
-import { useFeasts, useShakhas } from "@/hooks/use-feast";
+import {
+  getLeaderboard, getOverallLeaderboard,
+  getMeghalaLeaderboard, getOverallMeghalaLeaderboard,
+  getDioceseLeaderboard, getOverallDioceseLeaderboard,
+  type LeaderboardRow,
+} from "@/actions/results";
+import { useFeasts, useOrgHierarchy } from "@/hooks/use-feast";
 import { FeastTabs, FeastTopBar, theme } from "./feast-shared";
+import type { HierarchyLevel } from "@/types";
+
+type Tier = "shakha" | "meghala" | "diocese";
+const TIER_LABEL: Record<Tier, string> = { shakha: "Shakha", meghala: "Meghala", diocese: "Diocese" };
+
+function tiersFor(level: HierarchyLevel): Tier[] {
+  if (level === "diocese") return ["shakha", "meghala", "diocese"];
+  if (level === "meghala") return ["shakha", "meghala"];
+  return ["shakha"];
+}
 
 const CATS: { key: keyof LeaderboardRow; label: string; color: string; track: string }[] = [
   { key: "subJunior", label: "Sub Junior", color: "#0369A1", track: "#E0F2FE" },
@@ -67,7 +82,7 @@ function PodiumCard({ row, rankIdx, animated }: { row: LeaderboardRow; rankIdx: 
   return (
     <div className="relative flex min-w-0 flex-1 flex-col items-center overflow-hidden rounded-[18px] px-2 pb-3 pt-4" style={{ background: MEDAL_BG[rankIdx], border: `1.5px solid ${MEDAL_BORDER[rankIdx]}`, boxShadow: isFirst ? `0 8px 28px ${mc}44` : "0 4px 14px rgba(0,0,0,0.06)", marginTop: isFirst ? 0 : 14 }}>
       <div className="relative mb-2 flex h-11 w-11 items-center justify-center rounded-full text-[20px]" style={{ background: `linear-gradient(135deg,${mc},${mc}88)`, boxShadow: `0 6px 18px ${mc}66` }}>{MEDAL_EMOJI[rankIdx]}</div>
-      <p className="mb-1 w-full truncate px-1 text-center leading-tight" style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 700, fontSize: isFirst ? 15 : 13, color: "#1E1B4B" }}>{row.name}</p>
+      <p className="mb-1 w-full truncate px-1 text-center leading-tight" style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 700, fontSize: isFirst ? 15 : 13, color: "var(--fp-ink)" }}>{row.name}</p>
       <p className="font-black tabular-nums" style={{ fontSize: isFirst ? 22 : 17, color: mc }}>{val}</p>
       <p className="mt-0.5 text-[9px] font-semibold" style={{ color: `${mc}aa` }}>pts</p>
       {isFirst && (row.firstCount > 0 || row.aGrade > 0) && (
@@ -85,7 +100,7 @@ function DrillDown({ row, animated }: { row: LeaderboardRow; animated: boolean }
   const hasAchievements = row.firstCount + row.secondCount + row.thirdCount + row.aGrade + row.bGrade + row.cGrade > 0;
   return (
     <div className="px-3 pb-3 pt-1">
-      <p className="mb-2.5 text-xs font-black uppercase tracking-widest" style={{ color: "#5B21B6" }}>Category Breakdown</p>
+      <p className="mb-2.5 text-xs font-black uppercase tracking-widest" style={{ color: "var(--fp-ink)" }}>Category Breakdown</p>
       <div className="space-y-2.5">
         {CATS.map((cat, i) => {
           const pts = row[cat.key] as number;
@@ -103,16 +118,16 @@ function DrillDown({ row, animated }: { row: LeaderboardRow; animated: boolean }
       </div>
       {hasAchievements && (
         <>
-          <p className="mb-2 mt-4 text-xs font-black uppercase tracking-widest" style={{ color: "#5B21B6" }}>Achievements</p>
-          <div className="flex overflow-hidden rounded-xl" style={{ border: "1px solid rgba(107,70,255,0.1)" }}>
+          <p className="mb-2 mt-4 text-xs font-black uppercase tracking-widest" style={{ color: "var(--fp-ink)" }}>Achievements</p>
+          <div className="flex overflow-hidden rounded-xl" style={{ border: "1px solid rgba(var(--fp-primary-rgb),0.1)" }}>
             <div className="flex flex-1 items-center justify-around px-2 py-2.5" style={{ background: "rgba(255,255,255,0.7)" }}>
               {([["🥇", row.firstCount, "#92400E"], ["🥈", row.secondCount, "#374151"], ["🥉", row.thirdCount, "#7C2D12"]] as const).map(([e, c, t]) => (
                 <div key={String(e)} className="text-center"><p className="text-sm">{e}</p><p className="text-sm font-black" style={{ color: t }}>{c}</p></div>
               ))}
             </div>
-            <div className="w-px self-stretch" style={{ background: "rgba(107,70,255,0.12)" }} />
+            <div className="w-px self-stretch" style={{ background: "rgba(var(--fp-primary-rgb),0.12)" }} />
             <div className="flex flex-1 items-center justify-around px-2 py-2.5" style={{ background: "rgba(255,255,255,0.5)" }}>
-              {([["A", row.aGrade, "#16A34A"], ["B", row.bGrade, "#D97706"], ["C", row.cGrade, "#7C3AED"]] as const).map(([g, c, t]) => (
+              {([["A", row.aGrade, "#16A34A"], ["B", row.bGrade, "#D97706"], ["C", row.cGrade, "var(--fp-primary)"]] as const).map(([g, c, t]) => (
                 <div key={g} className="text-center"><p className="mb-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-black" style={{ background: t, color: "#fff" }}>{g}</p><p className="text-sm font-black" style={{ color: t }}>{c}</p></div>
               ))}
             </div>
@@ -137,10 +152,10 @@ function ShakhaRow({ row, color, animated, defaultOpen }: { row: LeaderboardRow;
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-black" style={{ fontSize: isTop3 ? 16 : 13, background: isTop3 ? `linear-gradient(135deg,${MEDAL_COLOR[rankIdx]},${MEDAL_COLOR[rankIdx]}99)` : "rgba(107,70,255,0.1)", color: isTop3 ? MEDAL_TEXT[rankIdx] : "#8B5CF6" }}>{isTop3 ? MEDAL_EMOJI[rankIdx] : row.rank}</div>
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color }} />
-            <span className="truncate text-[15px]" style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 700, color: "#1E1B4B" }}>{row.name}</span>
+            <span className="truncate text-[15px]" style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 700, color: "var(--fp-ink)" }}>{row.name}</span>
           </div>
           <div className="flex shrink-0 items-baseline gap-1"><span className="text-[18px] font-black tabular-nums" style={{ color: mc }}>{val}</span><span className="text-[10px] font-semibold" style={{ color: `${mc}aa` }}>pts</span></div>
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(107,70,255,0.08)", transform: open ? "rotate(180deg)" : undefined }}><ChevronDown className="h-[13px] w-[13px]" style={{ color: "#8B5CF6" }} /></div>
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(var(--fp-primary-rgb),0.08)", transform: open ? "rotate(180deg)" : undefined }}><ChevronDown className="h-[13px] w-[13px]" style={{ color: "#8B5CF6" }} /></div>
         </div>
         <div className="flex items-center gap-1.5">
           {([["🥇", row.firstCount, 0], ["🥈", row.secondCount, 1], ["🥉", row.thirdCount, 2]] as const).map(([emoji, count, mi]) => (
@@ -150,7 +165,7 @@ function ShakhaRow({ row, color, animated, defaultOpen }: { row: LeaderboardRow;
           ))}
         </div>
       </button>
-      {open && <div className="mx-3 mb-1 rounded-xl" style={{ background: "rgba(107,70,255,0.04)" }}><DrillDown row={row} animated={animated} /></div>}
+      {open && <div className="mx-3 mb-1 rounded-xl" style={{ background: "rgba(var(--fp-primary-rgb),0.04)" }}><DrillDown row={row} animated={animated} /></div>}
     </div>
   );
 }
@@ -159,7 +174,9 @@ export function FeastLeaderboard() {
   const router = useRouter();
   const search = useSearchParams();
   const { feasts, loading: feastsLoading } = useFeasts();
-  const { shakhas } = useShakhas();
+  const hierarchy = useOrgHierarchy();
+  const availableTiers = tiersFor(hierarchy.hierarchyLevel);
+  const [tier, setTier] = useState<Tier>("shakha");
   const [activeSlug, setActiveSlug] = useState(search.get("feast") ?? "");
   const [mode, setMode] = useState<"feast" | "overall">("feast");
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
@@ -177,12 +194,13 @@ export function FeastLeaderboard() {
     setRows([]);
     setAnimated(false);
     if (animTimer.current) clearTimeout(animTimer.current);
-    getOverallLeaderboard().then(({ data }) => {
+    const fetcher = tier === "diocese" ? getOverallDioceseLeaderboard : tier === "meghala" ? getOverallMeghalaLeaderboard : getOverallLeaderboard;
+    fetcher().then(({ data }) => {
       setRows(data ?? []);
       setLoading(false);
       animTimer.current = setTimeout(() => setAnimated(true), 100);
     });
-  }, [mode]);
+  }, [mode, tier]);
 
   useEffect(() => {
     if (mode !== "feast") return;
@@ -195,12 +213,13 @@ export function FeastLeaderboard() {
     setRows([]);
     setAnimated(false);
     if (animTimer.current) clearTimeout(animTimer.current);
-    getLeaderboard(activeSlug).then(({ data }) => {
+    const fetcher = tier === "diocese" ? getDioceseLeaderboard : tier === "meghala" ? getMeghalaLeaderboard : getLeaderboard;
+    fetcher(activeSlug).then(({ data }) => {
       setRows(data ?? []);
       setLoading(false);
       animTimer.current = setTimeout(() => setAnimated(true), 100);
     });
-  }, [activeSlug, feastsLoading, feasts, mode]);
+  }, [activeSlug, feastsLoading, feasts, mode, tier]);
 
   function handlePick(s: string) {
     setMode("feast");
@@ -208,7 +227,12 @@ export function FeastLeaderboard() {
     router.replace(`/rankings?feast=${s}`);
   }
 
-  const shakhaColor = (id: string) => shakhas.find((s) => s.id === id)?.color ?? "#A78BFA";
+  const shakhaColor = (id: string) => {
+    if (id === "__unassigned__") return "#9CA3AF";
+    if (tier === "meghala") return hierarchy.meghalas.find((m) => m.id === id)?.color ?? "var(--fp-primary-light)";
+    if (tier === "diocese") return hierarchy.dioceses.find((d) => d.id === id)?.color ?? "var(--fp-primary-light)";
+    return hierarchy.shakhas.find((s) => s.id === id)?.color ?? "var(--fp-primary-light)";
+  };
   const hasResults = rows.some((r) => r.points > 0);
   const top3 = rows.slice(0, 3);
   const podiumSlots: [LeaderboardRow | undefined, number][] = [[top3[1], 1], [top3[0], 0], [top3[2], 2]];
@@ -217,11 +241,26 @@ export function FeastLeaderboard() {
     <div>
       <FeastTopBar title="Rankings" />
 
-      <div className="mb-3 flex gap-2 rounded-[14px] p-1" style={{ background: "rgba(107,70,255,0.06)" }}>
+      <div className="mb-3 flex gap-2 rounded-[14px] p-1" style={{ background: "rgba(var(--fp-primary-rgb),0.06)" }}>
         {([["feast", "Fests"], ["overall", "Overall"]] as const).map(([m, label]) => (
-          <button key={m} onClick={() => setMode(m)} className="flex-1 rounded-[11px] py-2 text-[13px] font-bold" style={mode === m ? { background: "linear-gradient(135deg, #6B46FF, #A78BFA)", color: "#fff" } : { color: "#6D5BA6" }}>{label}</button>
+          <button key={m} onClick={() => setMode(m)} className="flex-1 rounded-[11px] py-2 text-[13px] font-bold" style={mode === m ? { background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", color: "#fff" } : { color: "var(--fp-sub)" }}>{label}</button>
         ))}
       </div>
+
+      {availableTiers.length > 1 && (
+        <div className="mb-3 flex gap-2">
+          {availableTiers.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTier(t)}
+              className="rounded-full px-3.5 py-1.5 text-xs font-bold transition-colors"
+              style={tier === t ? { background: "var(--fp-ink)", color: "#fff" } : { background: "rgba(var(--fp-primary-rgb),0.06)", color: "var(--fp-sub)" }}
+            >
+              {TIER_LABEL[t]}
+            </button>
+          ))}
+        </div>
+      )}
 
       {mode === "feast" && <FeastTabs feasts={feasts} active={activeSlug} onPick={handlePick} loading={feastsLoading} />}
 
@@ -229,23 +268,23 @@ export function FeastLeaderboard() {
         <div className="flex justify-center py-16"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
       ) : !hasResults ? (
         <div className="flex justify-center py-10">
-          <div className="flex w-full max-w-[320px] flex-col items-center rounded-[24px] px-7 pb-8 pt-9 text-center" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#fdf4ff)", border: "1px solid rgba(107,70,255,0.12)" }}>
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "linear-gradient(135deg,#6B46FF,#A78BFA)" }}><Trophy className="h-7 w-7 text-white" /></div>
+          <div className="flex w-full max-w-[320px] flex-col items-center rounded-[24px] px-7 pb-8 pt-9 text-center" style={{ background: "linear-gradient(145deg,rgba(var(--fp-primary-rgb),0.08),rgba(var(--fp-primary-rgb),0.03),rgba(var(--fp-accent-rgb),0.05))", border: "1px solid rgba(var(--fp-primary-rgb),0.12)" }}>
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full" style={{ background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))" }}><Trophy className="h-7 w-7 text-white" /></div>
             <p className="mb-1.5 text-[18px] font-black" style={{ color: theme.text }}>No standings yet</p>
-            <p className="text-[13.5px] leading-relaxed" style={{ color: "#6D5BA6" }}>Rankings will appear here once competition results are published for this fest.</p>
+            <p className="text-[13.5px] leading-relaxed" style={{ color: "var(--fp-sub)" }}>Rankings will appear here once competition results are published for this fest.</p>
           </div>
         </div>
       ) : (
         <>
           {top3.length > 0 && (
             <div className="mb-5">
-              <div className="mb-3 flex items-center gap-2"><Trophy className="h-[13px] w-[13px]" style={{ color: "#F5C542" }} /><p className="text-sm font-black uppercase tracking-widest" style={{ color: "#5B21B6" }}>Top Shakhas</p></div>
-              <div className="flex items-end gap-2 rounded-[22px] p-3" style={{ background: "linear-gradient(145deg,#ede9fe,#f5f3ff,#fdf4ff)", border: "1px solid rgba(107,70,255,0.1)" }}>
+              <div className="mb-3 flex items-center gap-2"><Trophy className="h-[13px] w-[13px]" style={{ color: "var(--fp-gold)" }} /><p className="text-sm font-black uppercase tracking-widest" style={{ color: "var(--fp-ink)" }}>Top {TIER_LABEL[tier]}s</p></div>
+              <div className="flex items-end gap-2 rounded-[22px] p-3" style={{ background: "linear-gradient(145deg,rgba(var(--fp-primary-rgb),0.08),rgba(var(--fp-primary-rgb),0.03),rgba(var(--fp-accent-rgb),0.05))", border: "1px solid rgba(var(--fp-primary-rgb),0.1)" }}>
                 {podiumSlots.map(([row, rankIdx]) => (row ? <PodiumCard key={row.shakhaId} row={row} rankIdx={rankIdx} animated={animated} /> : <div key={rankIdx} className="flex-1" />))}
               </div>
             </div>
           )}
-          <div className="mb-3 flex items-center gap-2"><p className="text-sm font-black uppercase tracking-widest" style={{ color: "#5B21B6" }}>All Shakhas</p><div className="h-px flex-1" style={{ background: "rgba(107,70,255,0.1)" }} /><p className="text-xs font-bold" style={{ color: "#6D28D9" }}>{rows.length} shakhas</p></div>
+          <div className="mb-3 flex items-center gap-2"><p className="text-sm font-black uppercase tracking-widest" style={{ color: "var(--fp-ink)" }}>All {TIER_LABEL[tier]}s</p><div className="h-px flex-1" style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }} /><p className="text-xs font-bold" style={{ color: "var(--fp-ink)" }}>{rows.length} {TIER_LABEL[tier].toLowerCase()}s</p></div>
           {rows.map((row, i) => <ShakhaRow key={row.shakhaId} row={row} color={shakhaColor(row.shakhaId)} animated={animated} defaultOpen={i === 0} />)}
         </>
       )}

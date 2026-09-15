@@ -12,7 +12,8 @@ import {
 } from "@/lib/result-calculator";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { formatCompetitionOptionLabel } from "@/lib/competition-categories";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, Shakha } from "@/types";
+import { getOrgSettings } from "@/lib/org-settings";
+import type { Competition, CompetitionCategory, Feast, FeastCompetition, OrgSettings, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 
@@ -99,8 +100,10 @@ export default function ResultsPage() {
   const [maxScoreInput, setMaxScoreInput] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [org, setOrg] = useState<OrgSettings | null>(null);
 
   useEffect(() => {
+    getOrgSettings().then(setOrg);
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
       setFeasts(data ?? []);
       if (data && data.length > 0) setFeastId(data[0].id);
@@ -356,9 +359,10 @@ export default function ResultsPage() {
       .filter((r) => r.grade !== null || r.position !== null);
     const sorted = sortPdfRows(rows);
     const feast = feasts.find((f) => f.id === feastId);
+    const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(feast?.name ?? "", [
       { title: selectedFc.competition.name, subtitle: `${selectedFc.competition.competition_category?.name ?? ""} · ${selectedFc.competition.gender ?? "Common"}`, rows: sorted },
-    ]);
+    ], orgLine);
     openPrintWindow(html);
   }
 
@@ -410,7 +414,8 @@ export default function ResultsPage() {
       });
     }
     const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
-    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections);
+    const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
+    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine);
     openPrintWindow(html);
   }
 
@@ -723,13 +728,12 @@ export default function ResultsPage() {
   );
 }
 
-function buildResultsHtml(title: string, sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[]): string {
+function buildResultsHtml(title: string, sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[], orgLine?: string): string {
   const sheets = sections
     .map(
       (s) => `<div class="sheet">
         <div class="hdr">
-          <div style="font-size:14px;font-weight:700;color:#6B46FF;">Cherupushpa Mission League</div>
-          <div style="font-size:12px;letter-spacing:0.05em;color:#6B46FF;">KALPETTA MEGHALA</div>
+          ${orgLine ? `<div style="font-size:13px;font-weight:700;letter-spacing:0.03em;color:#6B46FF;">${orgLine}</div>` : ""}
           <div style="font-size:18px;font-weight:700;margin-top:6px;">${s.title}</div>
           <div style="font-size:12px;color:#666;">${s.subtitle}</div>
         </div>

@@ -83,18 +83,18 @@ export function FeastEditTeam({ slug, teamId }: { slug: string; teamId: string }
         <p className="mb-2 text-sm" style={{ color: theme.sub }}>Update the team roster. Saving replaces all members.</p>
         <div className="mb-2 flex items-center justify-between">
           <span className="text-xs" style={{ color: theme.faint }}>Members</span>
-          <span className="rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={picked.length >= maxTeamSize ? { background: "#fef3c7", color: "#b45309" } : { background: `${theme.purple}1a`, color: theme.purple }}>{picked.length} / {maxTeamSize}</span>
+          <span className="rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={picked.length >= maxTeamSize ? { background: "#fef3c7", color: "#b45309" } : { background: "rgba(var(--fp-primary-rgb),0.10)", color: theme.purple }}>{picked.length} / {maxTeamSize}</span>
         </div>
         {eligible.map((p) => {
           const on = picked.includes(p.id);
           return (
             <div key={p.id} onClick={() => toggle(p.id)} className="mb-2 flex cursor-pointer items-center gap-3 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.7)", border: on ? `1px solid ${theme.lavender}` : "1px solid rgba(255,255,255,0.8)" }}>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: `${theme.purple}1a` }}><Users className="h-4 w-4" style={{ color: theme.lavender }} /></div>
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "rgba(var(--fp-primary-rgb),0.10)" }}><Users className="h-4 w-4" style={{ color: theme.lavender }} /></div>
               <div className="min-w-0 flex-1">
                 <div className="text-[13.5px] font-semibold" style={{ color: theme.text }}>{p.name}</div>
                 {p.houseName && <div className="text-[11px]" style={{ color: theme.sub }}>{p.houseName}</div>}
               </div>
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,#C026D3,#EC4899)" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-accent))" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
                 {on && <Check className="h-[15px] w-[15px] text-white" />}
               </div>
             </div>

@@ -164,6 +164,184 @@ export async function getOverallLeaderboard(): Promise<{ data?: LeaderboardRow[]
   return { data: rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1)) };
 }
 
+// ── Meghala/Diocese rollups (optional org hierarchy) ─────────────────────
+// Computed on read by rolling the existing shakha_feast_standings rows up
+// through shakhas.meghala_id / meghalas.diocese_id — no new ledger/
+// standings tables, no changes to rebuildStandings' write path above. A
+// shakha with no meghala_id (or a meghala with no diocese_id, for a
+// diocese rollup) buckets into a surfaced "__unassigned__" group sorted
+// last, rather than silently dropping its points — that keeps a
+// misconfigured shakha (never assigned under the org's chosen hierarchy)
+// visible instead of invisible in the grouped report.
+export interface GroupStandingsRow {
+  groupId: string;
+  groupName: string;
+  memberShakhaIds: string[];
+  subJuniorPoints: number;
+  juniorPoints: number;
+  seniorPoints: number;
+  superSeniorPoints: number;
+  elderPoints: number;
+  teamPoints: number;
+  grandTotal: number;
+  firstPlaceCount: number;
+  secondPlaceCount: number;
+  thirdPlaceCount: number;
+  aGradeCount: number;
+  bGradeCount: number;
+  cGradeCount: number;
+  rank: number | null;
+}
+
+const UNASSIGNED_GROUP = { id: "__unassigned__", name: "Unassigned" };
+
+async function getShakhaGroupMap(level: "meghala" | "diocese"): Promise<Map<string, { id: string; name: string }>> {
+  const admin = getSupabaseAdmin();
+  const map = new Map<string, { id: string; name: string }>();
+
+  if (level === "meghala") {
+    const { data } = await admin.from("shakhas").select("id, meghala:meghalas(id, name)");
+    for (const row of (data ?? []) as unknown as { id: string; meghala: { id: string; name: string } | { id: string; name: string }[] | null }[]) {
+      const m = Array.isArray(row.meghala) ? row.meghala[0] : row.meghala;
+      map.set(row.id, m ? { id: m.id, name: m.name } : UNASSIGNED_GROUP);
+    }
+    return map;
+  }
+
+  const { data } = await admin
+    .from("shakhas")
+    .select("id, meghala:meghalas(diocese:dioceses(id, name))");
+  for (const row of (data ?? []) as unknown as {
+    id: string;
+    meghala: { diocese: { id: string; name: string } | { id: string; name: string }[] | null } | { diocese: { id: string; name: string } | { id: string; name: string }[] | null }[] | null;
+  }[]) {
+    const m = Array.isArray(row.meghala) ? row.meghala[0] : row.meghala;
+    const d = m ? (Array.isArray(m.diocese) ? m.diocese[0] : m.diocese) : null;
+    map.set(row.id, d ? { id: d.id, name: d.name } : UNASSIGNED_GROUP);
+  }
+  return map;
+}
+
+function groupStandingsRows(rows: StandingsRow[], groupMap: Map<string, { id: string; name: string }>): GroupStandingsRow[] {
+  const buckets = new Map<string, GroupStandingsRow>();
+  for (const r of rows) {
+    const g = groupMap.get(r.shakhaId) ?? UNASSIGNED_GROUP;
+    let bucket = buckets.get(g.id);
+    if (!bucket) {
+      bucket = {
+        groupId: g.id,
+        groupName: g.name,
+        memberShakhaIds: [],
+        subJuniorPoints: 0,
+        juniorPoints: 0,
+        seniorPoints: 0,
+        superSeniorPoints: 0,
+        elderPoints: 0,
+        teamPoints: 0,
+        grandTotal: 0,
+        firstPlaceCount: 0,
+        secondPlaceCount: 0,
+        thirdPlaceCount: 0,
+        aGradeCount: 0,
+        bGradeCount: 0,
+        cGradeCount: 0,
+        rank: null,
+      };
+      buckets.set(g.id, bucket);
+    }
+    bucket.memberShakhaIds.push(r.shakhaId);
+    bucket.subJuniorPoints += r.subJuniorPoints;
+    bucket.juniorPoints += r.juniorPoints;
+    bucket.seniorPoints += r.seniorPoints;
+    bucket.superSeniorPoints += r.superSeniorPoints;
+    bucket.elderPoints += r.elderPoints;
+    bucket.teamPoints += r.teamPoints;
+    bucket.grandTotal += r.grandTotal;
+    bucket.firstPlaceCount += r.firstPlaceCount;
+    bucket.secondPlaceCount += r.secondPlaceCount;
+    bucket.thirdPlaceCount += r.thirdPlaceCount;
+    bucket.aGradeCount += r.aGradeCount;
+    bucket.bGradeCount += r.bGradeCount;
+    bucket.cGradeCount += r.cGradeCount;
+  }
+
+  const list = [...buckets.values()].sort((a, b) => {
+    if (a.groupId === UNASSIGNED_GROUP.id) return 1;
+    if (b.groupId === UNASSIGNED_GROUP.id) return -1;
+    return b.grandTotal - a.grandTotal || a.groupName.localeCompare(b.groupName);
+  });
+  list.forEach((g, i) => {
+    if (g.groupId !== UNASSIGNED_GROUP.id) g.rank = i + 1;
+  });
+  return list;
+}
+
+export async function getMeghalaStandings(feastId: string): Promise<GroupStandingsRow[]> {
+  const [rows, groupMap] = await Promise.all([getFeastStandings(feastId), getShakhaGroupMap("meghala")]);
+  return groupStandingsRows(rows, groupMap);
+}
+
+export async function getDioceseStandings(feastId: string): Promise<GroupStandingsRow[]> {
+  const [rows, groupMap] = await Promise.all([getFeastStandings(feastId), getShakhaGroupMap("diocese")]);
+  return groupStandingsRows(rows, groupMap);
+}
+
+export async function getOverallMeghalaStandings(): Promise<GroupStandingsRow[]> {
+  const [rows, groupMap] = await Promise.all([getOverallStandings(), getShakhaGroupMap("meghala")]);
+  return groupStandingsRows(rows, groupMap);
+}
+
+export async function getOverallDioceseStandings(): Promise<GroupStandingsRow[]> {
+  const [rows, groupMap] = await Promise.all([getOverallStandings(), getShakhaGroupMap("diocese")]);
+  return groupStandingsRows(rows, groupMap);
+}
+
+function toLeaderboardRowFromGroup(r: GroupStandingsRow, rank: number): LeaderboardRow {
+  return {
+    shakhaId: r.groupId,
+    name: r.groupName,
+    rank,
+    points: r.grandTotal,
+    subJunior: r.subJuniorPoints,
+    junior: r.juniorPoints,
+    senior: r.seniorPoints,
+    superSenior: r.superSeniorPoints,
+    elder: r.elderPoints,
+    firstCount: r.firstPlaceCount,
+    secondCount: r.secondPlaceCount,
+    thirdCount: r.thirdPlaceCount,
+    aGrade: r.aGradeCount,
+    bGrade: r.bGradeCount,
+    cGrade: r.cGradeCount,
+  };
+}
+
+export async function getMeghalaLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
+  const admin = getSupabaseAdmin();
+  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
+  const rows = await getMeghalaStandings(feast.id);
+  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+}
+
+export async function getDioceseLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
+  const admin = getSupabaseAdmin();
+  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
+  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
+  const rows = await getDioceseStandings(feast.id);
+  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+}
+
+export async function getOverallMeghalaLeaderboard(): Promise<{ data?: LeaderboardRow[]; error?: string }> {
+  const rows = await getOverallMeghalaStandings();
+  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+}
+
+export async function getOverallDioceseLeaderboard(): Promise<{ data?: LeaderboardRow[]; error?: string }> {
+  const rows = await getOverallDioceseStandings();
+  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+}
+
 // ── score entry / publishing ──────────────────────────────────────────────
 export async function setMaxScore(feastCompetitionId: string, maxScore: number): Promise<{ error?: string }> {
   const { error } = await getSupabaseAdmin()

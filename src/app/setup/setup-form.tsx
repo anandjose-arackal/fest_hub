@@ -102,7 +102,7 @@ export function SetupForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-md bg-[#6B46FF] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+        className="w-full rounded-md bg-[var(--fp-primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
       >
         {submitting ? "Creating…" : "Create Super Admin"}
       </button>

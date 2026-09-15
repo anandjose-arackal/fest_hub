@@ -1,36 +1,36 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Landmark, Pencil, Trash2, Plus, X } from "lucide-react";
+import { Building2, Pencil, Trash2, Plus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getOrgSettings } from "@/lib/org-settings";
-import { createShakha, updateShakha, deleteShakha } from "@/actions/shakha";
-import type { HierarchyLevel, Meghala, Shakha } from "@/types";
+import { createMeghala, updateMeghala, deleteMeghala } from "@/actions/meghala";
+import type { Diocese, HierarchyLevel, Meghala } from "@/types";
 
 const DEFAULT_COLORS = ["#6B46FF", "#0F766E", "#B45309", "#BE185D", "#1D4ED8", "#15803D", "#B91C1C", "#4338CA"];
 
-export default function ShakhasPage() {
-  const [shakhas, setShakhas] = useState<Shakha[]>([]);
+export default function MeghalasPage() {
   const [meghalas, setMeghalas] = useState<Meghala[]>([]);
+  const [dioceses, setDioceses] = useState<Diocese[]>([]);
   const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>("shakha");
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [color, setColor] = useState(DEFAULT_COLORS[0]);
-  const [meghalaId, setMeghalaId] = useState("");
+  const [dioceseId, setDioceseId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: s }, { data: m }, org] = await Promise.all([
-      supabase.from("shakhas").select("*").order("name"),
+    const [{ data: m }, { data: d }, org] = await Promise.all([
       supabase.from("meghalas").select("*").order("name"),
+      supabase.from("dioceses").select("*").order("name"),
       getOrgSettings(),
     ]);
-    setShakhas(s ?? []);
     setMeghalas(m ?? []);
+    setDioceses(d ?? []);
     setHierarchyLevel(org.hierarchy_level);
     setLoading(false);
   }, []);
@@ -42,25 +42,25 @@ export default function ShakhasPage() {
   function openCreate() {
     setEditId(null);
     setName("");
-    setColor(DEFAULT_COLORS[shakhas.length % DEFAULT_COLORS.length]);
-    setMeghalaId("");
+    setColor(DEFAULT_COLORS[meghalas.length % DEFAULT_COLORS.length]);
+    setDioceseId("");
     setError(null);
     setModalOpen(true);
   }
 
-  function openEdit(s: Shakha) {
-    setEditId(s.id);
-    setName(s.name);
-    setColor(s.color);
-    setMeghalaId(s.meghala_id ?? "");
+  function openEdit(m: Meghala) {
+    setEditId(m.id);
+    setName(m.name);
+    setColor(m.color);
+    setDioceseId(m.diocese_id ?? "");
     setError(null);
     setModalOpen(true);
   }
 
   async function handleSave() {
     setSaving(true);
-    const input = { name, color, meghalaId: hierarchyLevel !== "shakha" ? meghalaId || null : null };
-    const result = editId ? await updateShakha(editId, input) : await createShakha(input);
+    const input = { name, color, dioceseId: hierarchyLevel === "diocese" ? dioceseId || null : null };
+    const result = editId ? await updateMeghala(editId, input) : await createMeghala(input);
     setSaving(false);
     if (result.error) {
       setError(result.error);
@@ -71,8 +71,8 @@ export default function ShakhasPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this shakha? Participants belonging to it cannot be deleted while it still has members.")) return;
-    const result = await deleteShakha(id);
+    if (!confirm("Delete this meghala? Shakhas under it are kept but become unassigned, not deleted.")) return;
+    const result = await deleteMeghala(id);
     if (result.error) {
       alert(result.error);
       return;
@@ -80,41 +80,43 @@ export default function ShakhasPage() {
     load();
   }
 
+  const dioceseName = (id: string | null) => dioceses.find((d) => d.id === id)?.name;
+
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#0F766E] to-[#14B8A6] text-white">
-            <Landmark className="h-5 w-5" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[#0F766E] to-[#2DD4BF] text-white">
+            <Building2 className="h-5 w-5" />
           </span>
-          <h1 className="text-xl font-semibold text-neutral-800">Shakhas</h1>
+          <h1 className="text-xl font-semibold text-neutral-800">Meghalas</h1>
         </div>
         <button
           onClick={openCreate}
           className="flex items-center gap-1.5 rounded-lg bg-[#0F766E] px-3 py-2 text-sm font-semibold text-white hover:bg-[#0d5f59]"
         >
-          <Plus className="h-4 w-4" /> New Shakha
+          <Plus className="h-4 w-4" /> New Meghala
         </button>
       </div>
 
       {loading ? (
         <p className="text-sm text-neutral-500">Loading…</p>
-      ) : shakhas.length === 0 ? (
-        <p className="text-sm text-neutral-500">No shakhas yet. Add your first one to start registering participants.</p>
+      ) : meghalas.length === 0 ? (
+        <p className="text-sm text-neutral-500">No meghalas yet. Add your first one to start grouping shakhas.</p>
       ) : (
         <div className="space-y-2">
-          {shakhas.map((s) => (
-            <div key={s.id} className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-3">
-              <span className="h-6 w-6 shrink-0 rounded-full" style={{ background: s.color }} />
+          {meghalas.map((m) => (
+            <div key={m.id} className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-3">
+              <span className="h-6 w-6 shrink-0 rounded-full" style={{ background: m.color }} />
               <div className="min-w-0 flex-1">
-                <p className="font-medium text-neutral-800">{s.name}</p>
+                <p className="font-medium text-neutral-800">{m.name}</p>
                 <p className="text-xs text-neutral-400">
-                  {s.slug}
-                  {hierarchyLevel !== "shakha" && s.meghala_id && ` · ${meghalas.find((m) => m.id === s.meghala_id)?.name ?? ""}`}
+                  {m.slug}
+                  {hierarchyLevel === "diocese" && dioceseName(m.diocese_id) && ` · ${dioceseName(m.diocese_id)}`}
                 </p>
               </div>
-              <button onClick={() => openEdit(s)} className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-4 w-4" /></button>
-              <button onClick={() => handleDelete(s.id)} className="text-neutral-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+              <button onClick={() => openEdit(m)} className="text-neutral-400 hover:text-neutral-700"><Pencil className="h-4 w-4" /></button>
+              <button onClick={() => handleDelete(m.id)} className="text-neutral-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
         </div>
@@ -124,16 +126,16 @@ export default function ShakhasPage() {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center" onClick={() => setModalOpen(false)}>
           <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold">{editId ? "Edit Shakha" : "New Shakha"}</h2>
+              <h2 className="text-base font-semibold">{editId ? "Edit Meghala" : "New Meghala"}</h2>
               <button onClick={() => setModalOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
             </div>
             <div className="space-y-3">
               <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-              {hierarchyLevel !== "shakha" && (
-                <select className="input" value={meghalaId} onChange={(e) => setMeghalaId(e.target.value)}>
-                  <option value="">No meghala</option>
-                  {meghalas.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
+              {hierarchyLevel === "diocese" && (
+                <select className="input" value={dioceseId} onChange={(e) => setDioceseId(e.target.value)}>
+                  <option value="">No diocese</option>
+                  {dioceses.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
               )}
@@ -145,7 +147,7 @@ export default function ShakhasPage() {
                       key={c}
                       onClick={() => setColor(c)}
                       className="h-7 w-7 rounded-full ring-offset-2"
-                      style={{ background: c, boxShadow: color === c ? "0 0 0 2px #6B46FF" : undefined }}
+                      style={{ background: c, boxShadow: color === c ? "0 0 0 2px #0F766E" : undefined }}
                     />
                   ))}
                   <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-7 w-7 rounded-full border-none" />

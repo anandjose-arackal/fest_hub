@@ -1,18 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { User, Phone, Calendar, Check, Loader2 } from "lucide-react";
-import { useFeast, type FeastCompetitionUI } from "@/hooks/use-feast";
+import { useFeast, useOrgHierarchy, type FeastCompetitionUI } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { registerParticipant } from "@/actions/feast";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { GlassPanel, GlowBtn, FeastTopBar, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS } from "./feast-shared";
+import { HierarchyPicker, type PickerHierarchy } from "@/components/admin/hierarchy-picker";
 import type { CompetitionCategory } from "@/types";
 
 export const DEFAULT_MAX_PER_SHAKHA = 2;
 const STEPS = ["Details", "Events", "Review"];
+
+// Matches TextField/DateField's glass-input look above, for the one place a
+// plain <select> (HierarchyPicker) needs to sit among them.
+const PUBLIC_SELECT_CLASS =
+  "w-full rounded-[14px] border bg-[rgba(255,255,255,0.72)] border-[rgba(var(--fp-primary-rgb),0.12)] px-3.5 py-3 text-[14.5px] text-[var(--fp-ink)] outline-none";
 
 export function normGender(g: string | null | undefined): string | null {
   if (!g) return null;
@@ -89,7 +95,7 @@ export function GenderPicker({ value, onChange }: { value: string; onChange: (v:
               key={o.value}
               onClick={() => onChange(o.value)}
               className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold transition-transform active:scale-95"
-              style={on ? { background: "linear-gradient(135deg,#6B46FF,#A78BFA)", color: "#fff", boxShadow: "0 6px 16px rgba(107,70,255,0.3)" } : { background: "rgba(255,255,255,0.72)", color: theme.sub, border: `1px solid ${theme.hairline}` }}
+              style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", color: "#fff", boxShadow: "0 6px 16px rgba(var(--fp-primary-rgb),0.3)" } : { background: "rgba(255,255,255,0.72)", color: theme.sub, border: `1px solid ${theme.hairline}` }}
             >
               {o.label}
             </button>
@@ -103,9 +109,38 @@ export function GenderPicker({ value, onChange }: { value: string; onChange: (v:
 export function FeastRegister({ slug }: { slug: string }) {
   const router = useRouter();
   const { feast } = useFeast(slug);
-  const { session } = useAuth();
+  const { adminScope } = useAuth();
+  const orgHierarchy = useOrgHierarchy();
   const [categories, setCategories] = useState<CompetitionCategory[]>([]);
-  const [adminShakha, setAdminShakha] = useState<{ id: string; name: string } | null>(null);
+  // When adminScope.level === "shakha" (the default, unchanged case),
+  // adminShakha is fixed to that one shakha — no picker, same read-only
+  // badge as always. When the signed-in admin's own scope is a meghala or
+  // diocese (covers multiple shakhas), adminShakha instead reflects
+  // whichever shakha they've picked below via HierarchyPicker.
+  const [selectedShakhaId, setSelectedShakhaId] = useState("");
+  const pickerHierarchy: PickerHierarchy | null = useMemo(() => {
+    if (!adminScope || adminScope.level === "shakha") return null;
+    if (adminScope.level === "meghala") {
+      return {
+        dioceses: [],
+        meghalas: [],
+        shakhas: orgHierarchy.shakhas.filter((s) => s.meghala_id === adminScope.id),
+        hierarchyLevel: "shakha",
+      };
+    }
+    return {
+      dioceses: [],
+      meghalas: orgHierarchy.meghalas.filter((m) => m.diocese_id === adminScope.id),
+      shakhas: orgHierarchy.shakhas,
+      hierarchyLevel: "meghala",
+    };
+  }, [adminScope, orgHierarchy.meghalas, orgHierarchy.shakhas]);
+  const adminShakha = useMemo(() => {
+    if (!adminScope) return null;
+    if (adminScope.level === "shakha") return { id: adminScope.id, name: adminScope.name };
+    const sh = orgHierarchy.shakhas.find((s) => s.id === selectedShakhaId);
+    return sh ? { id: sh.id, name: sh.name } : null;
+  }, [adminScope, selectedShakhaId, orgHierarchy.shakhas]);
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -123,15 +158,6 @@ export function FeastRegister({ slug }: { slug: string }) {
       const cap = feast?.competitions.find((c) => c.id === id)?.maxPerShakha ?? DEFAULT_MAX_PER_SHAKHA;
       return p.length >= 2 || (shakhaCounts[id] ?? 0) >= cap ? p : [...p, id];
     });
-
-  useEffect(() => {
-    if (!session?.user?.id) return;
-    supabase.from("profiles").select("shakha_id, shakha:shakhas(id, name)").eq("id", session.user.id).maybeSingle().then(({ data }) => {
-      if (!data?.shakha_id) return;
-      const sh = Array.isArray(data.shakha) ? data.shakha[0] : data.shakha;
-      setAdminShakha({ id: data.shakha_id, name: sh?.name ?? "" });
-    });
-  }, [session]);
 
   useEffect(() => { setPicked([]); }, [form.dob, form.gender]);
 
@@ -154,7 +180,7 @@ export function FeastRegister({ slug }: { slug: string }) {
     })();
   }, [adminShakha, feast]);
 
-  const step1ok = !!(form.name.trim() && form.dob && form.gender);
+  const step1ok = !!(form.name.trim() && form.dob && form.gender && adminShakha);
 
   async function submit() {
     if (!feast) return;
@@ -222,7 +248,7 @@ export function FeastRegister({ slug }: { slug: string }) {
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {picked.map((id) => (
-                <span key={id} className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ color: theme.text, background: `${theme.purple}1a`, border: `1px solid ${theme.purple}33` }}>
+                <span key={id} className="rounded-full px-2.5 py-1 text-[11px] font-semibold" style={{ color: theme.text, background: "rgba(var(--fp-primary-rgb),0.10)", border: "1px solid rgba(var(--fp-primary-rgb),0.20)" }}>
                   {feast.competitions.find((c) => c.id === id)?.name}
                 </span>
               ))}
@@ -250,16 +276,28 @@ export function FeastRegister({ slug }: { slug: string }) {
             <CategoryPill slug={catSlug} />
             <GenderPicker value={form.gender} onChange={(v) => set("gender", v)} />
             <TextField label="Phone (optional)" value={form.phone} onChange={(v) => set("phone", v.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit mobile" type="tel" icon={Phone} />
-            {adminShakha && (
-              <div className="flex items-center gap-2.5 rounded-[14px] px-3.5 py-2.5" style={{ background: theme.fillStrong, border: `1px solid ${theme.purple}22` }}>
+            {adminScope?.level === "shakha" && adminShakha && (
+              <div className="flex items-center gap-2.5 rounded-[14px] px-3.5 py-2.5" style={{ background: theme.fillStrong, border: "1px solid rgba(var(--fp-primary-rgb),0.13)" }}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: theme.purple }} />
                 <span className="text-[13px] font-semibold" style={{ color: theme.text }}>{adminShakha.name}</span>
                 <span className="ml-auto text-[11.5px]" style={{ color: theme.faint }}>Your Shakha</span>
               </div>
             )}
+            {adminScope && adminScope.level !== "shakha" && pickerHierarchy && (
+              <div>
+                <label className="mb-1.5 block text-[11.5px] font-semibold tracking-wide" style={{ color: theme.sub, fontFamily: "var(--font-poppins), sans-serif" }}>
+                  Shakha (within {adminScope.name})
+                </label>
+                <HierarchyPicker value={selectedShakhaId} onChange={setSelectedShakhaId} hierarchy={pickerHierarchy} className={PUBLIC_SELECT_CLASS} />
+              </div>
+            )}
           </GlassPanel>
           <GlowBtn variant="primary" size="lg" className="w-full" disabled={!step1ok} onClick={() => setStep(1)}>Continue</GlowBtn>
-          {!step1ok && <p className="mt-2.5 text-center text-[11.5px]" style={{ color: theme.faint }}>Name, date of birth and gender are required</p>}
+          {!step1ok && (
+            <p className="mt-2.5 text-center text-[11.5px]" style={{ color: theme.faint }}>
+              {!adminShakha && adminScope?.level !== "shakha" ? "Select your Shakha, and fill in name, date of birth and gender" : "Name, date of birth and gender are required"}
+            </p>
+          )}
         </div>
       )}
 
@@ -267,7 +305,7 @@ export function FeastRegister({ slug }: { slug: string }) {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[13px] leading-relaxed" style={{ color: theme.sub }}>Showing competitions for your category. Select the ones you&apos;d like to enter.</p>
-            <span className="ml-2 shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={picked.length >= 2 ? { background: "#fef3c7", color: "#b45309" } : { background: `${theme.purple}1a`, color: theme.purple }}>{picked.length} / 2</span>
+            <span className="ml-2 shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={picked.length >= 2 ? { background: "#fef3c7", color: "#b45309" } : { background: "rgba(var(--fp-primary-rgb),0.10)", color: theme.purple }}>{picked.length} / 2</span>
           </div>
           {picked.length >= 2 && <div className="mb-3 rounded-[14px] px-3.5 py-2.5 text-[12.5px]" style={{ background: "#fef3c7", color: "#b45309", border: "1px solid #fde68a" }}>Maximum 2 competitions allowed. Deselect one to change.</div>}
           {eligibleComps.length === 0 ? (
@@ -288,7 +326,7 @@ export function FeastRegister({ slug }: { slug: string }) {
                   onClick={() => !full && toggle(c.id)}
                   style={{
                     border: on ? `1px solid ${theme.lavender}` : undefined,
-                    boxShadow: on ? `0 0 0 3px ${theme.purple}2e, ${theme.softShadow}` : undefined,
+                    boxShadow: on ? `0 0 0 3px rgba(var(--fp-primary-rgb),0.18), ${theme.softShadow}` : undefined,
                     opacity: full ? 0.45 : 1,
                     cursor: full ? "not-allowed" : "pointer",
                   }}
@@ -299,11 +337,11 @@ export function FeastRegister({ slug }: { slug: string }) {
                     <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px]" style={{ color: theme.sub }}>{c.cat}{c.time ? ` · ${c.time}` : ""}</span>
                       {genderColor && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: `${genderColor}1a`, color: genderColor }}>{c.gender === "boy" ? "Boys" : "Girls"}</span>}
-                      {c.competitionCategorySlug && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: `${theme.purple}1a`, color: theme.purple }}>{CATEGORY_LABELS[c.competitionCategorySlug]}</span>}
+                      {c.competitionCategorySlug && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.10)", color: theme.purple }}>{CATEGORY_LABELS[c.competitionCategorySlug]}</span>}
                       {full && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: "#fef3c7", color: "#b45309" }}>Full for your Shakha (max {cap})</span>}
                     </div>
                   </div>
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,#6B46FF,#A78BFA)" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
                     {on && <Check className="h-[15px] w-[15px] text-white" />}
                   </div>
                 </GlassPanel>
@@ -341,7 +379,7 @@ export function FeastRegister({ slug }: { slug: string }) {
               ) : (
                 <div className="flex flex-wrap gap-[7px]">
                   {picked.map((id) => (
-                    <span key={id} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: `${theme.purple}2e`, border: `1px solid ${theme.purple}55` }}>
+                    <span key={id} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: "rgba(var(--fp-primary-rgb),0.18)", border: "1px solid rgba(var(--fp-primary-rgb),0.33)" }}>
                       {feast.competitions.find((c) => c.id === id)?.name}
                     </span>
                   ))}

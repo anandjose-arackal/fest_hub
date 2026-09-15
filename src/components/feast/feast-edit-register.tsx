@@ -131,7 +131,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
         <div>
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[13px] leading-relaxed" style={{ color: theme.sub }}>Update competitions. Saving replaces all selections.</p>
-            <span className="ml-2 shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={picked.length >= 2 ? { background: "#fef3c7", color: "#b45309" } : { background: `${theme.purple}1a`, color: theme.purple }}>{picked.length} / 2</span>
+            <span className="ml-2 shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold" style={picked.length >= 2 ? { background: "#fef3c7", color: "#b45309" } : { background: "rgba(var(--fp-primary-rgb),0.10)", color: theme.purple }}>{picked.length} / 2</span>
           </div>
           {eligibleComps.map((c) => {
             const on = picked.includes(c.id);
@@ -142,9 +142,9 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] text-lg" style={{ background: `${feast.accent}26` }}>{c.icon}</div>
                 <div className="min-w-0 flex-1">
                   <div className="text-[13.5px] font-semibold" style={{ color: theme.text }}>{c.name}</div>
-                  {c.competitionCategorySlug && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: `${theme.purple}1a`, color: theme.purple }}>{CATEGORY_LABELS[c.competitionCategorySlug]}</span>}
+                  {c.competitionCategorySlug && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.10)", color: theme.purple }}>{CATEGORY_LABELS[c.competitionCategorySlug]}</span>}
                 </div>
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,#6B46FF,#A78BFA)" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
                   {on && <Check className="h-[15px] w-[15px] text-white" />}
                 </div>
               </GlassPanel>
@@ -167,7 +167,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
             <div className="mt-3">
               <div className="mb-2 text-[12.5px]" style={{ color: theme.faint }}>Competitions ({picked.length})</div>
               <div className="flex flex-wrap gap-[7px]">
-                {picked.map((id) => <span key={id} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: `${theme.purple}2e` }}>{feast.competitions.find((c) => c.id === id)?.name}</span>)}
+                {picked.map((id) => <span key={id} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: "rgba(var(--fp-primary-rgb),0.18)" }}>{feast.competitions.find((c) => c.id === id)?.name}</span>)}
               </div>
             </div>
           </GlassPanel>

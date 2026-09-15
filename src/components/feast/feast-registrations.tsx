@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, UserX, Lock, Pencil, Download } from "lucide-react";
-import { useFeast } from "@/hooks/use-feast";
+import { useFeast, useOrgHierarchy } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
+import { getDescendantShakhaIds } from "@/lib/org-hierarchy";
 import { CATEGORY_LABELS, CATEGORY_COLORS, FeastTopBar, theme } from "./feast-shared";
 
 interface ParticipantRow {
@@ -74,7 +75,7 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
               if (!r.participant) return null;
               const p = r.participant;
               return (
-                <div key={r.id} className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: ri < regs.length - 1 ? `1px solid ${theme.hairline}` : undefined, background: ri % 2 === 1 ? `${theme.fill}80` : undefined }}>
+                <div key={r.id} className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: ri < regs.length - 1 ? `1px solid ${theme.hairline}` : undefined, background: ri % 2 === 1 ? "rgba(var(--fp-primary-rgb),0.05)" : undefined }}>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[14.5px] font-extrabold leading-snug" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{p.name}</div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>
@@ -152,30 +153,28 @@ function TeamAccordionRow({ compName, gender, catSlug, team, idx, onEditTeam, ed
 export function FeastRegistrations({ slug }: { slug: string }) {
   const router = useRouter();
   const { feast, loading: feastLoading } = useFeast(slug);
-  const { session } = useAuth();
-  const [myShakhaId, setMyShakhaId] = useState<string | null | undefined>(undefined);
-  const [myShakhaName, setMyShakhaName] = useState<string | null>(null);
+  const { session, adminScope } = useAuth();
+  const orgHierarchy = useOrgHierarchy();
+  // Generalizes the old single myShakhaId: a shakha-scoped admin still
+  // covers just themselves, but a meghala/diocese-scoped admin now covers
+  // every shakha beneath their node — see src/lib/org-hierarchy.ts.
+  // undefined = still resolving (auth or hierarchy loading), null = signed
+  // out or no scope at all, array = ready (possibly empty).
+  const scopeShakhaIds = useMemo(() => {
+    if (!session || !adminScope) return null;
+    if (orgHierarchy.loading) return undefined;
+    return getDescendantShakhaIds(adminScope, orgHierarchy);
+  }, [session, adminScope, orgHierarchy.loading, orgHierarchy.meghalas, orgHierarchy.shakhas]);
   const [regs, setRegs] = useState<RegRow[]>([]);
   const [teamRegs, setTeamRegs] = useState<TeamRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
-  const retry = () => { setLoadError(null); setMyShakhaId(undefined); setLoading(true); setRetryTick((t) => t + 1); };
+  const retry = () => { setLoadError(null); setLoading(true); setRetryTick((t) => t + 1); };
 
   useEffect(() => {
-    if (!session?.user?.id) { setMyShakhaId(null); return; }
-    Promise.resolve(supabase.from("profiles").select("shakha_id, shakha:shakhas(name)").eq("id", session.user.id).maybeSingle())
-      .then(({ data }) => {
-        setMyShakhaId(data?.shakha_id ?? null);
-        const shakha = Array.isArray(data?.shakha) ? data.shakha[0] : data?.shakha;
-        setMyShakhaName(shakha?.name ?? null);
-      })
-      .catch(() => { setMyShakhaId(null); setLoadError("Couldn't load your profile. Check your connection and try again."); });
-  }, [session, retryTick]);
-
-  useEffect(() => {
-    if (!feast || myShakhaId === undefined) return;
+    if (!feast || scopeShakhaIds === undefined) return;
     const individualIds = feast.competitions.filter((c) => c.cat !== "Team").map((c) => c.id);
     const teamIds = feast.competitions.filter((c) => c.cat === "Team").map((c) => c.id);
     if (individualIds.length === 0 && teamIds.length === 0) { setLoading(false); return; }
@@ -184,9 +183,9 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       individualIds.length === 0
         ? Promise.resolve({ data: [] })
         : supabase.from("participant_registrations").select("id, feast_competition_id, participant:participants(id, name, house_name, shakha_id, registration_number, gender, shakha:shakhas(name))").in("feast_competition_id", individualIds),
-      !myShakhaId || teamIds.length === 0
+      !scopeShakhaIds?.length || teamIds.length === 0
         ? Promise.resolve({ data: [] })
-        : supabase.from("team_registrations").select("id, feast_competition_id, team_name, members:team_registration_members(participant:participants(name))").eq("shakha_id", myShakhaId).in("feast_competition_id", teamIds),
+        : supabase.from("team_registrations").select("id, feast_competition_id, team_name, members:team_registration_members(participant:participants(name))").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamIds),
     ])
       .then(([{ data: regData }, { data: teamData }]) => {
         const all = (regData ?? []).map((row) => {
@@ -195,7 +194,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
           if (p) p.shakha = Array.isArray(p.shakha) ? (p.shakha as unknown as { name: string }[])[0] ?? null : p.shakha;
           return { id: r.id, feast_competition_id: r.feast_competition_id, participant: p } as RegRow;
         });
-        const filtered = myShakhaId ? all.filter((r) => r.participant?.shakha_id === myShakhaId) : all;
+        const filtered = scopeShakhaIds?.length ? all.filter((r) => scopeShakhaIds.includes(r.participant?.shakha_id ?? "")) : all;
         setRegs(filtered);
 
         const teams = (teamData ?? []).map((row) => {
@@ -209,7 +208,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
         setLoading(false);
       })
       .catch(() => { setLoading(false); setLoadError("Couldn't load registrations. Check your connection and try again."); });
-  }, [feast, myShakhaId, retryTick]);
+  }, [feast, scopeShakhaIds, retryTick]);
 
   const editLocked = !!feast?.registrationEditDeadline && new Date() >= new Date(feast.registrationEditDeadline);
 
@@ -223,16 +222,16 @@ export function FeastRegistrations({ slug }: { slug: string }) {
     </div>
   );
 
-  if (myShakhaId === undefined) {
+  if (scopeShakhaIds === undefined) {
     return loadError ? errorState : <div className="flex justify-center pt-24"><Loader2 className="h-7 w-7 animate-spin" style={{ color: theme.lavender }} /></div>;
   }
 
-  if (!session || myShakhaId === null) {
+  if (!session || scopeShakhaIds === null) {
     return (
       <div>
         <FeastTopBar title="My Registrations" onBack={() => router.push(`/feast/${slug}`)} />
         <div className="flex flex-col items-center justify-center gap-5 pb-8 pt-16">
-          <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full" style={{ background: `linear-gradient(135deg, ${theme.purple}22, ${theme.lavender}33)`, border: `1.5px solid ${theme.purple}33` }}><Lock className="h-[30px] w-[30px]" style={{ color: theme.purple }} /></div>
+          <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full" style={{ background: "linear-gradient(135deg, rgba(var(--fp-primary-rgb),0.13), rgba(var(--fp-primary-rgb),0.20))", border: "1.5px solid rgba(var(--fp-primary-rgb),0.20)" }}><Lock className="h-[30px] w-[30px]" style={{ color: theme.purple }} /></div>
           <div className="text-center">
             <p className="mb-1.5 text-[17px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Not Authorised</p>
             <p className="mx-auto max-w-[240px] text-[13px] leading-relaxed" style={{ color: theme.sub }}>{!session ? "Please log in as an admin to view registrations." : "Your account is not linked to a shakha. Contact your administrator."}</p>
@@ -254,7 +253,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
   for (const t of teamRegs) teamByComp[t.feast_competition_id] = t;
 
   const totalRegs = regs.length;
-  const shakhaLabel = myShakhaName ?? "Your Shakha";
+  const shakhaLabel = adminScope?.name ?? "Your Shakha";
 
   function downloadRegistrationsPDF() {
     if (!feast || totalRegs === 0) return;
@@ -301,7 +300,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       @media print { .noprint { display: none; } }
       .noprint { text-align: center; margin: 18px 0; }
       </style></head><body>
-      <div class="hdr"><p class="feast">${esc(feast.name)}</p><p class="shakha">Registration of shakha ${esc(shakhaLabel)}</p></div>
+      <div class="hdr"><p class="feast">${esc(feast.name)}</p><p class="shakha">Registrations for ${esc(shakhaLabel)}</p></div>
       <table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Competition</th></tr></thead><tbody>${sectionsHtml}</tbody></table>
       <div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
       </body></html>`;
@@ -322,7 +321,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
     <div>
       <FeastTopBar title="My Registrations" onBack={() => router.push(`/feast/${slug}`)} />
 
-      <div className="mb-4 flex items-center gap-4 rounded-2xl p-4" style={{ background: `linear-gradient(135deg, ${theme.purple}18, ${theme.lavender}12)`, border: `1px solid ${theme.purple}22` }}>
+      <div className="mb-4 flex items-center gap-4 rounded-2xl p-4" style={{ background: "linear-gradient(135deg, rgba(var(--fp-primary-rgb),0.09), rgba(var(--fp-primary-rgb),0.07))", border: "1px solid rgba(var(--fp-primary-rgb),0.13)" }}>
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl" style={{ background: `linear-gradient(135deg, ${theme.purple}, ${theme.lavender})` }}><span className="text-[20px] font-bold text-white">{totalRegs}</span></div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[15px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{shakhaLabel}</div>

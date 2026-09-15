@@ -64,16 +64,16 @@ export function ResultRow({ row }: { row: PublicResultRow }) {
       <div className="flex items-center gap-2.5">
         {isMedal ? <MedalBadge position={row.position as 1 | 2 | 3} /> : <span className="w-[34px] shrink-0 text-center text-xs text-neutral-400">{row.position ?? "—"}</span>}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-bold" style={{ color: "#1E1B4B", fontFamily: "var(--font-anek), sans-serif" }}>
+          <p className="truncate text-[15px] font-bold" style={{ color: "var(--fp-ink)", fontFamily: "var(--font-anek), sans-serif" }}>
             {row.name}
             {row.houseName && !row.isTeam && (
-              <span className="ml-1 font-normal" style={{ color: "#DDD6FE" }}>
-                {" | "}<span style={{ color: "#7C3AED" }}>{row.houseName}</span>
+              <span className="ml-1 font-normal" style={{ color: "var(--fp-primary-light)" }}>
+                {" | "}<span style={{ color: "var(--fp-primary)" }}>{row.houseName}</span>
               </span>
             )}
           </p>
-          <p className="truncate text-xs" style={{ color: "#6B6792" }}>⛪ {row.shakha}</p>
-          {row.isTeam && row.houseName && <p className="mt-0.5 text-xs" style={{ color: "#6B46FF" }}>Members: {row.houseName}</p>}
+          <p className="truncate text-xs" style={{ color: "var(--fp-sub)" }}>⛪ {row.shakha}</p>
+          {row.isTeam && row.houseName && <p className="mt-0.5 text-xs" style={{ color: "var(--fp-primary)" }}>Members: {row.houseName}</p>}
         </div>
         <GradeChip grade={row.grade} />
       </div>

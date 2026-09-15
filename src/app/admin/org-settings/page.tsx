@@ -4,7 +4,21 @@ import { useEffect, useState } from "react";
 import { Settings, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { updateOrgSettings } from "@/actions/org-settings";
-import type { OrgSettings } from "@/types";
+import type { HierarchyLevel, OrgSettings, PortalTheme } from "@/types";
+
+const HIERARCHY_OPTIONS: { value: HierarchyLevel; label: string; hint: string }[] = [
+  { value: "shakha", label: "Shakha only", hint: "Default — flat list of shakhas, no grouping." },
+  { value: "meghala", label: "Meghala → Shakha", hint: "Shakhas grouped under meghalas." },
+  { value: "diocese", label: "Diocese → Meghala → Shakha", hint: "Full three-level hierarchy." },
+];
+
+// Swatches mirror globals.css's [data-fp-theme] custom properties — kept as
+// literal hex here purely for this admin preview, not read by the portal.
+const THEME_OPTIONS: { value: PortalTheme; label: string; swatches: string[] }[] = [
+  { value: "violet", label: "Violet Bloom", swatches: ["#6B46FF", "#EC4899", "#F5C542"] },
+  { value: "ocean", label: "Ocean Breeze", swatches: ["#0D9488", "#FB7185", "#FBBF24"] },
+  { value: "sunset", label: "Sunset Ember", swatches: ["#E11D48", "#8B5CF6", "#FACC15"] },
+];
 
 export default function OrgSettingsPage() {
   const [form, setForm] = useState<Omit<OrgSettings, "id" | "created_at" | "updated_at">>({
@@ -14,6 +28,8 @@ export default function OrgSettingsPage() {
     area_name_local: "",
     tagline: "",
     logo_url: "/logo.png",
+    hierarchy_level: "shakha",
+    theme: "violet",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -35,6 +51,8 @@ export default function OrgSettingsPage() {
             area_name_local: data.area_name_local,
             tagline: data.tagline,
             logo_url: data.logo_url,
+            hierarchy_level: data.hierarchy_level ?? "shakha",
+            theme: data.theme ?? "violet",
           });
         }
         setLoading(false);
@@ -51,6 +69,8 @@ export default function OrgSettingsPage() {
       areaNameLocal: form.area_name_local,
       tagline: form.tagline,
       logoUrl: form.logo_url,
+      hierarchyLevel: form.hierarchy_level,
+      theme: form.theme,
     });
     setSaving(false);
     if (result.error) {
@@ -93,6 +113,57 @@ export default function OrgSettingsPage() {
         </Field>
         <Field label="Logo URL">
           <input className="input" value={form.logo_url} onChange={(e) => setForm({ ...form, logo_url: e.target.value })} />
+        </Field>
+        <Field label="Grouping level">
+          <div className="space-y-1.5">
+            {HIERARCHY_OPTIONS.map((opt) => {
+              const active = form.hierarchy_level === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, hierarchy_level: opt.value })}
+                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    active ? "border-neutral-800 bg-neutral-800 text-white" : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-400"
+                  }`}
+                >
+                  <span className="font-semibold">{opt.label}</span>
+                  <span className={`block text-xs ${active ? "text-neutral-300" : "text-neutral-500"}`}>{opt.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-xs text-neutral-400">
+            Narrowing this later doesn&apos;t delete existing Meghala/Diocese assignments — they&apos;re just no longer shown.
+          </p>
+        </Field>
+
+        <Field label="Fest Portal color theme">
+          <div className="grid grid-cols-3 gap-2">
+            {THEME_OPTIONS.map((opt) => {
+              const active = form.theme === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, theme: opt.value })}
+                  className={`flex flex-col items-center gap-2 rounded-lg border px-2 py-3 text-center transition-colors ${
+                    active ? "border-neutral-800 bg-neutral-50" : "border-neutral-200 bg-white hover:border-neutral-400"
+                  }`}
+                >
+                  <span className="flex gap-1">
+                    {opt.swatches.map((c) => (
+                      <span key={c} className="h-5 w-5 rounded-full border border-black/10" style={{ background: c }} />
+                    ))}
+                  </span>
+                  <span className={`text-xs font-semibold ${active ? "text-neutral-900" : "text-neutral-600"}`}>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-xs text-neutral-400">
+            Applies to the public Fest Portal only — the admin panel keeps this look regardless.
+          </p>
         </Field>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
