@@ -144,8 +144,13 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
             <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full" style={{ background: "rgba(255,255,255,0.28)" }}>
               <Trophy className="h-5 w-5 text-white" />
             </span>
-            <span className="relative min-w-0 flex-1 truncate text-[17px] font-bold text-white" style={{ fontFamily: "var(--font-anek), sans-serif", textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
-              സാഹിത്യമത്സരം Result Published
+            <span className="relative min-w-0 flex-1">
+              <p className="truncate text-[17px] font-bold leading-tight text-white" style={{ fontFamily: "var(--font-anek), sans-serif", textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
+                സാഹിത്യമത്സരം
+              </p>
+              <p className="truncate text-[15px] font-bold leading-tight text-white/95" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
+                Result Published
+              </p>
             </span>
             <span className="relative flex shrink-0 items-center gap-1 text-[14.5px] font-bold text-white" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
               Click to view <ArrowRight className="h-[18px] w-[18px]" />
