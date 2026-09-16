@@ -238,7 +238,7 @@ export interface ShakhaFeastStanding {
   shakha?: Shakha;
 }
 
-export type PortalTheme = "violet" | "ocean" | "sunset";
+export type PortalTheme = "violet" | "ocean" | "sunset" | "aurora" | "carnival" | "amethyst" | "midnight" | "emerald";
 
 export interface OrgSettings {
   id: true;

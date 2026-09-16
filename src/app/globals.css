@@ -183,12 +183,33 @@
 }
 
 /* Fest Portal color themes — admin-configurable (org_settings.theme),
-   public-facing pages only (never /admin, which keeps its own fixed look).
+   public-facing pages only (never /admin, /screen, or the result poster,
+   which keep their own fixed look — none of them read these variables).
    src/components/feast/feast-shared.tsx's `theme` export resolves its
    values through these variables, so every portal component that already
    reads `theme.purple`/`theme.sub`/etc. repaints automatically; a handful of
    components with their own inline hex also reference these directly.
-   Defaults to "violet" (the original palette) when no data-fp-theme is set. */
+   Defaults to "violet" (the original palette) when no data-fp-theme is set.
+   violet is the org's original launch palette, restored here after a prior
+   pass mistakenly overwrote it while building the 5 reference-palette
+   themes below — that purple/lavender/magenta palette lives on as its own
+   "amethyst" theme instead of being lost. ocean/sunset/aurora/carnival/
+   amethyst are sourced from 5 reference swatch sets (Dopely palettes + two
+   "Modern" freebies) — each palette's 5 hues map to
+   primary/primary-light/accent/cyan/gold, with ink/sub/faint/fill/bg-1-3
+   derived as darker/lighter tints of the same hue family for contrast,
+   matching violet's own lightness levels. Ids (violet/ocean/sunset) are
+   kept for org_settings.theme compatibility even where the label changed
+   (sunset's swatches read as a warm tropical sunrise, not fiery embers).
+   --fp-primary-dark (~30% darker than --fp-primary) exists solely for the
+   active nav bubble in feast-shared.tsx's FeastNav/FeastSideNav — the
+   primary-light→primary gradient it used before read as too pale/washed out
+   for the "this is where you are" indicator across every theme.
+   --fp-glass/--fp-glass-strong/--fp-glass-border/--fp-nav-bg back the
+   `theme.glass`/`glassStrong`/`navBg` tokens in feast-shared.tsx (glass-card
+   and bottom-nav surfaces) — defined once here as every light theme's shared
+   white-glass look, so only "midnight" (the dark theme) needs to override
+   them to dark surfaces; every other theme just inherits these from :root. */
 :root,
 [data-fp-theme="violet"] {
   --fp-ink: #1E1B4B;
@@ -198,6 +219,7 @@
   --fp-gold-rgb: 245, 197, 66;
   --fp-primary: #6B46FF;
   --fp-primary-rgb: 107, 70, 255;
+  --fp-primary-dark: #4B31B3;
   --fp-primary-light: #A78BFA;
   --fp-primary-light-rgb: 167, 139, 250;
   --fp-accent: #EC4899;
@@ -207,42 +229,170 @@
   --fp-bg-1: #ECE4FF;
   --fp-bg-2: #F6E5F6;
   --fp-bg-3: #FFEADC;
+  --fp-glass: rgba(255, 255, 255, 0.55);
+  --fp-glass-strong: #ffffff;
+  --fp-glass-border: rgba(255, 255, 255, 0.9);
+  --fp-nav-bg: rgba(255, 255, 255, 0.55);
+}
+
+[data-fp-theme="amethyst"] {
+  --fp-ink: #2A2350;
+  --fp-sub: #756FA0;
+  --fp-faint: #B3AED0;
+  --fp-gold: #F0B429;
+  --fp-gold-rgb: 240, 180, 41;
+  --fp-primary: #605399;
+  --fp-primary-rgb: 96, 83, 153;
+  --fp-primary-dark: #453C6E;
+  --fp-primary-light: #ADA1E6;
+  --fp-primary-light-rgb: 173, 161, 230;
+  --fp-accent: #D562BE;
+  --fp-accent-rgb: 213, 98, 190;
+  --fp-cyan: #4FB8AE;
+  --fp-fill: #E4DEF9;
+  --fp-bg-1: #EDE9FB;
+  --fp-bg-2: #F6E4F5;
+  --fp-bg-3: #FBEAF6;
 }
 
 [data-fp-theme="ocean"] {
-  --fp-ink: #0B2E33;
-  --fp-sub: #4C7A80;
-  --fp-faint: #96BDC1;
-  --fp-gold: #FBBF24;
-  --fp-gold-rgb: 251, 191, 36;
-  --fp-primary: #0D9488;
-  --fp-primary-rgb: 13, 148, 136;
-  --fp-primary-light: #5EEAD4;
-  --fp-primary-light-rgb: 94, 234, 212;
-  --fp-accent: #FB7185;
-  --fp-accent-rgb: 251, 113, 133;
-  --fp-cyan: #38BDF8;
-  --fp-fill: #E6FFFA;
-  --fp-bg-1: #CCFBF1;
-  --fp-bg-2: #FFE4E1;
-  --fp-bg-3: #FEF3C7;
+  --fp-ink: #0B1F4D;
+  --fp-sub: #4E6FA3;
+  --fp-faint: #9FB3D9;
+  --fp-gold: #FFC94D;
+  --fp-gold-rgb: 255, 201, 77;
+  --fp-primary: #172D9D;
+  --fp-primary-rgb: 23, 45, 157;
+  --fp-primary-dark: #112071;
+  --fp-primary-light: #787CFE;
+  --fp-primary-light-rgb: 120, 124, 254;
+  --fp-accent: #FF6F91;
+  --fp-accent-rgb: 255, 111, 145;
+  --fp-cyan: #00E2E0;
+  --fp-fill: #E6F6FF;
+  --fp-bg-1: #D6F9F7;
+  --fp-bg-2: #DCEAFF;
+  --fp-bg-3: #E7E6FF;
 }
 
 [data-fp-theme="sunset"] {
-  --fp-ink: #431407;
-  --fp-sub: #9A6B5C;
-  --fp-faint: #D3B4A8;
-  --fp-gold: #FACC15;
-  --fp-gold-rgb: 250, 204, 21;
-  --fp-primary: #E11D48;
-  --fp-primary-rgb: 225, 29, 72;
-  --fp-primary-light: #FDA4AF;
-  --fp-primary-light-rgb: 253, 164, 175;
-  --fp-accent: #8B5CF6;
-  --fp-accent-rgb: 139, 92, 246;
-  --fp-cyan: #FB923C;
-  --fp-fill: #FFF1F2;
-  --fp-bg-1: #FFE4E9;
-  --fp-bg-2: #EDE3FF;
-  --fp-bg-3: #FEF9C3;
+  --fp-ink: #3A2A12;
+  --fp-sub: #9C7A52;
+  --fp-faint: #D9C3A0;
+  --fp-gold: #F5B942;
+  --fp-gold-rgb: 245, 185, 66;
+  --fp-primary: #E8823D;
+  --fp-primary-rgb: 232, 130, 61;
+  --fp-primary-dark: #AE622E;
+  --fp-primary-light: #FFC585;
+  --fp-primary-light-rgb: 255, 197, 133;
+  --fp-accent: #18C5C7;
+  --fp-accent-rgb: 24, 197, 199;
+  --fp-cyan: #A3D47F;
+  --fp-fill: #FFF6E9;
+  --fp-bg-1: #FFF1DC;
+  --fp-bg-2: #FFE3CC;
+  --fp-bg-3: #E3F3D9;
+}
+
+[data-fp-theme="aurora"] {
+  --fp-ink: #24245C;
+  --fp-sub: #6D6FA8;
+  --fp-faint: #ACB0DE;
+  --fp-gold: #FFC845;
+  --fp-gold-rgb: 255, 200, 69;
+  --fp-primary: #5B6EE8;
+  --fp-primary-rgb: 91, 110, 232;
+  --fp-primary-dark: #424FA7;
+  --fp-primary-light: #8DAFFC;
+  --fp-primary-light-rgb: 141, 175, 252;
+  --fp-accent: #F696D5;
+  --fp-accent-rgb: 246, 150, 213;
+  --fp-cyan: #18BBD9;
+  --fp-fill: #EEF2FE;
+  --fp-bg-1: #DFF6FA;
+  --fp-bg-2: #E6EEFF;
+  --fp-bg-3: #FBE7F5;
+}
+
+[data-fp-theme="carnival"] {
+  --fp-ink: #3D1F52;
+  --fp-sub: #8A6BA3;
+  --fp-faint: #C7B3D9;
+  --fp-gold: #FEC603;
+  --fp-gold-rgb: 254, 198, 3;
+  --fp-primary: #9A6BC2;
+  --fp-primary-rgb: 154, 107, 194;
+  --fp-primary-dark: #6F4D8C;
+  --fp-primary-light: #AF87CE;
+  --fp-primary-light-rgb: 175, 135, 206;
+  --fp-accent: #EA1A7F;
+  --fp-accent-rgb: 234, 26, 127;
+  --fp-cyan: #16D6FA;
+  --fp-fill: #F7EEFB;
+  --fp-bg-1: #F5E9FA;
+  --fp-bg-2: #FDE3F0;
+  --fp-bg-3: #E3FBEF;
+}
+
+/* midnight — the one dark theme. Unlike the 6 light themes above, this
+   isn't just a hue swap: the page background, glass-card surfaces, and text
+   all invert together (light ink on dark glass/bg), because theme.text is
+   used both on the raw page background AND inside glass cards throughout
+   the portal — flipping ink to light without also darkening --fp-glass/
+   --fp-glass-strong/--fp-nav-bg would leave light text sitting on the
+   still-white card surfaces those tokens otherwise default to. Accent hues
+   (primary/accent/gold/cyan) are boosted lighter/brighter than their light-
+   theme counterparts, since a color needs more luminance to read clearly
+   against a near-black background than against white. */
+[data-fp-theme="midnight"] {
+  --fp-ink: #F3F1FC;
+  --fp-sub: #B7B2DA;
+  --fp-faint: #8D87B3;
+  --fp-gold: #FFD166;
+  --fp-gold-rgb: 255, 209, 102;
+  --fp-primary: #8B6FFF;
+  --fp-primary-rgb: 139, 111, 255;
+  --fp-primary-dark: #4A2FA8;
+  --fp-primary-light: #B9A6FF;
+  --fp-primary-light-rgb: 185, 166, 255;
+  --fp-accent: #FF6FB0;
+  --fp-accent-rgb: 255, 111, 176;
+  --fp-cyan: #3DD9E8;
+  --fp-fill: #211D38;
+  --fp-bg-1: #171325;
+  --fp-bg-2: #1E1830;
+  --fp-bg-3: #241A2E;
+  --fp-glass: rgba(33, 29, 56, 0.6);
+  --fp-glass-strong: #1E1A33;
+  --fp-glass-border: rgba(184, 166, 255, 0.18);
+  --fp-nav-bg: rgba(30, 26, 50, 0.65);
+}
+
+/* emerald — a second dark theme, teal/green instead of midnight's purple.
+   Same light-on-dark structure as midnight (see its comment above); only the
+   hue family changes. Gold/coral stay warm accents for contrast against the
+   cool teal/green base, same role gold and pink play in the light themes. */
+[data-fp-theme="emerald"] {
+  --fp-ink: #EAFBF3;
+  --fp-sub: #9FC9BC;
+  --fp-faint: #6C9686;
+  --fp-gold: #FFCB47;
+  --fp-gold-rgb: 255, 203, 71;
+  --fp-primary: #16D9A0;
+  --fp-primary-rgb: 22, 217, 160;
+  --fp-primary-dark: #0D6B52;
+  --fp-primary-light: #5EEAD4;
+  --fp-primary-light-rgb: 94, 234, 212;
+  --fp-accent: #FF7A5C;
+  --fp-accent-rgb: 255, 122, 92;
+  --fp-cyan: #22D3EE;
+  --fp-fill: #16281F;
+  --fp-bg-1: #0D1A16;
+  --fp-bg-2: #122A21;
+  --fp-bg-3: #17231A;
+  --fp-glass: rgba(22, 40, 32, 0.6);
+  --fp-glass-strong: #1C3128;
+  --fp-glass-border: rgba(94, 234, 212, 0.18);
+  --fp-nav-bg: rgba(22, 40, 32, 0.65);
 }

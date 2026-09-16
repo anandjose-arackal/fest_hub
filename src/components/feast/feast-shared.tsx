@@ -37,17 +37,17 @@ export const theme = {
   track: "rgba(var(--fp-primary-rgb), 0.10)",
   softShadow: "0 14px 32px rgba(var(--fp-primary-rgb), 0.15)",
   glass: {
-    background: "rgba(255,255,255,0.55)",
-    border: "1px solid rgba(255,255,255,0.9)",
+    background: "var(--fp-glass)",
+    border: "1px solid var(--fp-glass-border)",
     backdropFilter: "blur(16px) saturate(180%)",
   } as React.CSSProperties,
   glassStrong: {
-    background: "#ffffff",
-    border: "1px solid rgba(255,255,255,0.9)",
+    background: "var(--fp-glass-strong)",
+    border: "1px solid var(--fp-glass-border)",
     backdropFilter: "blur(16px) saturate(180%)",
   } as React.CSSProperties,
   pageBg: "linear-gradient(165deg, var(--fp-bg-1) 0%, var(--fp-bg-2) 46%, var(--fp-bg-3) 100%)",
-  navBg: "rgba(255,255,255,0.55)",
+  navBg: "var(--fp-nav-bg)",
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -293,8 +293,8 @@ export function FeastNav() {
                   layoutId="feast-nav-bubble"
                   className="absolute -top-4 flex h-[54px] w-[54px] items-center justify-center rounded-full"
                   style={{
-                    background: "linear-gradient(145deg, var(--fp-primary-light), var(--fp-primary))",
-                    boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
+                    background: "linear-gradient(145deg, var(--fp-primary), var(--fp-primary-dark))",
+                    boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.45), inset 0 1.5px 2px rgba(255,255,255,0.35)",
                   }}
                   transition={{ type: "spring", stiffness: 380, damping: 32 }}
                 >
@@ -345,8 +345,8 @@ export function FeastSideNav() {
                     layoutId="feast-nav-bubble-side"
                     className="absolute inset-0 rounded-2xl"
                     style={{
-                      background: "linear-gradient(145deg, var(--fp-primary-light), var(--fp-primary))",
-                      boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.45), inset 0 1.5px 2px rgba(255,255,255,0.55)",
+                      background: "linear-gradient(145deg, var(--fp-primary), var(--fp-primary-dark))",
+                      boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.45), inset 0 1.5px 2px rgba(255,255,255,0.35)",
                     }}
                     transition={{ type: "spring", stiffness: 380, damping: 32 }}
                   />
@@ -426,7 +426,7 @@ export function FeastTabs({
             style={
               on
                 ? { background: `linear-gradient(135deg, ${f.tint[0]}, ${f.tint[1]})`, color: "#fff", boxShadow: `0 8px 22px ${f.accent}55` }
-                : { background: "rgba(255,255,255,0.7)", color: "#4B5563", border: "1px solid rgba(var(--fp-primary-rgb),0.14)" }
+                : { background: "var(--fp-glass)", color: theme.sub, border: "1px solid rgba(var(--fp-primary-rgb),0.14)" }
             }
           >
             {f.name}

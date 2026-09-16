@@ -31,14 +31,22 @@ export function sortResults(rows: PublicResultRow[]): PublicResultRow[] {
   });
 }
 
-const MEDAL = { 1: { emoji: "🥇", disc: "#F5C542", bg: "#FFFBEB" }, 2: { emoji: "🥈", disc: "#9CA3AF", bg: "#F9FAFB" }, 3: { emoji: "🥉", disc: "#E0936A", bg: "#FFF7ED" } };
+// bg is a translucent tint (not a flat pale hex) so it reads as a subtle
+// wash over whatever the row actually sits on — a light card in the 6 light
+// themes, a dark glass card in "midnight" — rather than a hardcoded near-
+// white patch that would swallow light theme text on the dark theme.
+const MEDAL = {
+  1: { emoji: "🥇", disc: "#F5C542", bg: "rgba(var(--fp-gold-rgb),0.16)" },
+  2: { emoji: "🥈", disc: "#9CA3AF", bg: "rgba(156,163,175,0.16)" },
+  3: { emoji: "🥉", disc: "#E0936A", bg: "rgba(224,147,106,0.16)" },
+};
 
 export function MedalBadge({ position }: { position: 1 | 2 | 3 }) {
   const m = MEDAL[position];
   return (
     <span
       className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full text-[17px]"
-      style={{ background: `linear-gradient(135deg, ${m.disc}, ${m.disc}88)`, boxShadow: `0 0 0 3px ${m.bg}, 0 4px 10px ${m.disc}66` }}
+      style={{ background: `linear-gradient(135deg, ${m.disc}, ${m.disc}88)`, boxShadow: `0 0 0 3px var(--fp-glass-strong), 0 4px 10px ${m.disc}66` }}
     >
       {m.emoji}
     </span>

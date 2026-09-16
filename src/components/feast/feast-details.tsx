@@ -324,7 +324,7 @@ export function FeastDetails({ slug }: { slug: string }) {
                   key={c.slug}
                   onClick={() => setActiveTab(c.slug)}
                   className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold"
-                  style={active ? { background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
+                  style={active ? { background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "var(--fp-glass)", color: theme.sub, border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
                 >
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: active ? "#fff" : c.color }} />
                   {c.label}

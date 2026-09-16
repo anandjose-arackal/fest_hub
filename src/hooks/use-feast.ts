@@ -7,7 +7,9 @@ import type { Stage, Diocese, Meghala, Shakha, HierarchyLevel } from "@/types";
 
 // Multi-org: no hardcoded per-slug visual config (the source app had a
 // literature-feast-2026/arts-feast-2026 special case) — icon/tint/accent
-// are derived purely from feast.type, which every org shares.
+// are derived purely from feast.type, which every org shares. These are
+// "violet" (the default theme)'s colors specifically — kept exactly as
+// launched, untouched by THEMED_TINT below.
 const FEAST_TYPE_CONFIG: Record<string, { icon: string; tint: [string, string]; accent: string }> = {
   literature: { icon: "PenTool", tint: ["#6B46FF", "#A855F7"], accent: "#A855F7" },
   arts: { icon: "Palette", tint: ["#A855F7", "#EC4899"], accent: "#EC4899" },
@@ -15,8 +17,37 @@ const FEAST_TYPE_CONFIG: Record<string, { icon: string; tint: [string, string]; 
   general: { icon: "Sparkles", tint: ["#F59E0B", "#EC4899"], accent: "#F59E0B" },
 };
 
+// literature/arts recolor per org_settings.theme so the "Active Fests"
+// banners actually track the org's selected Fest Portal theme instead of
+// always showing violet's purple/pink — sports/general keep their fixed,
+// type-identity colors (green/cyan, amber/pink) regardless of theme, same
+// as before. Plain hex, not CSS var references: callers all over feast-*.tsx
+// append an alpha suffix directly onto these strings (e.g. `${f.accent}22`),
+// which only produces valid CSS for a literal hex color. Values mirror each
+// theme's own primary/primary-light/accent in globals.css. "violet" is
+// deliberately absent — it falls through to FEAST_TYPE_CONFIG above,
+// unchanged.
+const THEMED_TINT: Record<string, { literature: [string, string]; arts: [string, string] }> = {
+  amethyst: { literature: ["#605399", "#ADA1E6"], arts: ["#ADA1E6", "#D562BE"] },
+  ocean: { literature: ["#172D9D", "#787CFE"], arts: ["#787CFE", "#FF6F91"] },
+  sunset: { literature: ["#E8823D", "#FFC585"], arts: ["#FFC585", "#18C5C7"] },
+  aurora: { literature: ["#5B6EE8", "#8DAFFC"], arts: ["#8DAFFC", "#F696D5"] },
+  carnival: { literature: ["#9A6BC2", "#AF87CE"], arts: ["#AF87CE", "#EA1A7F"] },
+  midnight: { literature: ["#8B6FFF", "#B9A6FF"], arts: ["#B9A6FF", "#FF6FB0"] },
+  emerald: { literature: ["#16D9A0", "#5EEAD4"], arts: ["#5EEAD4", "#FF7A5C"] },
+};
+
+function currentPortalTheme(): string {
+  if (typeof document === "undefined") return "violet";
+  return document.body.getAttribute("data-fp-theme") || "violet";
+}
+
 function feastVisual(type: string) {
-  return FEAST_TYPE_CONFIG[type] ?? FEAST_TYPE_CONFIG.general;
+  const base = FEAST_TYPE_CONFIG[type] ?? FEAST_TYPE_CONFIG.general;
+  if (type !== "literature" && type !== "arts") return base;
+  const override = THEMED_TINT[currentPortalTheme()]?.[type as "literature" | "arts"];
+  if (!override) return base; // violet, or an unrecognized theme id
+  return { ...base, tint: override, accent: override[1] };
 }
 
 const COMP_ICON_MAP: Record<string, string> = {

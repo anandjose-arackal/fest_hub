@@ -16,8 +16,13 @@ const HIERARCHY_OPTIONS: { value: HierarchyLevel; label: string; hint: string }[
 // literal hex here purely for this admin preview, not read by the portal.
 const THEME_OPTIONS: { value: PortalTheme; label: string; swatches: string[] }[] = [
   { value: "violet", label: "Violet Bloom", swatches: ["#6B46FF", "#EC4899", "#F5C542"] },
-  { value: "ocean", label: "Ocean Breeze", swatches: ["#0D9488", "#FB7185", "#FBBF24"] },
-  { value: "sunset", label: "Sunset Ember", swatches: ["#E11D48", "#8B5CF6", "#FACC15"] },
+  { value: "ocean", label: "Ocean Breeze", swatches: ["#172D9D", "#FF6F91", "#00E2E0"] },
+  { value: "sunset", label: "Tropic Sunrise", swatches: ["#E8823D", "#18C5C7", "#F5B942"] },
+  { value: "aurora", label: "Aurora Skies", swatches: ["#5B6EE8", "#F696D5", "#18BBD9"] },
+  { value: "carnival", label: "Carnival Spark", swatches: ["#9A6BC2", "#EA1A7F", "#FEC603"] },
+  { value: "amethyst", label: "Amethyst Dusk", swatches: ["#605399", "#D562BE", "#F0B429"] },
+  { value: "midnight", label: "Midnight Mode", swatches: ["#171325", "#8B6FFF", "#FF6FB0"] },
+  { value: "emerald", label: "Emerald Night", swatches: ["#0D1A16", "#16D9A0", "#FF7A5C"] },
 ];
 
 export default function OrgSettingsPage() {

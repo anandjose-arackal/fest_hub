@@ -85,7 +85,7 @@ function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: Feast
   const grades = (results ?? []).filter((r) => r.position === null && r.grade !== null);
 
   return (
-    <div className="relative mb-2.5 overflow-hidden rounded-2xl border" style={{ background: "rgba(255,255,255,0.52)", backdropFilter: "blur(16px)", borderColor: "rgba(255,255,255,0.7)" }}>
+    <div className="relative mb-2.5 overflow-hidden rounded-2xl border" style={{ background: "var(--fp-glass)", backdropFilter: "blur(16px)", borderColor: "var(--fp-glass-border)" }}>
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: catColor }} />
       <button onClick={toggle} className="w-full pl-4 pr-3 py-2.5 text-left">
         <div className="flex items-start justify-between gap-2">
@@ -94,7 +94,7 @@ function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: Feast
             {isPublished ? (
               <span className="flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.14)", color: theme.purple }}><Trophy className="mr-0.5 h-2.5 w-2.5" />Results</span>
             ) : (
-              <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(156,163,175,0.15)", color: "#9CA3AF" }}>Pending</span>
+              <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: theme.fill, color: theme.faint }}>Pending</span>
             )}
             <span className="flex h-6 w-6 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(var(--fp-primary-rgb),0.1)", transform: open ? "rotate(180deg)" : undefined }}>
               <ChevronDown className="h-3.5 w-3.5" style={{ color: theme.purple }} />
@@ -155,7 +155,7 @@ function FeastContent({ slug, onGeneratePoster }: { slug: string; onGeneratePost
                   key={cat.slug}
                   onClick={() => setActiveTab(cat.slug)}
                   className="flex shrink-0 items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-[16px] font-extrabold"
-                  style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "rgba(255,255,255,0.45)", color: "#4B5563", border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
+                  style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "var(--fp-glass)", color: theme.sub, border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
                 >
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: on ? "rgba(255,255,255,0.7)" : cat.color }} />
                   {cat.label}
@@ -197,7 +197,7 @@ export function FeastResults() {
     <button
       onClick={() => router.push(`/search?feast=${activeSlug}`)}
       className="flex w-full items-center gap-2.5 rounded-[14px] px-4 py-3"
-      style={{ background: "rgba(255,255,255,0.72)", border: "1.5px solid rgba(var(--fp-primary-rgb),0.14)", backdropFilter: "blur(12px)" }}
+      style={{ background: "var(--fp-glass)", border: "1.5px solid rgba(var(--fp-primary-rgb),0.14)", backdropFilter: "blur(12px)" }}
     >
       <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }}><Search className="h-[15px] w-[15px]" style={{ color: "var(--fp-primary)" }} /></div>
       <div className="flex-1 text-left">

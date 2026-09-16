@@ -16,8 +16,13 @@ import "./globals.css";
 // tag's static content, not DOM-scoped styling.
 const THEME_COLORS: Record<PortalTheme, string> = {
   violet: "#6B46FF",
-  ocean: "#0D9488",
-  sunset: "#E11D48",
+  ocean: "#172D9D",
+  sunset: "#E8823D",
+  aurora: "#5B6EE8",
+  carnival: "#9A6BC2",
+  amethyst: "#605399",
+  midnight: "#171325",
+  emerald: "#0D1A16",
 };
 
 // --font-poppins is used throughout the Feast Portal/admin UI for body text;
