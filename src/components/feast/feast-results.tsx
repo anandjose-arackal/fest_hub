@@ -8,6 +8,7 @@ import { getPublishedResults } from "@/actions/results";
 import { getPublishedTeamResults } from "@/actions/team-results";
 import { CATEGORY_LABELS, FeastTabs, FeastTopBar, theme } from "./feast-shared";
 import { ResultTable, sortResults, type PublicResultRow } from "./feast-shared-results";
+import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 
 const CAT_CONFIG = [
   { slug: "sub_junior", label: "Sub Jr", color: "#34D3EE" },
@@ -51,12 +52,23 @@ function mapRow(r: Record<string, unknown>, isTeam: boolean): PublicResultRow {
   };
 }
 
-function CompCard({ comp, catColor }: { comp: FeastCompetitionUI; catColor: string }) {
+function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: FeastCompetitionUI; catColor: string; feastName: string; onGeneratePoster: (winner: SocialPosterWinner) => void }) {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<PublicResultRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const isTeam = comp.cat === "Team";
   const isPublished = comp.compStatus === "published";
+  const categoryLabel = [CATEGORY_LABELS[comp.competitionCategorySlug ?? ""], comp.gender ? (comp.gender === "girl" ? "Girls" : "Boys") : null].filter(Boolean).join(" · ");
+  const handleGeneratePoster = (row: PublicResultRow) =>
+    onGeneratePoster({
+      rank: row.position as 1 | 2 | 3,
+      winnerName: row.name,
+      houseName: row.houseName,
+      shakhaName: row.shakha,
+      competitionName: comp.name,
+      categoryLabel,
+      feastName,
+    });
 
   async function toggle() {
     const next = !open;
@@ -103,7 +115,7 @@ function CompCard({ comp, catColor }: { comp: FeastCompetitionUI; catColor: stri
             <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: theme.fill, color: "#9CA3AF" }}>No results recorded</div>
           ) : (
             <div className="lg:grid lg:grid-cols-2 lg:gap-5">
-              <ResultTable title="Positions" rows={positions} color={catColor} />
+              <ResultTable title="Positions" rows={positions} color={catColor} onGeneratePoster={handleGeneratePoster} />
               <ResultTable title="Grades" rows={grades} color={catColor} />
             </div>
           )}
@@ -113,7 +125,7 @@ function CompCard({ comp, catColor }: { comp: FeastCompetitionUI; catColor: stri
   );
 }
 
-function FeastContent({ slug }: { slug: string }) {
+function FeastContent({ slug, onGeneratePoster }: { slug: string; onGeneratePoster: (winner: SocialPosterWinner) => void }) {
   const { feast, loading } = useFeast(slug);
   const [activeTab, setActiveTab] = useState<string>("");
 
@@ -155,7 +167,7 @@ function FeastContent({ slug }: { slug: string }) {
             {filtered.length === 0 ? (
               <p className="py-6 text-center text-[15px]" style={{ color: "#9CA3AF" }}>No competitions in this category.</p>
             ) : (
-              filtered.map((comp) => <CompCard key={comp.id} comp={comp} catColor={activeColor} />)
+              filtered.map((comp) => <CompCard key={comp.id} comp={comp} catColor={activeColor} feastName={feast?.name ?? ""} onGeneratePoster={onGeneratePoster} />)
             )}
           </div>
         </>
@@ -170,6 +182,7 @@ export function FeastResults() {
   const initialSlug = search.get("feast") ?? "";
   const { feasts, loading: feastsLoading } = useFeasts();
   const [activeSlug, setActiveSlug] = useState(initialSlug);
+  const [posterWinner, setPosterWinner] = useState<SocialPosterWinner | null>(null);
 
   useEffect(() => {
     if (feasts.length > 0 && !feasts.find((f) => f.slug === activeSlug)) setActiveSlug(feasts[0].slug);
@@ -209,13 +222,15 @@ export function FeastResults() {
           ) : !feastsLoading && feasts.length > 0 && !feasts.some((f) => f.slug === activeSlug) ? (
             <div className="flex justify-center py-16"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
           ) : activeSlug ? (
-            <FeastContent key={activeSlug} slug={activeSlug} />
+            <FeastContent key={activeSlug} slug={activeSlug} onGeneratePoster={setPosterWinner} />
           ) : null}
         </div>
 
         {/* Sidebar — wide screens only (mobile copy renders above) */}
         <div className="sticky top-4 hidden lg:block">{searchCta}</div>
       </div>
+
+      {posterWinner && <SocialPosterOverlay winner={posterWinner} onClose={() => setPosterWinner(null)} />}
     </div>
   );
 }

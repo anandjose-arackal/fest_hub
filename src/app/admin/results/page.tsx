@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { Medal, Check } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Medal, Check, ImageDown, Download, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { setMaxScore, saveDraftScores, publishResults, unpublishResults, getCompetitionScores } from "@/actions/results";
 import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores } from "@/actions/team-results";
@@ -13,7 +13,9 @@ import {
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { getOrgSettings } from "@/lib/org-settings";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, OrgSettings, Shakha } from "@/types";
+import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, type PosterData, type PosterWinner, type PosterTheme } from "@/lib/poster-render";
+import { toPng } from "html-to-image";
+import type { Competition, CompetitionCategory, Feast, FeastCompetition, Meghala, OrgSettings, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 
@@ -90,6 +92,7 @@ export default function ResultsPage() {
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [compId, setCompId] = useState("");
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
+  const [meghalas, setMeghalas] = useState<Meghala[]>([]);
   const [shakhaFilter, setShakhaFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<"" | "draft" | "published">("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
@@ -101,6 +104,28 @@ export default function ResultsPage() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [org, setOrg] = useState<OrgSettings | null>(null);
+  const [posterOpen, setPosterOpen] = useState(false);
+  const [posterData, setPosterData] = useState<PosterData | null>(null);
+  const [posterTheme, setPosterTheme] = useState<PosterTheme>("maroon");
+  const [posterDownloading, setPosterDownloading] = useState(false);
+  const [posterScale, setPosterScale] = useState(0.3);
+  const posterRef = useRef<HTMLDivElement>(null);
+  const posterWrapRef = useRef<HTMLDivElement>(null);
+
+  // Scales the fixed-size (1080×1920) poster node down to fit the modal via
+  // CSS transform rather than re-rendering it smaller, so html-to-image
+  // always captures the same full-resolution node the preview is showing.
+  useEffect(() => {
+    if (!posterOpen) return;
+    const el = posterWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w) setPosterScale(w / POSTER_WIDTH);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [posterOpen]);
 
   useEffect(() => {
     getOrgSettings().then(setOrg);
@@ -109,6 +134,7 @@ export default function ResultsPage() {
       if (data && data.length > 0) setFeastId(data[0].id);
     });
     supabase.from("shakhas").select("*").order("name").then(({ data }) => setShakhas(data ?? []));
+    supabase.from("meghalas").select("*").order("name").then(({ data }) => setMeghalas(data ?? []));
   }, []);
 
   useEffect(() => {
@@ -336,6 +362,66 @@ export default function ResultsPage() {
       setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "draft", comp_status: "completed" } : c)));
     } else {
       showBanner(result.error);
+    }
+  }
+
+  // Above shakha level, the poster shows the winner's Meghala instead (with
+  // "Meghala" appended) rather than the shakha — falls back to the shakha
+  // name if the org's set to meghala/diocese level but this shakha isn't
+  // assigned into a meghala yet.
+  function groupLabelFor(shakhaId: string, shakhaName: string): string {
+    if (org?.hierarchy_level && org.hierarchy_level !== "shakha") {
+      const shakha = shakhas.find((s) => s.id === shakhaId);
+      const meghala = shakha?.meghala_id ? meghalas.find((m) => m.id === shakha.meghala_id) : null;
+      if (meghala) return `${meghala.name} Meghala`;
+    }
+    return `${shakhaName} Shakha`;
+  }
+
+  function openPoster() {
+    if (!selectedFc || !org) {
+      showBanner("Still loading organization settings — try again in a moment.");
+      return;
+    }
+    const winners: PosterWinner[] = entries
+      .map((e) => ({ e, p: preview.get(e.regId) }))
+      .filter((x): x is { e: EntryRow; p: Preview } => x.p != null && x.p.position != null && x.p.position <= 3)
+      .map(({ e, p }) => ({ place: p.position as 1 | 2 | 3, name: e.name, houseName: isGroup ? "" : e.sub, shakhaName: groupLabelFor(e.shakhaId, e.shakhaName) }));
+    if (winners.length === 0) {
+      showBanner("No 1st/2nd/3rd place results yet for this competition.");
+      return;
+    }
+    const feast = feasts.find((f) => f.id === feastId);
+    const categoryLabel = [
+      selectedFc.competition.competition_category?.name,
+      selectedFc.competition.gender ? (selectedFc.competition.gender.toLowerCase().startsWith("b") ? "Boys" : "Girls") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    setPosterData({
+      org,
+      feastName: feast?.name ?? "",
+      competitionName: selectedFc.competition.name,
+      categoryLabel,
+      winners,
+      theme: posterTheme,
+    });
+    setPosterOpen(true);
+  }
+
+  async function downloadPoster() {
+    if (!posterRef.current || !posterData) return;
+    setPosterDownloading(true);
+    try {
+      const dataUrl = await toPng(posterRef.current, { cacheBust: true, width: POSTER_WIDTH, height: POSTER_HEIGHT });
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `${posterData.competitionName.replace(/\s+/g, "_")}_result.png`;
+      a.click();
+    } catch (err) {
+      showBanner(err instanceof Error ? `Couldn't generate the image: ${err.message}` : "Couldn't generate the image.");
+    } finally {
+      setPosterDownloading(false);
     }
   }
 
@@ -683,6 +769,14 @@ export default function ResultsPage() {
         <button onClick={exportAll} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,#4C1D95,#6B46FF)" }}>
           Export All
         </button>
+        <button
+          onClick={openPoster}
+          disabled={!compId || entries.length === 0}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg,#8B1538,#B8264F)" }}
+        >
+          <ImageDown className="h-4 w-4" /> Generate Poster
+        </button>
       </div>
 
       {publishOpen && (
@@ -707,6 +801,59 @@ export default function ResultsPage() {
               <button onClick={() => setPublishOpen(false)} className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm">Cancel</button>
               <button onClick={handlePublish} className="flex-1 rounded-lg py-2 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}>
                 Publish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {posterOpen && posterData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPosterOpen(false)}>
+          {/* flex column capped to the viewport height, with the header and
+              action buttons shrink-0 so they stay reachable and only the
+              theme picker + poster preview scroll — otherwise on a desktop
+              browser window shorter than the poster preview (9:16 at up to
+              384px wide is ~683px tall), the Download button gets pushed
+              below the fold with no way to reach it. Same pattern as the
+              public share overlay (social-poster-overlay.tsx). */}
+          <div className="flex max-h-[90vh] w-full max-w-sm flex-col rounded-2xl bg-white p-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex shrink-0 items-center justify-between">
+              <h2 className="text-base font-bold">🖼️ Result Poster (9:16)</h2>
+              <button onClick={() => setPosterOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="mb-3 flex gap-1.5">
+                {POSTER_THEMES.map((th) => (
+                  <button
+                    key={th.id}
+                    onClick={() => {
+                      setPosterTheme(th.id);
+                      setPosterData((d) => (d ? { ...d, theme: th.id } : d));
+                    }}
+                    className={`flex-1 rounded-lg border-2 px-2 py-1.5 text-xs font-bold ${posterData.theme === th.id ? "border-[#8B1538] bg-[#8B1538]/10 text-[#8B1538]" : "border-neutral-200 text-neutral-500"}`}
+                  >
+                    {th.label}
+                  </button>
+                ))}
+              </div>
+              <div
+                ref={posterWrapRef}
+                style={{ width: "100%", aspectRatio: `${POSTER_WIDTH} / ${POSTER_HEIGHT}`, overflow: "hidden", borderRadius: 16, border: "1px solid #eee", background: "#f4f4f5" }}
+              >
+                <div style={{ width: POSTER_WIDTH, height: POSTER_HEIGHT, transform: `scale(${posterScale})`, transformOrigin: "top left" }}>
+                  <ResultPoster ref={posterRef} data={posterData} />
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex shrink-0 gap-2">
+              <button onClick={() => setPosterOpen(false)} className="flex-1 rounded-xl border-2 border-neutral-200 py-2 text-sm font-semibold">Close</button>
+              <button
+                onClick={downloadPoster}
+                disabled={posterDownloading}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm font-bold text-white disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg,#8B1538,#B8264F)" }}
+              >
+                <Download className="h-4 w-4" /> {posterDownloading ? "Generating…" : "Download Image"}
               </button>
             </div>
           </div>

@@ -4,6 +4,7 @@
 // Results screen — one implementation instead of the source app's two
 // near-duplicate copies.
 
+import { Camera } from "lucide-react";
 import { gradeColor } from "./feast-shared";
 
 export interface PublicResultRow {
@@ -55,9 +56,12 @@ export function GradeChip({ grade }: { grade: "A" | "B" | "C" | null }) {
   );
 }
 
-export function ResultRow({ row }: { row: PublicResultRow }) {
+export function ResultRow({ row, onGeneratePoster }: { row: PublicResultRow; onGeneratePoster?: (row: PublicResultRow) => void }) {
   const isMedal = row.position != null && row.position <= 3;
   const medalBg = isMedal ? MEDAL[row.position as 1 | 2 | 3].bg : undefined;
+  // Team results don't carry a single winner photo/name to build a personal
+  // poster from — the camera button only ever shows for individual entries.
+  const showPosterButton = isMedal && !row.isTeam && onGeneratePoster;
 
   return (
     <div className="rounded-xl px-3 py-2.5" style={{ background: medalBg }}>
@@ -75,19 +79,29 @@ export function ResultRow({ row }: { row: PublicResultRow }) {
           <p className="truncate text-xs" style={{ color: "var(--fp-sub)" }}>⛪ {row.shakha}</p>
           {row.isTeam && row.houseName && <p className="mt-0.5 text-xs" style={{ color: "var(--fp-primary)" }}>Members: {row.houseName}</p>}
         </div>
+        {showPosterButton && (
+          <button
+            onClick={() => onGeneratePoster(row)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-none"
+            style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }}
+            aria-label="Generate social poster"
+          >
+            <Camera className="h-[15px] w-[15px]" style={{ color: "var(--fp-primary)" }} />
+          </button>
+        )}
         <GradeChip grade={row.grade} />
       </div>
     </div>
   );
 }
 
-export function ResultTable({ title, rows, color }: { title: string; rows: PublicResultRow[]; color: string }) {
+export function ResultTable({ title, rows, color, onGeneratePoster }: { title: string; rows: PublicResultRow[]; color: string; onGeneratePoster?: (row: PublicResultRow) => void }) {
   if (rows.length === 0) return null;
   return (
     <div className="mt-3">
       <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide" style={{ color }}>{title}</p>
       <div className="space-y-1.5">
-        {rows.map((r) => <ResultRow key={r.registrationId} row={r} />)}
+        {rows.map((r) => <ResultRow key={r.registrationId} row={r} onGeneratePoster={onGeneratePoster} />)}
       </div>
     </div>
   );

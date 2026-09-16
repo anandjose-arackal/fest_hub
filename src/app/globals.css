@@ -2,6 +2,21 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Nayana — Malayalam display font used only by the result poster's feast-name
+   heading (see poster-render.tsx); the rest of the app keeps Anek/Baloo. */
+@font-face {
+  font-family: "Nayana";
+  src: url("/font/FN-Nayana-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Nayana";
+  src: url("/font/FN-Nayana-Bold.otf") format("opentype");
+  font-weight: 700;
+  font-display: swap;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
