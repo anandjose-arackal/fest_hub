@@ -58,7 +58,7 @@ function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: Feast
   const [loading, setLoading] = useState(false);
   const isTeam = comp.cat === "Team";
   const isPublished = comp.compStatus === "published";
-  const categoryLabel = [CATEGORY_LABELS[comp.competitionCategorySlug ?? ""], comp.gender ? (comp.gender === "girl" ? "Girls" : "Boys") : null].filter(Boolean).join(" · ");
+  const categoryLabel = [CATEGORY_LABELS[comp.competitionCategorySlug ?? ""], comp.gender === "boy" ? "Boys" : comp.gender === "girl" ? "Girls" : null].filter(Boolean).join(" · ");
   const handleGeneratePoster = (row: PublicResultRow) =>
     onGeneratePoster({
       rank: row.position as 1 | 2 | 3,
@@ -101,7 +101,7 @@ function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: Feast
             </span>
           </div>
         </div>
-        {comp.gender && (
+        {(comp.gender === "boy" || comp.gender === "girl") && (
           <p className="mt-0.5 text-sm" style={{ color: comp.gender === "girl" ? "#EC4899" : "#3B82F6" }}>{comp.gender === "girl" ? "Girls" : "Boys"}</p>
         )}
       </button>

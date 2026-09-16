@@ -392,9 +392,10 @@ export default function ResultsPage() {
       return;
     }
     const feast = feasts.find((f) => f.id === feastId);
+    const gender = selectedFc.competition.gender?.toLowerCase();
     const categoryLabel = [
       selectedFc.competition.competition_category?.name,
-      selectedFc.competition.gender ? (selectedFc.competition.gender.toLowerCase().startsWith("b") ? "Boys" : "Girls") : null,
+      gender === "boy" ? "Boys" : gender === "girl" ? "Girls" : null,
     ]
       .filter(Boolean)
       .join(" · ");

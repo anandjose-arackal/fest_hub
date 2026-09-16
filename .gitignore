@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# generated poster exports (scripts/generate-posters.mjs)
+/poster-exports/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
