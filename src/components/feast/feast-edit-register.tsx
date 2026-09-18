@@ -6,6 +6,7 @@ import { Check, Loader2, Trash2 } from "lucide-react";
 import { useFeast, type FeastCompetitionUI } from "@/hooks/use-feast";
 import { supabase } from "@/lib/supabase";
 import { updateParticipant, deleteParticipant } from "@/actions/feast";
+import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { GlassPanel, GlowBtn, FeastTopBar, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS } from "./feast-shared";
 import { TextField, DateField, CategoryPill, GenderPicker, normGender, DEFAULT_MAX_PER_SHAKHA } from "./feast-register";
@@ -23,6 +24,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   const [serverError, setServerError] = useState("");
   const [form, setForm] = useState({ name: "", houseName: "", dob: "", gender: "", phone: "" });
   const [picked, setPicked] = useState<string[]>([]);
+  const [shakhaId, setShakhaId] = useState<string | null>(null);
   const [shakhaCounts, setShakhaCounts] = useState<Record<string, number>>({});
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -44,11 +46,39 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
           gender: normGender(p.gender) ?? "",
           phone: p.phone ?? "",
         });
+        setShakhaId(p.shakha_id);
       }
       setPicked((regs ?? []).map((r) => r.feast_competition_id));
       setLoaded(true);
     })();
   }, [participantId]);
+
+  // Mirrors feast-register.tsx's cap-scope check (and the backend's
+  // findFullCompetitionsForShakha) — without it this page never masked any
+  // competition as full at all, since shakhaCounts was declared but never
+  // populated, letting an over-cap swap through to a server-side rejection
+  // at save. excludeParticipantId keeps this participant's own existing
+  // picks from counting against themselves.
+  useEffect(() => {
+    if (!shakhaId || !feast) return;
+    const compIds = feast.competitions.filter((c) => c.cat === "Individual").map((c) => c.id);
+    if (compIds.length === 0) return;
+    (async () => {
+      const scopeShakhaIds = await resolveCapScopeShakhaIds(supabase, shakhaId);
+      const { data: regs } = await supabase.from("participant_registrations").select("feast_competition_id, participant_id").in("feast_competition_id", compIds);
+      if (!regs?.length) { setShakhaCounts({}); return; }
+      const participantIds = [...new Set(regs.map((r) => r.participant_id))];
+      const { data: parts } = await supabase.from("participants").select("id").in("id", participantIds).in("shakha_id", scopeShakhaIds);
+      const shakhaSet = new Set((parts ?? []).map((p) => p.id));
+      const counts: Record<string, number> = {};
+      for (const r of regs) {
+        if (r.participant_id === participantId) continue;
+        if (!shakhaSet.has(r.participant_id)) continue;
+        counts[r.feast_competition_id] = (counts[r.feast_competition_id] ?? 0) + 1;
+      }
+      setShakhaCounts(counts);
+    })();
+  }, [shakhaId, feast, participantId]);
 
   const toggle = (id: string) =>
     setPicked((p) => {

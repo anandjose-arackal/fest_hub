@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
+import { HelpSheet } from "./feast-help";
 
 // FeastUI.icon (from use-feast.ts's FEAST_TYPE_CONFIG) is a Lucide icon
 // *name*, not an emoji — this resolves it to the actual component.
@@ -446,9 +447,41 @@ const CREDIT_LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "https://anandjose-arackal.github.io/", label: "Developer", icon: Globe },
 ];
 
+// ── HelpButton — same fixed top-right corner ProfileMenu occupies, but only
+// rendered when signed OUT (ProfileMenu already carries its own Help entry
+// for signed-in users, see below) — Help shouldn't require an admin login
+// just to read "how do I register / find my registration number" etc.
+export function HelpButton() {
+  const { session } = useAuth();
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  if (session) return null;
+
+  return (
+    <>
+      {/* Top-LEFT, not right — the right corner is Login's slot on the
+          landing page ribbon (feast-landing.tsx) and ProfileMenu's slot once
+          signed in; sharing it meant computing Login's rendered width to
+          avoid overlap, which broke at some viewports. Top-left has nothing
+          fixed there at any breakpoint (FeastSideNav is vertically centered,
+          not top-anchored, and hidden below lg anyway). */}
+      <button
+        onClick={() => setHelpOpen(true)}
+        className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-full text-white transition-transform active:scale-95 sm:left-6 sm:top-5"
+        style={{ background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))", boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.35)" }}
+        aria-label="Help"
+      >
+        <HelpCircle className="h-[18px] w-[18px]" />
+      </button>
+      {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
+    </>
+  );
+}
+
 export function ProfileMenu() {
   const { session, profile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -491,12 +524,11 @@ export function ProfileMenu() {
           <div className="my-1 h-px" style={{ background: theme.hairline }} />
 
           <button
-            disabled
-            className="flex w-full cursor-not-allowed items-center justify-between rounded-xl px-3 py-2 text-left text-[13px] font-medium opacity-50"
+            onClick={() => { setOpen(false); setHelpOpen(true); }}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-medium"
             style={{ color: theme.text }}
           >
-            <span className="flex items-center gap-2"><HelpCircle className="h-4 w-4" /> Help</span>
-            <span className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide" style={{ background: theme.fillStrong, color: theme.sub }}>Soon</span>
+            <HelpCircle className="h-4 w-4" /> Help
           </button>
 
           {CREDIT_LINKS.map((c) => (
@@ -527,6 +559,7 @@ export function ProfileMenu() {
           </button>
         </div>
       )}
+      {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
@@ -586,6 +619,7 @@ export function FeastShell({ children }: { children: React.ReactNode }) {
       <Blobs />
       <FeastSideNav />
       <ProfileMenu />
+      <HelpButton />
       <main className="relative pb-[110px] lg:pb-10 lg:pl-56">
         <div className="mx-auto w-full max-w-md px-4 pt-2 sm:max-w-2xl sm:px-6 lg:max-w-5xl lg:px-8">
           {children}

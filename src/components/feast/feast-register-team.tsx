@@ -7,6 +7,7 @@ import { useFeast, useFeastId, useOrgHierarchy } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { registerTeam } from "@/actions/team";
+import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { GlassPanel, GlowBtn, FeastTopBar, StepDots, theme } from "./feast-shared";
 import { HierarchyPicker, type PickerHierarchy } from "@/components/admin/hierarchy-picker";
 
@@ -72,13 +73,19 @@ export function FeastRegisterTeam({ slug }: { slug: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminShakha]);
 
+  // Mirrors the backend's "one team per scope" rule (resolveCapScopeShakhaIds
+  // in actions/team.ts's registerTeam): at hierarchy_level 'meghala'/'diocese'
+  // a sibling shakha's existing team must mask this competition too, or the
+  // FE lets a second team through only for the save to fail server-side.
   useEffect(() => {
     if (!adminShakha || !feast) return;
     const teamCompIds = feast.competitions.filter((c) => c.cat === "Team").map((c) => c.id);
     if (teamCompIds.length === 0) return;
-    supabase.from("team_registrations").select("feast_competition_id").eq("shakha_id", adminShakha.id).in("feast_competition_id", teamCompIds).then(({ data }) => {
+    (async () => {
+      const scopeShakhaIds = await resolveCapScopeShakhaIds(supabase, adminShakha.id);
+      const { data } = await supabase.from("team_registrations").select("feast_competition_id").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamCompIds);
       setTakenCompIds(new Set((data ?? []).map((r) => r.feast_competition_id)));
-    });
+    })();
   }, [adminShakha, feast]);
 
   useEffect(() => {

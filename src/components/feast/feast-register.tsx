@@ -7,6 +7,7 @@ import { useFeast, useOrgHierarchy, type FeastCompetitionUI } from "@/hooks/use-
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { registerParticipant } from "@/actions/feast";
+import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { GlassPanel, GlowBtn, FeastTopBar, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS } from "./feast-shared";
 import { HierarchyPicker, type PickerHierarchy } from "@/components/admin/hierarchy-picker";
@@ -161,15 +162,22 @@ export function FeastRegister({ slug }: { slug: string }) {
 
   useEffect(() => { setPicked([]); }, [form.dob, form.gender]);
 
+  // Mirrors the backend cap check (resolveCapScopeShakhaIds /
+  // findFullCompetitionsForShakha in actions/feast.ts): at hierarchy_level
+  // 'meghala'/'diocese' the same max_per_shakha cap is shared across every
+  // shakha under that meghala/diocese, not just adminShakha itself — so a
+  // slot filled by a sibling shakha must show as full here too, or the FE
+  // lets it through only for the save to fail with the server's cap error.
   useEffect(() => {
     if (!adminShakha || !feast) return;
     const compIds = feast.competitions.filter((c) => c.cat === "Individual").map((c) => c.id);
     if (compIds.length === 0) return;
     (async () => {
+      const scopeShakhaIds = await resolveCapScopeShakhaIds(supabase, adminShakha.id);
       const { data: regs } = await supabase.from("participant_registrations").select("feast_competition_id, participant_id").in("feast_competition_id", compIds);
       if (!regs?.length) { setShakhaCounts({}); return; }
       const participantIds = [...new Set(regs.map((r) => r.participant_id))];
-      const { data: parts } = await supabase.from("participants").select("id").in("id", participantIds).eq("shakha_id", adminShakha.id);
+      const { data: parts } = await supabase.from("participants").select("id").in("id", participantIds).in("shakha_id", scopeShakhaIds);
       const shakhaSet = new Set((parts ?? []).map((p) => p.id));
       const counts: Record<string, number> = {};
       for (const r of regs) {
@@ -338,7 +346,7 @@ export function FeastRegister({ slug }: { slug: string }) {
                       <span className="text-[11px]" style={{ color: theme.sub }}>{c.cat}{c.time ? ` · ${c.time}` : ""}</span>
                       {genderColor && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: `${genderColor}1a`, color: genderColor }}>{c.gender === "boy" ? "Boys" : "Girls"}</span>}
                       {c.competitionCategorySlug && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.10)", color: theme.purple }}>{CATEGORY_LABELS[c.competitionCategorySlug]}</span>}
-                      {full && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: "#fef3c7", color: "#b45309" }}>Full for your Shakha (max {cap})</span>}
+                      {full && <span className="rounded-full px-1.5 py-px text-[10px] font-semibold" style={{ background: "#fef3c7", color: "#b45309" }}>Slot full (max {cap})</span>}
                     </div>
                   </div>
                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))" } : { background: "rgba(255,255,255,0.72)", border: `1px solid ${theme.hairline}` }}>
