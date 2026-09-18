@@ -5,7 +5,7 @@
 
 INSERT INTO feast_competitions (feast_id, competition_id, display_order)
 SELECT
-  '6a6e9f22-28e7-479a-a591-e9b553035f1a'::uuid,
+  '58484572-31f4-4f37-9047-665c73592c6a'::uuid,
   c.id,
   base.max_order + ROW_NUMBER() OVER (ORDER BY c.name, cat.sort_order, c.gender)
 FROM competitions c
@@ -13,7 +13,7 @@ LEFT JOIN competition_categories cat ON cat.id = c.competition_category_id
 CROSS JOIN (
   SELECT COALESCE(MAX(display_order), -1) AS max_order
   FROM feast_competitions
-  WHERE feast_id = '6a6e9f22-28e7-479a-a591-e9b553035f1a'
+  WHERE feast_id = '58484572-31f4-4f37-9047-665c73592c6a'
 ) base
 WHERE c.name IN (
   'പ്രസംഗം', 'സംഗീതം', 'മിഷൻ ക്വിസ്', 'ബൈബിൾ വായന', 'നാടോടി നൃത്തം', 'കഥാപ്രസംഗം',
@@ -21,6 +21,6 @@ WHERE c.name IN (
 )
 AND NOT EXISTS (
   SELECT 1 FROM feast_competitions fc
-  WHERE fc.feast_id = '6a6e9f22-28e7-479a-a591-e9b553035f1a'
+  WHERE fc.feast_id = '58484572-31f4-4f37-9047-665c73592c6a'
     AND fc.competition_id = c.id
 );

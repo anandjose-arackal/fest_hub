@@ -2,15 +2,15 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { DEFAULT_MAX_PER_SHAKHA, getRegPrefix } from "@/lib/feast-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompStatus } from "@/types";
 
 // ── shared helper ───────────────────────────────────────────────────────
-// Registration cap is per-competition (competitions.max_per_shakha, default
-// DEFAULT_MAX_PER_SHAKHA), not a global constant. Returns the subset of
-// feastCompetitionIds that are already at/over cap for this shakha.
+// Returns the subset of feastCompetitionIds that are already at/over cap for
+// shakhaId's cap scope (see resolveCapScopeShakhaIds above).
 async function findFullCompetitionsForShakha(
   client: SupabaseClient,
   feastCompetitionIds: string[],
@@ -18,6 +18,8 @@ async function findFullCompetitionsForShakha(
   excludeParticipantId?: string
 ): Promise<string[]> {
   if (feastCompetitionIds.length === 0) return [];
+
+  const scopeShakhaIds = new Set(await resolveCapScopeShakhaIds(client, shakhaId));
 
   const { data: regs } = await client
     .from("participant_registrations")
@@ -38,7 +40,7 @@ async function findFullCompetitionsForShakha(
   const countById = new Map<string, number>();
   for (const r of regs ?? []) {
     const participant = Array.isArray(r.participant) ? r.participant[0] : r.participant;
-    if (participant?.shakha_id !== shakhaId) continue;
+    if (!participant?.shakha_id || !scopeShakhaIds.has(participant.shakha_id)) continue;
     if (excludeParticipantId && r.participant_id === excludeParticipantId) continue;
     countById.set(r.feast_competition_id, (countById.get(r.feast_competition_id) ?? 0) + 1);
   }
@@ -80,7 +82,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
       const full = await findFullCompetitionsForShakha(supabase, input.feastCompetitionIds, input.shakhaId);
       if (full.length > 0) {
         return {
-          error: "Your Shakha has reached the registration limit for one of the selected competitions. Please deselect it and choose another.",
+          error: "The registration limit has been reached for one of the selected competitions. Please deselect it and choose another.",
         };
       }
     }
@@ -148,7 +150,7 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
       const full = await findFullCompetitionsForShakha(admin, input.feastCompetitionIds, input.shakhaId);
       if (full.length > 0) {
         return {
-          error: "This Shakha has reached the registration limit for one of the selected competitions.",
+          error: "The registration limit has been reached for one of the selected competitions.",
         };
       }
     }
@@ -226,7 +228,7 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
         input.participantId
       );
       if (full.length > 0) {
-        return { error: "This Shakha has reached the registration limit for one of the selected competitions." };
+        return { error: "The registration limit has been reached for one of the selected competitions." };
       }
     }
 

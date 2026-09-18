@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { HierarchyLevel, PortalTheme } from "@/types";
 
 export interface OrgSettingsInput {
+  appName?: string;
   orgNameEn: string;
   orgNameLocal?: string;
   areaNameEn?: string;
@@ -19,6 +20,7 @@ export async function updateOrgSettings(input: OrgSettingsInput): Promise<{ erro
   const { error } = await getSupabaseAdmin()
     .from("org_settings")
     .update({
+      app_name: input.appName?.trim() || "Fest Hub Admin",
       org_name_en: input.orgNameEn.trim(),
       org_name_local: input.orgNameLocal ?? "",
       area_name_en: input.areaNameEn ?? "",

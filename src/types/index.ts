@@ -242,6 +242,7 @@ export type PortalTheme = "violet" | "ocean" | "sunset" | "aurora" | "carnival" 
 
 export interface OrgSettings {
   id: true;
+  app_name: string;
   org_name_en: string;
   org_name_local: string;
   area_name_en: string;

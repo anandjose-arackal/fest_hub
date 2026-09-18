@@ -2,6 +2,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
+import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { recalcCompetitionProgress } from "@/actions/feast";
 import type { CompStatus } from "@/types";
 
@@ -43,13 +44,16 @@ export async function registerTeam(input: RegisterTeamInput): Promise<{ error?: 
   const maxTeamMembers = competition?.max_team_size ?? DEFAULT_MAX_TEAM_MEMBERS;
   if (participantIds.length > maxTeamMembers) return { error: `Maximum ${maxTeamMembers} members allowed.` };
 
-  const { data: existingTeam } = await admin
+  // "One team per shakha" widens to "one team per meghala/diocese" at those
+  // hierarchy_level tiers, same scope resolution as the individual-cap check
+  // in actions/feast.ts — see resolveCapScopeShakhaIds.
+  const scopeShakhaIds = await resolveCapScopeShakhaIds(admin, input.shakhaId);
+  const { data: existingTeams } = await admin
     .from("team_registrations")
     .select("id")
     .eq("feast_competition_id", input.feastCompetitionId)
-    .eq("shakha_id", input.shakhaId)
-    .maybeSingle();
-  if (existingTeam) return { error: "Your Shakha has already registered a team for this competition." };
+    .in("shakha_id", scopeShakhaIds);
+  if (existingTeams?.length) return { error: "A team has already been registered for this competition." };
 
   const { data: members } = await admin
     .from("participants")

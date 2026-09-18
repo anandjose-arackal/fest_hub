@@ -814,3 +814,32 @@ export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenD
 
   return { data: { competitions } };
 }
+
+export interface PublishedResultsFeast {
+  slug: string;
+  name: string;
+}
+
+// Drives the Fest Portal dashboard's "Result Published" banner — feast-level,
+// not a hardcoded slug: any feast with at least one result_status='published'
+// competition is eligible, and the one whose results changed most recently
+// wins (feast_competitions.updated_at, same signal getRecentActivity uses).
+// A draft feast never surfaces here even if its competitions are published.
+export async function getLatestPublishedResultsFeast(): Promise<PublishedResultsFeast | null> {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin
+    .from("feast_competitions")
+    .select("updated_at, feast:feasts(name, slug, status)")
+    .eq("result_status", "published")
+    .order("updated_at", { ascending: false })
+    .limit(20); // over-fetch past the first draft-feast row, same guard as getRecentActivity
+
+  if (error || !data) return null;
+
+  for (const row of data) {
+    const feast = Array.isArray(row.feast) ? row.feast[0] : row.feast;
+    if (!feast || feast.status === "draft") continue;
+    return { slug: feast.slug, name: feast.name };
+  }
+  return null;
+}

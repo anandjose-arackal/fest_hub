@@ -27,6 +27,7 @@ const THEME_OPTIONS: { value: PortalTheme; label: string; swatches: string[] }[]
 
 export default function OrgSettingsPage() {
   const [form, setForm] = useState<Omit<OrgSettings, "id" | "created_at" | "updated_at">>({
+    app_name: "Fest Hub Admin",
     org_name_en: "",
     org_name_local: "",
     area_name_en: "",
@@ -50,6 +51,7 @@ export default function OrgSettingsPage() {
       .then(({ data }) => {
         if (data) {
           setForm({
+            app_name: data.app_name ?? "Fest Hub Admin",
             org_name_en: data.org_name_en,
             org_name_local: data.org_name_local,
             area_name_en: data.area_name_en,
@@ -68,6 +70,7 @@ export default function OrgSettingsPage() {
     setSaving(true);
     setError(null);
     const result = await updateOrgSettings({
+      appName: form.app_name,
       orgNameEn: form.org_name_en,
       orgNameLocal: form.org_name_local,
       areaNameEn: form.area_name_en,
@@ -101,6 +104,9 @@ export default function OrgSettingsPage() {
       </div>
 
       <div className="space-y-3 rounded-xl border border-neutral-200 bg-white p-5">
+        <Field label="App name">
+          <input className="input" value={form.app_name} onChange={(e) => setForm({ ...form, app_name: e.target.value })} />
+        </Field>
         <Field label="Organization name (English)">
           <input className="input" value={form.org_name_en} onChange={(e) => setForm({ ...form, org_name_en: e.target.value })} />
         </Field>

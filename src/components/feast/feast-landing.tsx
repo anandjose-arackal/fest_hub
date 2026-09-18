@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Users, ListChecks, Clock3, Trophy, LogIn } from "lucide-react";
+import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Users, ListChecks, Clock3, Trophy, LogIn, MapPin } from "lucide-react";
 import { useFeasts } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { GlassPanel, GlowBtn, StatusPill, SectionTitle, LoginSheet, theme } from "./feast-shared";
 import { LiveActivityFeed, TopShakhasWidget } from "./feast-dashboard-widgets";
 import { MissionCountdown } from "./feast-countdown";
+import { getLatestPublishedResultsFeast, type PublishedResultsFeast } from "@/actions/results";
 import type { OrgSettings } from "@/types";
 
 // Small confetti burst, contained within the announcement banner (not a
@@ -44,6 +45,20 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
   const { session } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
   const bannerConfetti = useBannerConfetti();
+  const [publishedFeast, setPublishedFeast] = useState<PublishedResultsFeast | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getLatestPublishedResultsFeast().then((f) => { if (!cancelled) setPublishedFeast(f); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Countdown targets the soonest fest that hasn't started yet, not just
+  // feasts[0] — useFeasts orders by start_date ascending across every
+  // non-draft status, so an already-ongoing/completed fest with an earlier
+  // date would otherwise block a later, genuinely upcoming one from ever
+  // showing a countdown.
+  const upcomingFeast = feasts.find((f) => f.startDate && new Date(f.startDate).getTime() > Date.now());
 
   return (
     <div>
@@ -101,12 +116,24 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
               WebkitTextFillColor: "transparent",
             }}
           >
-            {org.org_name_local || "Competitions & Results"}
+            {org.app_name || "Competitions & Results"}
           </span>
         </h1>
-        <p className="mt-2 text-sm" style={{ color: theme.sub }}>
-          Register, compete and follow live results across the season.
-        </p>
+        {org.area_name_en && (
+          <p
+            className="mt-1.5 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-extrabold tracking-wide"
+            style={{
+              color: theme.purple,
+              background: theme.fillStrong,
+              border: `1px solid ${theme.hairline}`,
+              fontFamily: "var(--font-poppins), sans-serif",
+              fontWeight: 800,
+            }}
+          >
+            <MapPin className="h-3.5 w-3.5" style={{ color: theme.purple }} />
+            {org.area_name_en}
+          </p>
+        )}
       </div>
 
       {/* Dashboard: feast list (main) + live updates / top shakhas (sidebar on wide screens) */}
@@ -114,10 +141,11 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
         <div className="min-w-0">
           {/* Same column as the feast listing below, so it matches the feast
               cards' width exactly instead of the full-width heading above. */}
-          <MissionCountdown startDate={feasts[0]?.startDate ?? null} feastName={feasts[0]?.name} />
+          <MissionCountdown startDate={upcomingFeast?.startDate ?? null} feastName={upcomingFeast?.name} />
 
+          {publishedFeast && (
           <Link
-            href="/results?feast=literature_fest"
+            href={`/results?feast=${publishedFeast.slug}`}
             className="relative mb-4 flex items-center gap-3 overflow-hidden rounded-2xl px-4 py-3.5 transition-transform active:scale-[0.98]"
             style={{
               background: "linear-gradient(110deg, var(--fp-gold), var(--fp-accent) 55%, var(--fp-primary) 100%)",
@@ -146,7 +174,7 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
             </span>
             <span className="relative min-w-0 flex-1">
               <p className="truncate text-[17px] font-bold leading-tight text-white" style={{ fontFamily: "var(--font-anek), sans-serif", textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
-                സാഹിത്യമത്സരം
+                {publishedFeast.name}
               </p>
               <p className="truncate text-[15px] font-bold leading-tight text-white/95" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.2)" }}>
                 Result Published
@@ -156,6 +184,7 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
               Click to view <ArrowRight className="h-[18px] w-[18px]" />
             </span>
           </Link>
+          )}
 
           <SectionTitle right={loading ? <Loader2 className="h-4 w-4 animate-spin" style={{ color: theme.lavender }} /> : <span className="text-xs" style={{ color: theme.sub }}>{feasts.length} active</span>}>
             Active Fests
