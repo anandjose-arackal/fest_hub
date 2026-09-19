@@ -1,4 +1,3 @@
-import { positionLabel } from "@/lib/result-calculator";
 import { PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import type { CertificateField, CertificateRosterRow, CertificateTemplate } from "@/types";
 
@@ -7,6 +6,17 @@ import type { CertificateField, CertificateRosterRow, CertificateTemplate } from
 // button on /admin/results) so the two stay pixel-for-pixel WYSIWYG.
 export function alignTx(align: CertificateField["text_align"]): string {
   return align === "left" ? "0%" : align === "right" ? "-100%" : "-50%";
+}
+
+// Certificate-only wording — spelled out ("First"/"Second"/"Third") rather
+// than result-calculator.ts's positionLabel ("1st"/"2nd"/"3rd"), which stays
+// as-is for /admin/results' listing and print sheet. Certificates read like
+// a formal document; those other screens are compact data tables.
+function certificatePositionLabel(pos: number | null): string {
+  if (pos === 1) return "First";
+  if (pos === 2) return "Second";
+  if (pos === 3) return "Third";
+  return "";
 }
 
 // A handful of certificate-appropriate Google Fonts, "Dancing Script" (a
@@ -45,10 +55,11 @@ export function fieldContentForRow(field: CertificateField, row: CertificateRost
   if (field.type === "house_name") return row.houseName;
   // Combined convenience field — "Name (House)" when a house name is set, otherwise just the name.
   if (field.type === "name_house") return row.houseName ? `${row.name} (${row.houseName})` : row.name;
-  if (field.type === "place") return row.place ? positionLabel(row.place) : "";
+  if (field.type === "place") return certificatePositionLabel(row.place);
   if (field.type === "shakha") return row.shakhaName;
   if (field.type === "competition") return row.competitionLabel;
   if (field.type === "grade_text") return row.grade ?? "";
+  if (field.type === "custom_text") return field.text ?? "";
   return row.grade === field.gradeValue ? "✓" : ""; // grade_tick
 }
 
@@ -69,17 +80,22 @@ function renderFieldHtml(field: CertificateField, row: CertificateRosterRow): st
   return `<div style="position:absolute;left:${field.x_mm}mm;top:${field.y_mm}mm;"><div style="display:inline-block;white-space:nowrap;transform:translate(${tx}, -50%) rotate(${field.rotation_deg}deg);font-size:${field.font_size_pt}pt;color:${field.color};font-family:${field.font_family};">${escHtml(content)}</div></div>`;
 }
 
-// The background image is a design-time-only aid — the canvas shows it so
-// an admin can align fields against the certificate's real graphics, but
-// most orgs print onto paper that already has those graphics pre-printed
-// (by a print shop, in bulk), then feed it back through an office printer
-// for just the variable text. Printing the background image too would
-// print it a second time on top of that pre-printed stock, so the print
-// output deliberately omits it — only the field elements are printed.
-export function buildCertificateHtml(template: CertificateTemplate, rows: CertificateRosterRow[]): string {
+// The background image is only ever a design-time aid by default — most
+// orgs print onto paper that already has the certificate graphics
+// pre-printed (by a print shop, in bulk), then feed it back through an
+// office printer for just the variable text, so printing the background
+// image too would print it a second time on top of that pre-printed stock.
+// includeBackground opts into printing it anyway, for orgs that print the
+// whole thing (background + fields) on plain paper in one pass.
+export function buildCertificateHtml(template: CertificateTemplate, rows: CertificateRosterRow[], includeBackground = false): string {
+  const bgHtml =
+    includeBackground && template.background_image_url
+      ? `<img class="bg" src="${template.background_image_url}" alt="" />`
+      : "";
   const sheets = rows
     .map(
       (row) => `<div class="sheet">
+    ${bgHtml}
     ${template.fields.map((f) => renderFieldHtml(f, row)).join("")}
   </div>`
     )
@@ -95,5 +111,6 @@ export function buildCertificateHtml(template: CertificateTemplate, rows: Certif
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
     .sheet { position: relative; width: ${template.paper_width_mm}mm; height: ${template.paper_height_mm}mm; overflow: hidden; page-break-after: always; }
     .sheet:last-child { page-break-after: auto; }
+    .sheet .bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
   </style></head><body>${PRINT_FALLBACK_BUTTON}${sheets}</body></html>`;
 }

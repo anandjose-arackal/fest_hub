@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Medal, Check, ImageDown, Download, X } from "lucide-react";
+import { Medal, Check, ImageDown, Download, X, Award } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { setMaxScore, saveDraftScores, publishResults, unpublishResults, getCompetitionScores } from "@/actions/results";
 import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores } from "@/actions/team-results";
@@ -14,8 +14,11 @@ import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { getOrgSettings } from "@/lib/org-settings";
 import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, type PosterData, type PosterWinner, type PosterTheme } from "@/lib/poster-render";
+import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
+import { getCertificateTemplate, getCertificateRosterForCompetition } from "@/actions/certificates";
+import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
 import { toPng } from "html-to-image";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, Meghala, OrgSettings, Shakha } from "@/types";
+import type { Competition, CompetitionCategory, Feast, FeastCompetition, Meghala, OrgSettings, Shakha, CertificateRosterRow } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 
@@ -37,6 +40,19 @@ interface Preview {
   positionPoints: number;
   totalPoints: number;
 }
+
+// Same "who gets included" filters as /admin/certificates' print-confirm
+// dialog — a row prints if it matches ANY checked filter.
+const PLACE_FILTER_OPTIONS: { place: 1 | 2 | 3; label: string; emoji: string }[] = [
+  { place: 1, label: "All 1st Place", emoji: "🥇" },
+  { place: 2, label: "All 2nd Place", emoji: "🥈" },
+  { place: 3, label: "All 3rd Place", emoji: "🥉" },
+];
+const GRADE_FILTER_OPTIONS: { grade: "A" | "B" | "C"; label: string }[] = [
+  { grade: "A", label: "All Grade A" },
+  { grade: "B", label: "All Grade B" },
+  { grade: "C", label: "All Grade C" },
+];
 
 // ─── Grade / position cells — matches cml-mission-hub's admin/results table ──
 
@@ -105,6 +121,19 @@ export default function ResultsPage() {
   const [busy, setBusy] = useState(false);
   const [org, setOrg] = useState<OrgSettings | null>(null);
   const [posterOpen, setPosterOpen] = useState(false);
+  const [printLayoutOpen, setPrintLayoutOpen] = useState(false);
+  const [resultPrintOpen, setResultPrintOpen] = useState(false);
+  const [resultPlaceFilters, setResultPlaceFilters] = useState<Record<1 | 2 | 3, boolean>>({ 1: true, 2: true, 3: true });
+  const [resultGradeFilters, setResultGradeFilters] = useState<Record<"A" | "B" | "C", boolean>>({ A: true, B: true, C: true });
+  const [certPrintOpen, setCertPrintOpen] = useState(false);
+  const [certPlaceFilters, setCertPlaceFilters] = useState<Record<1 | 2 | 3, boolean>>({ 1: true, 2: true, 3: true });
+  const [certGradeFilters, setCertGradeFilters] = useState<Record<"A" | "B" | "C", boolean>>({ A: true, B: true, C: true });
+  const [certWithBg, setCertWithBg] = useState(false);
+  const [certRoster, setCertRoster] = useState<CertificateRosterRow[] | null>(null);
+  const [certLoading, setCertLoading] = useState(false);
+  const [certGenerating, setCertGenerating] = useState(false);
+  const [certProgress, setCertProgress] = useState<{ done: number; total: number } | null>(null);
+  const [certError, setCertError] = useState<string | null>(null);
   const [posterData, setPosterData] = useState<PosterData | null>(null);
   const [posterTheme, setPosterTheme] = useState<PosterTheme>("maroon");
   const [posterDownloading, setPosterDownloading] = useState(false);
@@ -296,6 +325,34 @@ export default function ResultsPage() {
     return counts;
   }, [preview]);
 
+  // Rows the single-competition PDF export would print — shared by the
+  // print-confirm dialog's live count and exportPdf itself, same "matches
+  // ANY checked filter" rule as /admin/certificates.
+  const resultFilteredRows = useMemo(
+    () =>
+      entries
+        .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
+        .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
+        .filter((r) => {
+          const placeMatch = r.position === 1 || r.position === 2 || r.position === 3 ? resultPlaceFilters[r.position] : false;
+          const gradeMatch = r.grade != null ? resultGradeFilters[r.grade] : false;
+          return placeMatch || gradeMatch;
+        }),
+    [entries, shakhaFilter, preview, resultPlaceFilters, resultGradeFilters]
+  );
+  const noResultFiltersSelected = !Object.values(resultPlaceFilters).some(Boolean) && !Object.values(resultGradeFilters).some(Boolean);
+
+  const certFilteredRoster = useMemo(
+    () =>
+      (certRoster ?? []).filter((r) => {
+        const placeMatch = r.place === 1 || r.place === 2 || r.place === 3 ? certPlaceFilters[r.place] : false;
+        const gradeMatch = r.grade != null ? certGradeFilters[r.grade] : false;
+        return placeMatch || gradeMatch;
+      }),
+    [certRoster, certPlaceFilters, certGradeFilters]
+  );
+  const noCertFiltersSelected = !Object.values(certPlaceFilters).some(Boolean) && !Object.values(certGradeFilters).some(Boolean);
+
   function showBanner(text: string) {
     setBanner(text);
     setTimeout(() => setBanner(null), 3000);
@@ -426,6 +483,53 @@ export default function ResultsPage() {
     }
   }
 
+  // "Print Certificate" for the currently selected competition — a fresh
+  // implementation on the new direct-PDF pipeline (see certificate-pdf.ts),
+  // not the old window.print()/openPrintWindow path the rest of this page's
+  // exports still use. Needs the feast's certificate template (designed in
+  // /admin/certificates) to exist; getCertificateRosterForCompetition was
+  // already written for exactly this button but had never been wired up.
+  async function openCertPrint() {
+    if (!selectedFc) return;
+    setCertError(null);
+    setCertRoster(null);
+    setCertPrintOpen(true);
+    setCertLoading(true);
+    const { data, error } = await getCertificateRosterForCompetition(selectedFc.id);
+    setCertLoading(false);
+    if (error) { setCertError(error); return; }
+    setCertRoster(data ?? []);
+  }
+
+  function toggleCertPlace(place: 1 | 2 | 3) {
+    setCertPlaceFilters((f) => ({ ...f, [place]: !f[place] }));
+  }
+  function toggleCertGrade(grade: "A" | "B" | "C") {
+    setCertGradeFilters((f) => ({ ...f, [grade]: !f[grade] }));
+  }
+
+  async function confirmCertPrint() {
+    if (!selectedFc || certFilteredRoster.length === 0) return;
+    setCertError(null);
+    setCertGenerating(true);
+    setCertProgress({ done: 0, total: certFilteredRoster.length });
+    try {
+      const { data: template, error } = await getCertificateTemplate(feastId);
+      if (error) { setCertError(error); return; }
+      if (!template) { setCertError("No certificate design found for this fest yet — set one up in Certificates first."); return; }
+      const feast = feasts.find((f) => f.id === feastId);
+      await downloadCertificatesPdf(template, certFilteredRoster, certWithBg, feast?.name ?? "certificates", (done, total) =>
+        setCertProgress({ done, total })
+      );
+      setCertPrintOpen(false);
+    } catch (e) {
+      setCertError(e instanceof Error ? e.message : "Could not generate the certificates PDF.");
+    } finally {
+      setCertGenerating(false);
+      setCertProgress(null);
+    }
+  }
+
   function sortPdfRows(rows: (EntryRow & Preview)[]) {
     return [...rows].sort((a, b) => {
       const posA = a.position ?? 999;
@@ -438,13 +542,17 @@ export default function ResultsPage() {
     });
   }
 
+  function togglePlace(place: 1 | 2 | 3) {
+    setResultPlaceFilters((f) => ({ ...f, [place]: !f[place] }));
+  }
+  function toggleGrade(grade: "A" | "B" | "C") {
+    setResultGradeFilters((f) => ({ ...f, [grade]: !f[grade] }));
+  }
+
   function exportPdf() {
     if (!selectedFc || isGroup) return;
-    const rows = entries
-      .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
-      .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
-      .filter((r) => r.grade !== null || r.position !== null);
-    const sorted = sortPdfRows(rows);
+    setResultPrintOpen(false);
+    const sorted = sortPdfRows(resultFilteredRows);
     const feast = feasts.find((f) => f.id === feastId);
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(feast?.name ?? "", [
@@ -453,7 +561,7 @@ export default function ResultsPage() {
     openPrintWindow(html);
   }
 
-  async function exportAll() {
+  async function exportAll(layout: PrintLayout) {
     const feast = feasts.find((f) => f.id === feastId);
     const sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[] = [];
     for (const fc of feastComps) {
@@ -502,7 +610,7 @@ export default function ResultsPage() {
     }
     const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
-    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine);
+    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine, layout);
     openPrintWindow(html);
   }
 
@@ -759,7 +867,7 @@ export default function ResultsPage() {
           </button>
         )}
         <button
-          onClick={exportPdf}
+          onClick={() => setResultPrintOpen(true)}
           disabled={!compId || isGroup || entries.length === 0}
           title={isGroup ? "PDF export isn't available for team competitions yet" : ""}
           className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
@@ -767,8 +875,16 @@ export default function ResultsPage() {
         >
           Export PDF
         </button>
-        <button onClick={exportAll} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,#4C1D95,#6B46FF)" }}>
+        <button onClick={() => setPrintLayoutOpen(true)} className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,#4C1D95,#6B46FF)" }}>
           Export All
+        </button>
+        <button
+          onClick={openCertPrint}
+          disabled={!compId || entries.length === 0}
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg,#A16207,#D97706)" }}
+        >
+          <Award className="h-4 w-4" /> Print Certificate
         </button>
         <button
           onClick={openPoster}
@@ -802,6 +918,129 @@ export default function ResultsPage() {
               <button onClick={() => setPublishOpen(false)} className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm">Cancel</button>
               <button onClick={handlePublish} className="flex-1 rounded-lg py-2 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}>
                 Publish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resultPrintOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setResultPrintOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold">🖨️ Print Result</h2>
+              <button onClick={() => setResultPrintOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
+            </div>
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Who gets included?</p>
+            <div className="mb-3 grid grid-cols-3 gap-1.5">
+              {PLACE_FILTER_OPTIONS.map((o) => (
+                <button
+                  key={o.place}
+                  onClick={() => togglePlace(o.place)}
+                  className={`rounded-lg border-2 px-2 py-2 text-xs font-bold ${resultPlaceFilters[o.place] ? "border-[#6B46FF] bg-[#EDE9FE] text-[#4C1D95]" : "border-neutral-200 text-neutral-400"}`}
+                >
+                  {o.emoji} {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="mb-4 grid grid-cols-3 gap-1.5">
+              {GRADE_FILTER_OPTIONS.map((o) => (
+                <button
+                  key={o.grade}
+                  onClick={() => toggleGrade(o.grade)}
+                  className={`rounded-lg border-2 px-2 py-2 text-xs font-bold ${resultGradeFilters[o.grade] ? "border-[#6B46FF] bg-[#EDE9FE] text-[#4C1D95]" : "border-neutral-200 text-neutral-400"}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <p className="mb-4 text-sm text-neutral-600">
+              {noResultFiltersSelected
+                ? "Select at least one option above to print."
+                : `This will print ${resultFilteredRows.length} result${resultFilteredRows.length === 1 ? "" : "s"} for ${selectedFc ? formatCompetitionOptionLabel(selectedFc.competition.name, selectedFc.competition.gender, selectedFc.competition.competition_category?.name) : "this competition"}.`}
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setResultPrintOpen(false)} className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm font-semibold">Cancel</button>
+              <button
+                onClick={exportPdf}
+                disabled={resultFilteredRows.length === 0}
+                className="flex-1 rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}
+              >
+                Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {printLayoutOpen && (
+        <PrintLayoutDialog
+          onClose={() => setPrintLayoutOpen(false)}
+          onChoose={(layout) => { setPrintLayoutOpen(false); exportAll(layout); }}
+        />
+      )}
+
+      {certPrintOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => !certGenerating && setCertPrintOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold">🏅 Print Certificate</h2>
+              <button onClick={() => setCertPrintOpen(false)} disabled={certGenerating}><X className="h-5 w-5 text-neutral-400" /></button>
+            </div>
+            {certError && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-600">⚠️ {certError}</p>}
+            {certLoading ? (
+              <p className="text-sm text-neutral-500">Loading published results…</p>
+            ) : (certRoster ?? []).length === 0 ? (
+              <p className="mb-4 text-sm text-neutral-600">No published results found yet for this competition.</p>
+            ) : (
+              <>
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Who gets a certificate?</p>
+                <div className="mb-3 grid grid-cols-3 gap-1.5">
+                  {PLACE_FILTER_OPTIONS.map((o) => (
+                    <button
+                      key={o.place}
+                      onClick={() => toggleCertPlace(o.place)}
+                      className={`rounded-lg border-2 px-2 py-2 text-xs font-bold ${certPlaceFilters[o.place] ? "border-[#D97706] bg-amber-50 text-[#A16207]" : "border-neutral-200 text-neutral-400"}`}
+                    >
+                      {o.emoji} {o.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mb-3 grid grid-cols-3 gap-1.5">
+                  {GRADE_FILTER_OPTIONS.map((o) => (
+                    <button
+                      key={o.grade}
+                      onClick={() => toggleCertGrade(o.grade)}
+                      className={`rounded-lg border-2 px-2 py-2 text-xs font-bold ${certGradeFilters[o.grade] ? "border-[#D97706] bg-amber-50 text-[#A16207]" : "border-neutral-200 text-neutral-400"}`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="mb-3 flex items-center gap-2 rounded-lg border-2 border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700">
+                  <input type="checkbox" checked={certWithBg} onChange={(e) => setCertWithBg(e.target.checked)} />
+                  Include the background image in the PDF
+                </label>
+                <p className="mb-4 text-sm text-neutral-600">
+                  {noCertFiltersSelected
+                    ? "Select at least one option above to print."
+                    : `This downloads a PDF with ${certFilteredRoster.length} certificate${certFilteredRoster.length === 1 ? "" : "s"}.`}
+                </p>
+                {certGenerating && certProgress && (
+                  <p className="mb-4 text-xs font-semibold text-neutral-500">Generating {certProgress.done} / {certProgress.total}…</p>
+                )}
+              </>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => setCertPrintOpen(false)} disabled={certGenerating} className="flex-1 rounded-xl border-2 border-neutral-200 py-2 text-sm font-semibold disabled:opacity-50">Cancel</button>
+              <button
+                onClick={confirmCertPrint}
+                disabled={certFilteredRoster.length === 0 || certGenerating}
+                className="flex-1 rounded-xl py-2 text-sm font-bold text-white disabled:opacity-50"
+                style={{ background: "linear-gradient(135deg,#A16207,#D97706)" }}
+              >
+                {certGenerating ? "Generating…" : "Download PDF"}
               </button>
             </div>
           </div>
@@ -876,23 +1115,48 @@ export default function ResultsPage() {
   );
 }
 
-function buildResultsHtml(title: string, sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[], orgLine?: string): string {
+// Colored "pill" cells, matching cml-mission-hub's admin/results print
+// sheet — same GRADE_SOLID/POS_COLORS/POS_EMOJI as the on-screen
+// GradeCell/PosCell above, so the printed page reads like the live table.
+function pdfGradeCell(grade: Grade, pts: number): string {
+  if (!grade) return `<span class="none">—</span>`;
+  const { bg } = GRADE_SOLID[grade];
+  return `<span class="pill" style="background:${bg}">Grade ${grade}<b>+${pts} pts</b></span>`;
+}
+
+function pdfPosCell(pos: number | null, pts: number): string {
+  if (!pos) return `<span class="none">—</span>`;
+  const style = POS_COLORS[pos] ?? { bg: "#374151", pts: "#1F2937" };
+  const emoji = POS_EMOJI[pos] ?? "";
+  return `<span class="pill" style="background:${style.bg}">${emoji} ${positionLabel(pos)}${pts > 0 ? `<b>+${pts} pts</b>` : ""}</span>`;
+}
+
+function buildResultsHtml(
+  title: string,
+  sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[],
+  orgLine?: string,
+  layout: PrintLayout = "continuous"
+): string {
   const sheets = sections
     .map(
       (s) => `<div class="sheet">
         <div class="hdr">
-          ${orgLine ? `<div style="font-size:13px;font-weight:700;letter-spacing:0.03em;color:#6B46FF;">${orgLine}</div>` : ""}
-          <div style="font-size:18px;font-weight:700;margin-top:6px;">${s.title}</div>
-          <div style="font-size:12px;color:#666;">${s.subtitle}</div>
+          ${orgLine ? `<p class="org1">${orgLine}</p>` : ""}
+          <p class="comp">${s.title}</p>
+          ${s.subtitle ? `<p class="cat">${s.subtitle}</p>` : ""}
         </div>
         <table>
-          <thead><tr><th>#</th><th>Reg No</th><th>Name</th><th>Shakha</th><th>Grade</th><th>Position</th><th>Total</th></tr></thead>
-          <tbody>${s.rows
-            .map(
-              (r, i) =>
-                `<tr><td>${i + 1}</td><td class="reg">${r.regNo}</td><td>${r.name}</td><td>${r.shakhaName}</td><td>${r.grade ?? "—"}</td><td>${r.position ? positionLabel(r.position) : "—"}</td><td>${r.totalPoints}</td></tr>`
-            )
-            .join("")}</tbody>
+          <thead><tr><th>#</th><th>Reg No</th><th>Name</th><th>Shakha</th><th class="c-grade">Grade</th><th class="c-pos">Position</th><th class="c-pos">Total</th></tr></thead>
+          <tbody>${
+            s.rows.length
+              ? s.rows
+                  .map(
+                    (r, i) =>
+                      `<tr><td class="sl">${i + 1}</td><td class="reg">${r.regNo}</td><td class="name">${r.name}</td><td class="shakha">${r.shakhaName}</td><td class="grade">${pdfGradeCell(r.grade, r.gradePoints)}</td><td class="pos">${pdfPosCell(r.position, r.positionPoints)}</td><td class="total">${r.totalPoints}</td></tr>`
+                  )
+                  .join("")
+              : `<tr><td colspan="7" class="empty">No graded results yet</td></tr>`
+          }</tbody>
         </table>
       </div>`
     )
@@ -900,15 +1164,30 @@ function buildResultsHtml(title: string, sections: { title: string; subtitle: st
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Results — ${title}</title><style>
     @page { size: A4 portrait; margin: 16mm 14mm; }
-    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, sans-serif; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #1e1b4b; margin: 0; }
     .sheet { border-left: 6px solid #6B46FF; border-right: 6px solid #6B46FF; padding: 0 16px 18px; margin-bottom: 18px; }
+    ${layout === "per-page" ? ".sheet:not(:first-child) { page-break-before: always; }" : ""}
     .hdr { text-align: center; margin-bottom: 14px; break-after: avoid; page-break-after: avoid; }
-    table { width: 100%; border-collapse: collapse; }
+    .hdr .org1 { font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #6B46FF; margin: 0 0 10px; }
+    .hdr .comp { font-size: 18px; font-weight: 800; margin: 4px 0 2px; }
+    .hdr .cat { font-size: 12.5px; font-weight: 600; color: #4B5563; margin: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
     thead { display: table-header-group; }
-    thead tr { background: linear-gradient(90deg,#ede9fe,#f5f3ff); text-transform: uppercase; }
-    th, td { border: 1px solid #333; padding: 6px 4px; font-size: 11px; text-align: left; }
+    thead tr { background: linear-gradient(90deg,#ede9fe,#f5f3ff); }
+    th { border: 1px solid #c4b5fd; padding: 7px 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: #1e1b4b; text-align: left; }
+    th.c-pos, th.c-grade { text-align: center; }
+    td { border: 1px solid #e5e7eb; padding: 7px 6px; font-size: 12.5px; vertical-align: middle; }
     tbody tr { break-inside: avoid; page-break-inside: avoid; }
     tbody tr:nth-child(even) { background: #f8f7ff; }
-    .reg { font-family: monospace; font-weight: 700; color: #4C1D95; }
+    td.sl { font-weight: 700; color: #4C1D95; }
+    td.pos, td.grade, td.total { text-align: center; }
+    td.name { font-weight: 700; }
+    td.shakha { color: #4B5563; font-weight: 600; }
+    td.reg { font-family: "Courier New", monospace; font-weight: 700; letter-spacing: .02em; color: #4C1D95; }
+    .pill { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; color: #fff; font-weight: 800; font-size: 10.5px; padding: 4px 8px; border-radius: 6px; line-height: 1.3; }
+    .pill b { font-size: 9px; font-weight: 800; }
+    .none { color: #9CA3AF; font-weight: 700; }
+    .empty { text-align: center; color: #9CA3AF; padding: 22px; font-size: 13px; }
     </style></head><body>${PRINT_FALLBACK_BUTTON}${sheets}</body></html>`;
 }

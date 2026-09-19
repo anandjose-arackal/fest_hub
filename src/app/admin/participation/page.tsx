@@ -82,6 +82,10 @@ function SaveChanceButton({ dirty, saving, onClick }: { dirty: boolean; saving: 
   );
 }
 
+// Judge-sheet column widths — shared between renderSheetSection's colgroup
+// and buildHtml's col.c-* CSS below, so they can't drift out of sync.
+const SL_W_CSS = 7, REG_W_CSS = 25, TOT_W_CSS = 14;
+
 function sortByChance(a: EntryRow, b: EntryRow) {
   if (a.chanceNo == null && b.chanceNo == null) return a.regNo.localeCompare(b.regNo, undefined, { numeric: true });
   if (a.chanceNo == null) return 1;
@@ -268,54 +272,80 @@ export default function ParticipationPage() {
     return out;
   }
 
+  // Matches cml-mission-hub's admin/participation judge-sheet styling
+  // (header hierarchy classes, boxed subject line, fixed-height rows,
+  // monospace reg numbers) — see that repo's SHEET_CSS/renderSheetSection.
   function renderSheetSection(comp: FCRow, feastTitle: string, regNos: string[]): string {
     const rowCount = Math.max(26, regNos.length);
     const catSlug = comp.competition.competition_category?.slug ?? "";
     const headings = getScoreHeadings(comp.competition.name, catSlug);
     const subject = getCompetitionSubject(comp.competition.name, catSlug);
     const scoreCols = headings.length;
-    const SL_W = 7, REG_W = 25, TOT_W = 14;
-    const colW = (100 - SL_W - REG_W - TOT_W) / scoreCols;
+    const colW = (100 - SL_W_CSS - REG_W_CSS - TOT_W_CSS) / scoreCols;
+    const catLine = [comp.competition.competition_category?.name, comp.competition.gender].filter(Boolean).join(" · ");
 
     const rows = Array.from({ length: rowCount }, (_, i) => {
       const regNo = regNos[i] ?? "";
-      return `<tr><td>${i + 1}</td><td class="reg">${regNo}</td>${headings.map(() => `<td></td>`).join("")}<td></td></tr>`;
+      const scoreCells = Array.from({ length: scoreCols }, () => `<td class="sc"></td>`).join("");
+      return `<tr><td class="sl">${i + 1}</td><td class="reg">${regNo}</td>${scoreCells}<td class="tot"></td></tr>`;
     }).join("");
 
     return `
-      <div class="sheet">
+      <section class="sheet">
         <div class="hdr">
-          <div style="font-size:22px;font-weight:700;">${feastTitle}</div>
-          <div style="font-size:16px;font-weight:600;">${comp.competition.name}</div>
-          <div style="font-size:12px;color:#555;">${comp.competition.competition_category?.name ?? ""}</div>
-          ${subject ? `<div style="font-family:'Anek Malayalam',Arial,sans-serif;font-size:13px;margin-top:4px;">${subject}</div>` : ""}
+          <p class="feast">${feastTitle}</p>
+          <p class="comp">${comp.competition.name}</p>
+          <p class="cat">${catLine}</p>
         </div>
+        ${subject ? `<div class="subject">${subject}</div>` : ""}
         <table>
+          <colgroup>
+            <col class="c-sl"><col class="c-reg">
+            ${Array.from({ length: scoreCols }, () => `<col style="width:${colW}%">`).join("")}
+            <col class="c-tot">
+          </colgroup>
           <thead><tr>
-            <th style="width:${SL_W}%">SL</th>
-            <th style="width:${REG_W}%">Reg No</th>
-            ${headings.map((h) => `<th style="width:${colW}%">${h}</th>`).join("")}
-            <th style="width:${TOT_W}%">Total</th>
+            <th>SL</th><th>Registration No</th>
+            ${headings.map((h) => `<th class="score-head">${h}</th>`).join("")}
+            <th>Total</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-      </div>`;
+      </section>`;
   }
 
   function buildHtml(sections: string[]): string {
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <link rel="preconnect" href="https://fonts.googleapis.com">
-      <link href="https://fonts.googleapis.com/css2?family=Anek+Malayalam:wght@400;700&display=swap" rel="stylesheet">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Anek+Malayalam:wght@400;600;700&display=swap" rel="stylesheet">
       <style>
         @page { size: A4 portrait; margin: 16mm 14mm; }
-        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, sans-serif; }
-        .sheet { border-left: 6px solid #BE185D; border-right: 6px solid #BE185D; padding: 0 16px 18px; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 0; }
+        .sheet { border-left: 6px solid #BE185D; border-right: 6px solid #BE185D; padding-left: 12px; padding-right: 12px; }
         .sheet:not(:last-child) { page-break-after: always; }
-        table { width: 100%; border-collapse: collapse; }
-        thead { display: table-header-group; }
-        th, td { border: 1px solid #333; padding: 6px 4px; font-size: 11px; text-align: center; }
-        thead tr { background: #f0f0f0; text-transform: uppercase; }
-        .reg { font-weight: 700; color: #4C1D95; font-family: monospace; }
+        .hdr { text-align: center; margin-bottom: 14px; }
+        .hdr .feast { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: #444; margin: 0 0 4px; }
+        .hdr .comp { font-size: 22px; font-weight: 800; margin: 0 0 2px; }
+        .hdr .cat { font-size: 14px; font-weight: 600; color: #333; margin: 0; }
+        .subject {
+          font-family: "Anek Malayalam", Arial, sans-serif;
+          text-align: center; font-size: 15px; font-weight: 600; line-height: 1.5;
+          color: #111; margin: 10px 4px; min-height: 52px; white-space: pre-line;
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { border: 1px solid #333; height: 28px; text-align: center; font-size: 13px; }
+        thead th {
+          background: #f0f0f0; font-size: 11px; text-transform: uppercase; letter-spacing: .03em;
+          height: auto; padding: 5px 3px; white-space: normal; overflow-wrap: break-word; line-height: 1.25;
+        }
+        thead th.score-head { text-transform: none; font-size: 10.5px; }
+        col.c-sl  { width: ${SL_W_CSS}%; }
+        col.c-reg { width: ${REG_W_CSS}%; }
+        col.c-tot { width: ${TOT_W_CSS}%; }
+        td.sl  { font-weight: 700; }
+        td.reg { font-family: "Courier New", monospace; font-weight: 700; letter-spacing: .02em; }
       </style></head><body>${PRINT_FALLBACK_BUTTON}${sections.join("")}</body></html>`;
   }
 

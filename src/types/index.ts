@@ -255,7 +255,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "image";
+export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "image" | "custom_text";
 
 export interface CertificateField {
   id: string;
@@ -277,6 +277,8 @@ export interface CertificateField {
   image_url?: string;
   width_mm?: number;
   height_mm?: number;
+  /** Only meaningful when type === "custom_text" — the literal text an admin typed, same on every printed certificate (unlike name/shakha/etc., which come from the roster row). */
+  text?: string;
 }
 
 export interface CertificateTemplate {

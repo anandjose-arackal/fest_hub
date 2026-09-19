@@ -7,8 +7,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCertificateRoster, getCertificateTemplate, saveCertificateTemplate, uploadCertificateAsset } from "@/actions/certificates";
-import { openPrintWindow } from "@/lib/print-export";
-import { alignTx, buildCertificateHtml, customGoogleFontQuery, FONT_PRESETS, googleFontsHref } from "@/lib/certificate-render";
+import { alignTx, customGoogleFontQuery, FONT_PRESETS, googleFontsHref } from "@/lib/certificate-render";
+import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
 import type { CertificateField, CertificateFieldType, CertificateRosterRow, CertificateTemplate, Feast } from "@/types";
 
 const A4 = { w: 210, h: 297 };
@@ -25,8 +25,12 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   grade_text: "Grade",
   grade_tick: "Grade tick",
   image: "Signature / Image",
+  custom_text: "Custom Text",
 };
 
+// Every button here calls addField() fresh, so "Custom Text" can be clicked
+// as many times as needed — each click adds its own independent field with
+// its own text/position/font, not a single shared slot.
 const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string; color: string }[] = [
   { type: "name", label: "Name", emoji: "👤", color: "#2563EB" },
   { type: "house_name", label: "House", emoji: "🏠", color: "#4F46E5" },
@@ -36,6 +40,7 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
   { type: "grade_text", label: "Grade", emoji: "🔤", color: "#16A34A" },
   { type: "grade_tick", label: "Grade Tick", emoji: "✅", color: "#DB2777" },
+  { type: "custom_text", label: "Custom Text", emoji: "📝", color: "#475569" },
 ];
 
 // Who gets a certificate on this print run — every published result matches
@@ -70,6 +75,7 @@ function newField(type: CertificateFieldType, paperW: number, paperH: number, gr
     font_family: FONT_PRESETS[0].fontFamily,
     google_font: FONT_PRESETS[0].googleFont,
     gradeValue,
+    text: type === "custom_text" ? "Your text here" : undefined,
   };
 }
 
@@ -101,10 +107,11 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "name") return "Participant Name";
   if (field.type === "house_name") return "House Name";
   if (field.type === "name_house") return "Participant Name (House Name)";
-  if (field.type === "place") return "1st";
+  if (field.type === "place") return "First";
   if (field.type === "shakha") return "Shakha";
   if (field.type === "competition") return "Sub Junior Boys Elocution";
   if (field.type === "grade_text") return "A";
+  if (field.type === "custom_text") return field.text || "Custom Text";
   return field.gradeValue ?? "✓"; // grade_tick
 }
 
@@ -341,6 +348,13 @@ export default function CertificatesPage() {
   const [roster, setRoster] = useState<CertificateRosterRow[] | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Off by default — most orgs print onto paper the design's already
+  // pre-printed on (see certificate-pdf.ts's downloadCertificatesPdf), so
+  // including the background again would double it up. Orgs printing on
+  // plain paper flip this on to get the full design in one pass.
+  const [printWithBg, setPrintWithBg] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<{ done: number; total: number } | null>(null);
   const [placeFilters, setPlaceFilters] = useState<Record<1 | 2 | 3, boolean>>({ 1: true, 2: true, 3: true });
   const [gradeFilters, setGradeFilters] = useState<Record<"A" | "B" | "C", boolean>>({ A: true, B: true, C: true });
 
@@ -382,7 +396,14 @@ export default function CertificatesPage() {
   // Keeps one <link> in <head> up to date with whichever Google Fonts the
   // template's fields currently use, so the canvas preview renders the
   // actual chosen font (not just a fallback) — matches what the printed
-  // output will look like.
+  // output will look like. crossOrigin="anonymous" matters beyond CORS
+  // correctness: certificate-pdf.ts's html-to-image rasterizer walks
+  // document.styleSheets to embed @font-face rules into the image it
+  // generates, and reading .cssRules on a cross-origin stylesheet without
+  // this throws a SecurityError (Google Fonts' CSS does send
+  // Access-Control-Allow-Origin: *, but the browser only honors it when the
+  // link was actually requested with crossorigin set) — without it, PDF
+  // generation fails outright and no certificates download at all.
   useEffect(() => {
     const href = template ? googleFontsHref(template.fields) : null;
     const id = "certificate-google-fonts";
@@ -395,6 +416,7 @@ export default function CertificatesPage() {
       link = document.createElement("link");
       link.id = id;
       link.rel = "stylesheet";
+      link.crossOrigin = "anonymous";
       document.head.appendChild(link);
     }
     if (link.href !== href) link.href = href;
@@ -512,10 +534,20 @@ export default function CertificatesPage() {
     setConfirmOpen(true);
   }
 
-  function confirmPrint() {
+  async function confirmPrint() {
     if (!template || !roster || filteredRoster.length === 0) return;
-    openPrintWindow(buildCertificateHtml(template, filteredRoster));
-    setConfirmOpen(false);
+    setPdfGenerating(true);
+    setPdfProgress({ done: 0, total: filteredRoster.length });
+    setError(null);
+    try {
+      await downloadCertificatesPdf(template, filteredRoster, printWithBg, feastName, (done, total) => setPdfProgress({ done, total }));
+      setConfirmOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not generate the PDF.");
+    } finally {
+      setPdfGenerating(false);
+      setPdfProgress(null);
+    }
   }
 
   function togglePlace(place: 1 | 2 | 3) {
@@ -695,6 +727,17 @@ export default function CertificatesPage() {
                   <p className="text-[11px] text-neutral-400">Drag the picture to move it, the purple dot to rotate it, or the little square in the corner to resize it.</p>
                 ) : (
                   <>
+                    {selectedField.type === "custom_text" && (
+                      <div>
+                        <label className="mb-0.5 block text-[10px] font-medium text-neutral-500">Text</label>
+                        <input
+                          className="input"
+                          placeholder="e.g. Presented by, Date, a short note…"
+                          value={selectedField.text ?? ""}
+                          onChange={(e) => updateField(selectedField.id, { text: e.target.value })}
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-neutral-500"><Type className="h-3 w-3" /> Font</label>
                       <select
@@ -778,7 +821,7 @@ export default function CertificatesPage() {
           className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-50"
           style={{ background: "linear-gradient(135deg,#A16207,#D97706)" }}
         >
-          <Printer className="h-4 w-4" /> {rosterLoading ? "Loading roster…" : "Print All Certificates!"}
+          <Printer className="h-4 w-4" /> {rosterLoading ? "Loading roster…" : "Generate All Certificates!"}
         </button>
       </div>
 
@@ -786,7 +829,7 @@ export default function CertificatesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setConfirmOpen(false)}>
           <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-bold">🖨️ Print Certificates</h2>
+              <h2 className="text-base font-bold">🖨️ Download Certificates</h2>
               <button onClick={() => setConfirmOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
             </div>
             {roster.length === 0 ? (
@@ -816,22 +859,34 @@ export default function CertificatesPage() {
                     </button>
                   ))}
                 </div>
+                {template.background_image_url && (
+                  <label className="mb-3 flex items-center gap-2 rounded-lg border-2 border-neutral-200 px-3 py-2 text-xs font-semibold text-neutral-700">
+                    <input type="checkbox" checked={printWithBg} onChange={(e) => setPrintWithBg(e.target.checked)} />
+                    Include the background image in the PDF
+                    <span className="ml-auto text-[10px] font-normal text-neutral-400">
+                      {printWithBg ? "for plain paper" : "for pre-printed paper"}
+                    </span>
+                  </label>
+                )}
                 <p className="mb-4 text-sm text-neutral-600">
                   {noFiltersSelected
                     ? "Select at least one option above to print."
-                    : `This will print ${filteredRoster.length} certificate${filteredRoster.length === 1 ? "" : "s"} for ${feastName}.`}
+                    : `This downloads a ${template.paper_width_mm.toFixed(0)}×${template.paper_height_mm.toFixed(0)}mm PDF with ${filteredRoster.length} certificate${filteredRoster.length === 1 ? "" : "s"} for ${feastName} — sized and oriented exactly as designed, no print-dialog settings to get right.`}
                 </p>
+                {pdfGenerating && pdfProgress && (
+                  <p className="mb-4 text-xs font-semibold text-neutral-500">Generating {pdfProgress.done} / {pdfProgress.total}…</p>
+                )}
               </>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setConfirmOpen(false)} className="flex-1 rounded-xl border-2 border-neutral-200 py-2 text-sm font-semibold">Cancel</button>
+              <button onClick={() => setConfirmOpen(false)} disabled={pdfGenerating} className="flex-1 rounded-xl border-2 border-neutral-200 py-2 text-sm font-semibold disabled:opacity-50">Cancel</button>
               <button
                 onClick={confirmPrint}
-                disabled={filteredRoster.length === 0}
+                disabled={filteredRoster.length === 0 || pdfGenerating}
                 className="flex-1 rounded-xl py-2 text-sm font-bold text-white disabled:opacity-50"
                 style={{ background: "linear-gradient(135deg,#A16207,#D97706)" }}
               >
-                Print
+                {pdfGenerating ? "Generating…" : "Download PDF"}
               </button>
             </div>
           </div>

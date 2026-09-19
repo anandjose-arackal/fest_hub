@@ -11,6 +11,7 @@ import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { getOrgSettings } from "@/lib/org-settings";
 import { useOrgHierarchy } from "@/hooks/use-feast";
 import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
+import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, HierarchyLevel, Meghala, OrgSettings, Participant, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
@@ -211,6 +212,7 @@ export default function ParticipantsPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [printLayoutOpen, setPrintLayoutOpen] = useState(false);
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -566,7 +568,7 @@ export default function ParticipantsPage() {
     URL.revokeObjectURL(url);
   }
 
-  function exportPDF() {
+  function exportPDF(layout: PrintLayout) {
     const compsToprint = compFilter ? feastComps.filter((c) => c.id === compFilter) : feastComps;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const sections = compsToprint
@@ -602,7 +604,7 @@ export default function ParticipantsPage() {
       * { box-sizing: border-box; }
       body { font-family: 'Poppins', Arial, sans-serif; margin: 0; }
       .sheet { border: 1px solid #D4D4D8; border-radius: 10px; padding: 12px 16px 20px; }
-      .sheet:not(:last-child) { page-break-before: always; }
+      ${layout === "per-page" ? ".sheet:not(:last-child) { page-break-before: always; }" : ".sheet:not(:last-child) { margin-bottom: 16px; }"}
       .hdr { text-align: center; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 2px solid #7C3AED; }
       .org { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6B7280; }
       .comp-name { font-size: 25px; font-weight: 800; color: #1e1b4b; margin-top: 4px; }
@@ -636,7 +638,7 @@ export default function ParticipantsPage() {
           <button onClick={exportCSV} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
-          <button onClick={exportPDF} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
+          <button onClick={() => setPrintLayoutOpen(true)} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <Printer className="h-3.5 w-3.5" /> PDF
           </button>
           <button onClick={exportRegistrationCards} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
@@ -1006,6 +1008,13 @@ export default function ParticipantsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {printLayoutOpen && (
+        <PrintLayoutDialog
+          onClose={() => setPrintLayoutOpen(false)}
+          onChoose={(layout) => { setPrintLayoutOpen(false); exportPDF(layout); }}
+        />
       )}
 
       <style jsx>{`
