@@ -50,14 +50,20 @@ export function googleFontsHref(fields: CertificateField[]): string | null {
   return `https://fonts.googleapis.com/css2?${families.map((f) => `family=${f}`).join("&")}&display=swap`;
 }
 
+// Participants are often registered in ALL-CAPS or all-lowercase — certificates read better Title Cased.
+function toTitleCase(s: string): string {
+  return s.replace(/\S+/g, (word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+}
+
 export function fieldContentForRow(field: CertificateField, row: CertificateRosterRow): string {
-  if (field.type === "name") return row.name;
-  if (field.type === "house_name") return row.houseName;
+  if (field.type === "name") return toTitleCase(row.name);
+  if (field.type === "house_name") return toTitleCase(row.houseName);
   // Combined convenience field — "Name (House)" when a house name is set, otherwise just the name.
-  if (field.type === "name_house") return row.houseName ? `${row.name} (${row.houseName})` : row.name;
+  if (field.type === "name_house") return row.houseName ? `${toTitleCase(row.name)} (${toTitleCase(row.houseName)})` : toTitleCase(row.name);
   if (field.type === "place") return certificatePositionLabel(row.place);
   if (field.type === "shakha") return row.shakhaName;
   if (field.type === "competition") return row.competitionLabel;
+  if (field.type === "competition_en") return row.competitionLabelEn;
   if (field.type === "grade_text") return row.grade ?? "";
   if (field.type === "custom_text") return field.text ?? "";
   return row.grade === field.gradeValue ? "✓" : ""; // grade_tick

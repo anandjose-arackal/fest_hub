@@ -81,6 +81,10 @@ interface CompInfo {
   name: string;
   /** name prefixed with age category + gender, e.g. "Sub Junior Boys Elocution" — gender omitted when "common"/null. */
   label: string;
+  /** competitions.name_en, falling back to name when unset. */
+  nameEn: string;
+  /** nameEn prefixed with age category + gender, same convention as label. */
+  labelEn: string;
 }
 
 function buildCompetitionLabel(name: string, gender: string | null, categoryName: string | null): string {
@@ -121,6 +125,8 @@ async function buildRosterRows(
       shakhaName: shakha?.name ?? "—",
       competitionName: compInfo?.name ?? "Competition",
       competitionLabel: compInfo?.label ?? "Competition",
+      competitionNameEn: compInfo?.nameEn ?? "Competition",
+      competitionLabelEn: compInfo?.labelEn ?? "Competition",
       place: r.position,
       grade: r.grade as "A" | "B" | "C" | null,
     });
@@ -149,6 +155,8 @@ async function buildRosterRows(
         shakhaName: shakha?.name ?? "—",
         competitionName: compInfo?.name ?? "Competition",
         competitionLabel: compInfo?.label ?? "Competition",
+        competitionNameEn: compInfo?.nameEn ?? "Competition",
+        competitionLabelEn: compInfo?.labelEn ?? "Competition",
         place: r.position,
         grade: r.grade as "A" | "B" | "C" | null,
       });
@@ -164,7 +172,7 @@ export async function getCertificateRoster(feastId: string): Promise<{ data?: Ce
 
   const { data: fcs, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, competition:competitions(name, gender, competition_category:competition_categories(name))")
+    .select("id, competition:competitions(name, name_en, gender, competition_category:competition_categories(name))")
     .eq("feast_id", feastId)
     .eq("result_status", "published");
   if (fcErr) return { error: fcErr.message };
@@ -175,7 +183,15 @@ export async function getCertificateRoster(feastId: string): Promise<{ data?: Ce
     const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
     const category = Array.isArray(competition?.competition_category) ? competition?.competition_category[0] : competition?.competition_category;
     const name = competition?.name ?? "Competition";
-    compInfoByFc.set(fc.id, { name, label: buildCompetitionLabel(name, competition?.gender ?? null, category?.name ?? null) });
+    const nameEn = competition?.name_en || name;
+    const gender = competition?.gender ?? null;
+    const categoryName = category?.name ?? null;
+    compInfoByFc.set(fc.id, {
+      name,
+      label: buildCompetitionLabel(name, gender, categoryName),
+      nameEn,
+      labelEn: buildCompetitionLabel(nameEn, gender, categoryName),
+    });
   }
 
   return buildRosterRows(admin, fcs.map((f) => f.id), compInfoByFc);
@@ -189,7 +205,7 @@ export async function getCertificateRosterForCompetition(feastCompetitionId: str
 
   const { data: fc, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, competition:competitions(name, gender, competition_category:competition_categories(name))")
+    .select("id, competition:competitions(name, name_en, gender, competition_category:competition_categories(name))")
     .eq("id", feastCompetitionId)
     .single();
   if (fcErr || !fc) return { error: fcErr?.message ?? "Competition not found" };
@@ -197,7 +213,12 @@ export async function getCertificateRosterForCompetition(feastCompetitionId: str
   const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
   const category = Array.isArray(competition?.competition_category) ? competition?.competition_category[0] : competition?.competition_category;
   const name = competition?.name ?? "Competition";
-  const compInfoByFc = new Map([[fc.id, { name, label: buildCompetitionLabel(name, competition?.gender ?? null, category?.name ?? null) }]]);
+  const nameEn = competition?.name_en || name;
+  const gender = competition?.gender ?? null;
+  const categoryName = category?.name ?? null;
+  const compInfoByFc = new Map([
+    [fc.id, { name, label: buildCompetitionLabel(name, gender, categoryName), nameEn, labelEn: buildCompetitionLabel(nameEn, gender, categoryName) }],
+  ]);
 
   return buildRosterRows(admin, [fc.id], compInfoByFc);
 }

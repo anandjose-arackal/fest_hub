@@ -22,6 +22,7 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   place: "Place",
   shakha: "Shakha",
   competition: "Competition Name",
+  competition_en: "Competition Name (English)",
   grade_text: "Grade",
   grade_tick: "Grade tick",
   image: "Signature / Image",
@@ -38,6 +39,7 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "place", label: "Place", emoji: "🥇", color: "#D97706" },
   { type: "shakha", label: "Shakha", emoji: "🏫", color: "#0D9488" },
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
+  { type: "competition_en", label: "Competition (EN)", emoji: "🌐", color: "#9333EA" },
   { type: "grade_text", label: "Grade", emoji: "🔤", color: "#16A34A" },
   { type: "grade_tick", label: "Grade Tick", emoji: "✅", color: "#DB2777" },
   { type: "custom_text", label: "Custom Text", emoji: "📝", color: "#475569" },
@@ -110,6 +112,7 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "place") return "First";
   if (field.type === "shakha") return "Shakha";
   if (field.type === "competition") return "Sub Junior Boys Elocution";
+  if (field.type === "competition_en") return "Sub Junior Boys Essay";
   if (field.type === "grade_text") return "A";
   if (field.type === "custom_text") return field.text || "Custom Text";
   return field.gradeValue ?? "✓"; // grade_tick

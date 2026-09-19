@@ -100,6 +100,8 @@ export type CompetitionGender = "boy" | "girl" | "common" | null;
 export interface Competition {
   id: string;
   name: string;
+  /** English competition name — used by the certificate builder's "Competition Name (English)" field. NULL until set. */
+  name_en: string | null;
   type: "individual" | "group" | string;
   category: string | null;
   description: string | null;
@@ -255,7 +257,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "image" | "custom_text";
+export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text";
 
 export interface CertificateField {
   id: string;
@@ -299,6 +301,10 @@ export interface CertificateRosterRow {
   competitionName: string;
   /** competitionName prefixed with age category + gender, e.g. "Sub Junior Boys Elocution" — gender omitted when "common". */
   competitionLabel: string;
+  /** English competition name — competitions.name_en, falling back to competitionName when unset. */
+  competitionNameEn: string;
+  /** competitionNameEn prefixed with age category + gender, same convention as competitionLabel. */
+  competitionLabelEn: string;
   place: number | null;
   grade: "A" | "B" | "C" | null;
 }
