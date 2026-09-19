@@ -7,6 +7,10 @@
 create table if not exists org_settings (
   -- Singleton enforced by a fixed boolean PK: only one row can ever exist.
   id              boolean primary key default true,
+  -- The admin back-office / Fest Portal dashboard's own display name —
+  -- distinct from org_name_en (the org's identity, e.g. logo alt text) and
+  -- org_name_local (the dashboard's gradient subheading).
+  app_name        text not null default 'Fest Hub Admin',
   org_name_en     text not null default 'Feast Hub',
   org_name_local  text not null default '',
   area_name_en    text not null default '',
@@ -17,6 +21,12 @@ create table if not exists org_settings (
   -- dioceses/meghalas/shakhas). 'shakha' (the default) is a flat org with
   -- no grouping above branch level.
   hierarchy_level text not null default 'shakha' check (hierarchy_level in ('shakha', 'meghala', 'diocese')),
+  -- Public Fest Portal color palette (never the admin back-office, which
+  -- keeps its own fixed look) — applied via a `data-fp-theme` attribute on
+  -- the root layout; see globals.css's [data-fp-theme="..."] blocks and
+  -- PortalTheme in src/types/index.ts.
+  theme           text not null default 'violet'
+                    check (theme in ('violet', 'ocean', 'sunset', 'aurora', 'carnival', 'amethyst', 'midnight', 'emerald')),
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
   constraint org_settings_singleton check (id)

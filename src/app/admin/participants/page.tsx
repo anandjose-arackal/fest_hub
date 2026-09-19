@@ -212,7 +212,7 @@ export default function ParticipantsPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [printLayoutOpen, setPrintLayoutOpen] = useState(false);
+  const [printLayoutTarget, setPrintLayoutTarget] = useState<"individual" | "team" | null>(null);
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -568,34 +568,10 @@ export default function ParticipantsPage() {
     URL.revokeObjectURL(url);
   }
 
-  function exportPDF(layout: PrintLayout) {
-    const compsToprint = compFilter ? feastComps.filter((c) => c.id === compFilter) : feastComps;
-    const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
-    const sections = compsToprint
-      .map((fc) => {
-        const rows = filtered.filter((p) => participantRegs[p.id]?.includes(fc.id));
-        if (rows.length === 0) return "";
-        const rowsHtml = rows
-          .map(
-            (p, i) =>
-              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td><td class="remarks"></td></tr>`
-          )
-          .join("");
-        const sub = [fc.competition.competition_category?.name, fc.competition.gender && fc.competition.gender !== "common" ? (fc.competition.gender === "boy" ? "Boys" : fc.competition.gender === "girl" ? "Girls" : fc.competition.gender) : null]
-          .filter(Boolean)
-          .join(" · ");
-        return `<div class="sheet">
-          <div class="hdr">
-            ${orgLine ? `<div class="org">${orgLine}</div>` : ""}
-            <div class="comp-name">${fc.competition.name}</div>
-            ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
-          </div>
-          <table><thead><tr><th>SL</th><th>Reg No</th><th>Name</th><th>House Name</th><th>Shakha</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
-        </div>`;
-      })
-      .filter(Boolean);
-
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+  // Shared by exportPDF (individual competitions) and exportTeamPDF (team
+  // events) — same sheet/header/table look for both, just different rows.
+  function buildEventPdfHtml(sections: string[], layout: PrintLayout): string {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -617,7 +593,71 @@ export default function ParticipantsPage() {
       td.remarks { min-width: 120px; }
       .reg { font-family: monospace; font-weight: 700; color: #4C1D95; }
       </style></head><body>${PRINT_FALLBACK_BUTTON}${sections.join("")}</body></html>`;
-    openPrintWindow(html);
+  }
+
+  function competitionSubLine(fc: FCRow): string {
+    return [
+      fc.competition.competition_category?.name,
+      fc.competition.gender && fc.competition.gender !== "common" ? (fc.competition.gender === "boy" ? "Boys" : fc.competition.gender === "girl" ? "Girls" : fc.competition.gender) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  function exportPDF(layout: PrintLayout) {
+    const compsToprint = compFilter ? feastComps.filter((c) => c.id === compFilter) : feastComps;
+    const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
+    const sections = compsToprint
+      .map((fc) => {
+        const rows = filtered.filter((p) => participantRegs[p.id]?.includes(fc.id));
+        if (rows.length === 0) return "";
+        const rowsHtml = rows
+          .map(
+            (p, i) =>
+              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td><td class="remarks"></td></tr>`
+          )
+          .join("");
+        const sub = competitionSubLine(fc);
+        return `<div class="sheet">
+          <div class="hdr">
+            ${orgLine ? `<div class="org">${orgLine}</div>` : ""}
+            <div class="comp-name">${fc.competition.name}</div>
+            ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
+          </div>
+          <table><thead><tr><th>SL</th><th>Reg No</th><th>Name</th><th>House Name</th><th>Shakha</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+        </div>`;
+      })
+      .filter(Boolean);
+
+    openPrintWindow(buildEventPdfHtml(sections, layout));
+  }
+
+  function exportTeamPDF(layout: PrintLayout) {
+    const compsToprint = teamCompFilter ? teamFeastComps.filter((c) => c.id === teamCompFilter) : teamFeastComps;
+    const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
+    const sections = compsToprint
+      .map((fc) => {
+        const rows = teams.filter((t) => t.feastCompetitionId === fc.id && (!shakhaFilter || t.shakhaId === shakhaFilter));
+        if (rows.length === 0) return "";
+        const rowsHtml = rows
+          .map(
+            (t, i) =>
+              `<tr><td>${i + 1}</td><td class="name">${t.teamName}</td><td>${t.shakhaName}</td><td>${t.members.join(", ") || "—"}</td><td class="remarks"></td></tr>`
+          )
+          .join("");
+        const sub = competitionSubLine(fc);
+        return `<div class="sheet">
+          <div class="hdr">
+            ${orgLine ? `<div class="org">${orgLine}</div>` : ""}
+            <div class="comp-name">${fc.competition.name}</div>
+            ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
+          </div>
+          <table><thead><tr><th>SL</th><th>Team</th><th>Shakha</th><th>Members</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+        </div>`;
+      })
+      .filter(Boolean);
+
+    openPrintWindow(buildEventPdfHtml(sections, layout));
   }
 
   function exportRegistrationCards() {
@@ -638,7 +678,7 @@ export default function ParticipantsPage() {
           <button onClick={exportCSV} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
-          <button onClick={() => setPrintLayoutOpen(true)} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
+          <button onClick={() => setPrintLayoutTarget("individual")} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <Printer className="h-3.5 w-3.5" /> PDF
           </button>
           <button onClick={exportRegistrationCards} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
@@ -774,6 +814,13 @@ export default function ParticipantsPage() {
                 </option>
               ))}
             </select>
+            <button
+              onClick={() => setPrintLayoutTarget("team")}
+              disabled={filteredTeams.length === 0}
+              className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50"
+            >
+              <Printer className="h-3.5 w-3.5" /> Team PDF
+            </button>
             <button onClick={openCreateTeam} className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#6D28D9]">
               Register Team
             </button>
@@ -1010,10 +1057,15 @@ export default function ParticipantsPage() {
         </div>
       )}
 
-      {printLayoutOpen && (
+      {printLayoutTarget && (
         <PrintLayoutDialog
-          onClose={() => setPrintLayoutOpen(false)}
-          onChoose={(layout) => { setPrintLayoutOpen(false); exportPDF(layout); }}
+          onClose={() => setPrintLayoutTarget(null)}
+          onChoose={(layout) => {
+            const target = printLayoutTarget;
+            setPrintLayoutTarget(null);
+            if (target === "team") exportTeamPDF(layout);
+            else exportPDF(layout);
+          }}
         />
       )}
 
