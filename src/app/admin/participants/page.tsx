@@ -590,7 +590,8 @@ export default function ParticipantsPage() {
       thead tr { background: #EDE9FE; }
       th { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #4C1D95; }
       td.name { font-weight: 700; color: #1e1b4b; }
-      td.remarks { min-width: 120px; }
+      td.remarks { min-width: 65px; }
+      td.blank { min-width: 55px; }
       .reg { font-family: monospace; font-weight: 700; color: #4C1D95; }
       </style></head><body>${PRINT_FALLBACK_BUTTON}${sections.join("")}</body></html>`;
   }
@@ -614,7 +615,7 @@ export default function ParticipantsPage() {
         const rowsHtml = rows
           .map(
             (p, i) =>
-              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td><td class="remarks"></td></tr>`
+              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="blank"></td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td><td class="remarks"></td></tr>`
           )
           .join("");
         const sub = competitionSubLine(fc);
@@ -624,7 +625,7 @@ export default function ParticipantsPage() {
             <div class="comp-name">${fc.competition.name}</div>
             ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
           </div>
-          <table><thead><tr><th>SL</th><th>Reg No</th><th>Name</th><th>House Name</th><th>Shakha</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          <table><thead><tr><th>SL</th><th>Reg No</th><th>Chance No</th><th>Name</th><th>House Name</th><th>Shakha</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>`;
       })
       .filter(Boolean);
