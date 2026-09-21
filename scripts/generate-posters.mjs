@@ -69,6 +69,16 @@ function one(x) {
   return Array.isArray(x) ? x[0] : x;
 }
 
+// Mirrors FEAST_TYPE_POSTER_LABEL/feastPosterHeading() in src/lib/feast-data.ts —
+// the poster heading is the feast's type-banner, not its free-text name.
+const FEAST_TYPE_POSTER_LABEL = {
+  literature: "സാഹിത്യമത്സരം",
+  arts: "കലാമത്സരം",
+};
+function feastPosterHeading(feast) {
+  return FEAST_TYPE_POSTER_LABEL[feast?.type] ?? feast?.name ?? "";
+}
+
 // Mirrors openPoster()'s categoryLabel in src/app/admin/results/page.tsx.
 // "common"-gender competitions (e.g. Drawing) print no Boys/Girls suffix.
 function categoryLabelFor(competition) {
@@ -98,7 +108,7 @@ async function main() {
     return `${shakhaName ?? "—"} Shakha`;
   }
 
-  const { data: feasts, error: feastsErr } = await supabase.from("feasts").select("id, name");
+  const { data: feasts, error: feastsErr } = await supabase.from("feasts").select("id, name, type");
   if (feastsErr) throw new Error(feastsErr.message);
   const feastById = new Map((feasts ?? []).map((f) => [f.id, f]));
 
@@ -154,7 +164,7 @@ async function main() {
     const theme = CATEGORY_THEME[categorySlug];
     if (!theme) console.warn(`  ! ${competition.name}: unrecognized category "${categorySlug}" — defaulting to ${DEFAULT_THEME}`);
     jobs.push({
-      feastName: feast?.name ?? "",
+      feastName: feastPosterHeading(feast),
       competitionName: competition.name,
       categoryLabel: categoryLabelFor(competition),
       winners,

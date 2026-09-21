@@ -7,6 +7,7 @@ import { useFeast, useFeasts, type FeastCompetitionUI } from "@/hooks/use-feast"
 import { getPublishedResults } from "@/actions/results";
 import { getPublishedTeamResults } from "@/actions/team-results";
 import { CATEGORY_LABELS, FeastTabs, FeastTopBar, theme } from "./feast-shared";
+import { feastPosterHeading } from "@/lib/feast-data";
 import { ResultTable, sortResults, type PublicResultRow } from "./feast-shared-results";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 
@@ -167,7 +168,7 @@ function FeastContent({ slug, onGeneratePoster }: { slug: string; onGeneratePost
             {filtered.length === 0 ? (
               <p className="py-6 text-center text-[15px]" style={{ color: "#9CA3AF" }}>No competitions in this category.</p>
             ) : (
-              filtered.map((comp) => <CompCard key={comp.id} comp={comp} catColor={activeColor} feastName={feast?.name ?? ""} onGeneratePoster={onGeneratePoster} />)
+              filtered.map((comp) => <CompCard key={comp.id} comp={comp} catColor={activeColor} feastName={feast ? feastPosterHeading(feast) : ""} onGeneratePoster={onGeneratePoster} />)
             )}
           </div>
         </>

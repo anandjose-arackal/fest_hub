@@ -13,6 +13,7 @@ import {
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { getOrgSettings } from "@/lib/org-settings";
+import { feastPosterHeading } from "@/lib/feast-data";
 import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, type PosterData, type PosterWinner, type PosterTheme } from "@/lib/poster-render";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import { getCertificateTemplate, getCertificateRosterForCompetition } from "@/actions/certificates";
@@ -462,7 +463,7 @@ export default function ResultsPage() {
       .join(" · ");
     setPosterData({
       org,
-      feastName: feast?.name ?? "",
+      feastName: feast ? feastPosterHeading(feast) : "",
       competitionName: selectedFc.competition.name,
       categoryLabel,
       winners,

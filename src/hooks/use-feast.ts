@@ -109,6 +109,7 @@ export interface FeastUI {
   id: string;
   slug: string;
   name: string;
+  type: string;
   year: string;
   icon: string;
   tint: [string, string];
@@ -183,6 +184,7 @@ export function useFeasts(options?: UseFeastsOptions) {
             id: row.id,
             slug: row.slug,
             name: row.name,
+            type: row.type,
             year: row.year,
             icon: cfg.icon,
             tint: cfg.tint,
@@ -289,6 +291,7 @@ export function useFeast(slug: string) {
           id: feastRow.id,
           slug: feastRow.slug,
           name: feastRow.name,
+          type: feastRow.type,
           year: feastRow.year,
           icon: cfg.icon,
           tint: cfg.tint,
