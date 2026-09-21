@@ -31,6 +31,7 @@ interface EntryRow {
   shakhaId: string;
   chanceNo: number | null;
   savedScore: number | null;
+  members?: string[]; // team competitions only — exploded into one PDF row per member, see explodeTeamRows
 }
 
 interface Preview {
@@ -237,6 +238,7 @@ export default function ResultsPage() {
             shakhaId: shakha?.id ?? "",
             chanceNo: t.chance_no,
             savedScore: scoreMap.get(t.id) ?? null,
+            members,
           };
         });
         setEntries(rows);
@@ -330,14 +332,16 @@ export default function ResultsPage() {
   // ANY checked filter" rule as /admin/certificates.
   const resultFilteredRows = useMemo(
     () =>
-      entries
-        .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
-        .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
-        .filter((r) => {
-          const placeMatch = r.position === 1 || r.position === 2 || r.position === 3 ? resultPlaceFilters[r.position] : false;
-          const gradeMatch = r.grade != null ? resultGradeFilters[r.grade] : false;
-          return placeMatch || gradeMatch;
-        }),
+      explodeTeamRows(
+        entries
+          .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
+          .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
+          .filter((r) => {
+            const placeMatch = r.position === 1 || r.position === 2 || r.position === 3 ? resultPlaceFilters[r.position] : false;
+            const gradeMatch = r.grade != null ? resultGradeFilters[r.grade] : false;
+            return placeMatch || gradeMatch;
+          })
+      ),
     [entries, shakhaFilter, preview, resultPlaceFilters, resultGradeFilters]
   );
   const noResultFiltersSelected = !Object.values(resultPlaceFilters).some(Boolean) && !Object.values(resultGradeFilters).some(Boolean);
@@ -549,8 +553,27 @@ export default function ResultsPage() {
     setResultGradeFilters((f) => ({ ...f, [grade]: !f[grade] }));
   }
 
+  // Result-sheet PDFs print one row per team member (mirrors how
+  // /admin/certificates already expands a published team result into one
+  // certificate per member) rather than a single row for the whole team —
+  // a 7-member "First" team prints 7 rows, each carrying the team's shared
+  // grade/position/points. regNo becomes the team name since members don't
+  // have their own registration number. Individual-competition rows have no
+  // `members` and pass through unchanged.
+  function explodeTeamRows<T extends EntryRow>(rows: T[]): T[] {
+    const out: T[] = [];
+    for (const r of rows) {
+      if (r.members && r.members.length > 0) {
+        for (const memberName of r.members) out.push({ ...r, regNo: r.name, name: memberName });
+      } else {
+        out.push(r);
+      }
+    }
+    return out;
+  }
+
   function exportPdf() {
-    if (!selectedFc || isGroup) return;
+    if (!selectedFc) return;
     setResultPrintOpen(false);
     const sorted = sortPdfRows(resultFilteredRows);
     const feast = feasts.find((f) => f.id === feastId);
@@ -569,16 +592,23 @@ export default function ResultsPage() {
       let rows: (EntryRow & Preview)[] = [];
       if (group) {
         const [{ data: teams }, scoreEntries] = await Promise.all([
-          supabase.from("team_registrations").select("id, team_name, shakha:shakhas(id,name)").eq("feast_competition_id", fc.id),
+          supabase
+            .from("team_registrations")
+            .select("id, team_name, shakha:shakhas(id,name), team_registration_members(participant:participants(name))")
+            .eq("feast_competition_id", fc.id),
           getTeamCompetitionScores(fc.id),
         ]);
         const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s]));
         rows = (teams ?? []).map((t) => {
           const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
+          const members = (t.team_registration_members ?? []).map((m) => {
+            const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
+            return p?.name ?? "";
+          });
           const s = scoreMap.get(t.id);
           return {
             regId: t.id, regNo: t.team_name, name: t.team_name, sub: "", shakhaName: shakha?.name ?? "—", shakhaId: shakha?.id ?? "",
-            chanceNo: null, savedScore: s ? s.score : null,
+            chanceNo: null, savedScore: s ? s.score : null, members,
             grade: (s?.grade as Grade) ?? null, gradePoints: 0, position: s?.position ?? null, positionPoints: 0, totalPoints: s?.totalPoints ?? 0,
           };
         });
@@ -605,7 +635,7 @@ export default function ResultsPage() {
       sections.push({
         title: fc.competition.name,
         subtitle: `${fc.competition.competition_category?.name ?? ""} · ${fc.competition.gender ?? "Common"}`,
-        rows: sortPdfRows(scoped),
+        rows: sortPdfRows(explodeTeamRows(scoped)),
       });
     }
     const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
@@ -868,8 +898,7 @@ export default function ResultsPage() {
         )}
         <button
           onClick={() => setResultPrintOpen(true)}
-          disabled={!compId || isGroup || entries.length === 0}
-          title={isGroup ? "PDF export isn't available for team competitions yet" : ""}
+          disabled={!compId || entries.length === 0}
           className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
           style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}
         >
