@@ -249,8 +249,18 @@ export const ResultPoster = forwardRef<HTMLDivElement, { data: PosterData }>(fun
         {/* Feast name — big heading, Nayana (public/font/) rather than the
             app-wide Anek/Baloo, per the reference design's display type.
             Sized to span the poster edge-to-edge (10px gutter) rather than
-            the 64px side padding the rest of the content uses below. */}
-        <p style={{ marginTop: 4, width: "100%", textAlign: "center" }}>
+            the 64px side padding the rest of the content uses below.
+            Nayana's line box reserves a lot of dead space both above AND
+            below the visible glyph ink (measured via canvas pixel scan —
+            its ascent/descent metrics run far taller than this script's
+            actual cap-height), which at this heading's large auto-fit font
+            size showed up as a big visual gap both above it (under the
+            area-name line) and below it (before the competition name/
+            winners section), despite the explicit margins being small.
+            Pulling the <p> up/in on both sides by a fraction of the
+            (auto-fit, so size varies per feast name) font size compensates
+            for that proportionally instead of hardcoding one offset. */}
+        <p style={{ marginTop: -headingFontSize * 0.26, marginBottom: -headingFontSize * 0.3, width: "100%", textAlign: "center" }}>
           <span
             style={{
               display: "inline-block",
