@@ -11,7 +11,7 @@ import {
   type Grade,
 } from "@/lib/result-calculator";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
-import { formatCompetitionOptionLabel } from "@/lib/competition-categories";
+import { formatCompetitionOptionLabel, genderDisplayWord } from "@/lib/competition-categories";
 import { getOrgSettings } from "@/lib/org-settings";
 import { feastPosterHeading } from "@/lib/feast-data";
 import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, type PosterData, type PosterWinner, type PosterTheme } from "@/lib/poster-render";
@@ -19,7 +19,7 @@ import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-la
 import { getCertificateTemplate, getCertificateRosterForCompetition } from "@/actions/certificates";
 import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
 import { toPng } from "html-to-image";
-import type { Competition, CompetitionCategory, Feast, FeastCompetition, Meghala, OrgSettings, Shakha, CertificateRosterRow } from "@/types";
+import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, Meghala, OrgSettings, Shakha, CertificateRosterRow } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 
@@ -42,6 +42,18 @@ interface Preview {
   positionPoints: number;
   totalPoints: number;
 }
+
+// Which optional columns print on the results PDFs (both the single-
+// competition export and "Export All"). #, Reg No, Name and Position are
+// always printed; these five are opt-in/out via the "Columns" picker.
+interface ResultColumns {
+  point: boolean;
+  grade: boolean;
+  shakha: boolean;
+  meghala: boolean;
+  diocese: boolean;
+}
+const DEFAULT_RESULT_COLUMNS: ResultColumns = { point: true, grade: true, shakha: true, meghala: false, diocese: false };
 
 // Same "who gets included" filters as /admin/certificates' print-confirm
 // dialog — a row prints if it matches ANY checked filter.
@@ -111,7 +123,9 @@ export default function ResultsPage() {
   const [compId, setCompId] = useState("");
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
   const [meghalas, setMeghalas] = useState<Meghala[]>([]);
+  const [dioceses, setDioceses] = useState<Diocese[]>([]);
   const [shakhaFilter, setShakhaFilter] = useState("");
+  const [resultColumns, setResultColumns] = useState<ResultColumns>(DEFAULT_RESULT_COLUMNS);
   const [statusFilter, setStatusFilter] = useState<"" | "draft" | "published">("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [typedScores, setTypedScores] = useState<Record<string, string>>({});
@@ -166,6 +180,7 @@ export default function ResultsPage() {
     });
     supabase.from("shakhas").select("*").order("name").then(({ data }) => setShakhas(data ?? []));
     supabase.from("meghalas").select("*").order("name").then(({ data }) => setMeghalas(data ?? []));
+    supabase.from("dioceses").select("*").order("name").then(({ data }) => setDioceses(data ?? []));
   }, []);
 
   useEffect(() => {
@@ -440,6 +455,21 @@ export default function ResultsPage() {
     return `${shakhaName} Shakha`;
   }
 
+  // Meghala/Diocese names for a row's shakha — used by the optional PDF
+  // columns (independent of groupLabelFor above, which is poster-specific
+  // formatting). Falls back to "—" when the shakha isn't assigned into that
+  // tier yet, same convention as the results/standings "__unassigned__" group.
+  function hierarchyNamesFor(shakhaId: string): { meghalaName: string; dioceseName: string } {
+    const shakha = shakhas.find((s) => s.id === shakhaId);
+    const meghala = shakha?.meghala_id ? meghalas.find((m) => m.id === shakha.meghala_id) : null;
+    const diocese = meghala?.diocese_id ? dioceses.find((d) => d.id === meghala.diocese_id) : null;
+    return { meghalaName: meghala?.name ?? "—", dioceseName: diocese?.name ?? "—" };
+  }
+
+  function toggleResultColumn(key: keyof ResultColumns) {
+    setResultColumns((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
   function openPoster() {
     if (!selectedFc || !org) {
       showBanner("Still loading organization settings — try again in a moment.");
@@ -454,11 +484,8 @@ export default function ResultsPage() {
       return;
     }
     const feast = feasts.find((f) => f.id === feastId);
-    const gender = selectedFc.competition.gender?.toLowerCase();
-    const categoryLabel = [
-      selectedFc.competition.competition_category?.name,
-      gender === "boy" ? "Boys" : gender === "girl" ? "Girls" : null,
-    ]
+    const categoryName = selectedFc.competition.competition_category?.name;
+    const categoryLabel = [categoryName, genderDisplayWord(selectedFc.competition.gender, categoryName, true)]
       .filter(Boolean)
       .join(" · ");
     setPosterData({
@@ -576,18 +603,18 @@ export default function ResultsPage() {
   function exportPdf() {
     if (!selectedFc) return;
     setResultPrintOpen(false);
-    const sorted = sortPdfRows(resultFilteredRows);
+    const sorted = sortPdfRows(resultFilteredRows).map((r) => ({ ...r, ...hierarchyNamesFor(r.shakhaId) }));
     const feast = feasts.find((f) => f.id === feastId);
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(feast?.name ?? "", [
-      { title: selectedFc.competition.name, subtitle: `${selectedFc.competition.competition_category?.name ?? ""} · ${selectedFc.competition.gender ?? "Common"}`, rows: sorted },
-    ], orgLine);
+      { title: selectedFc.competition.name, subtitle: pdfCompetitionSubtitle(selectedFc.competition.competition_category?.name, selectedFc.competition.gender), rows: sorted },
+    ], orgLine, "continuous", resultColumns);
     openPrintWindow(html);
   }
 
   async function exportAll(layout: PrintLayout) {
     const feast = feasts.find((f) => f.id === feastId);
-    const sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[] = [];
+    const sections: { title: string; subtitle: string; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[] = [];
     for (const fc of feastComps) {
       const group = fc.competition.type === "group";
       let rows: (EntryRow & Preview)[] = [];
@@ -635,15 +662,44 @@ export default function ResultsPage() {
       if (shakhaFilter && scoped.length === 0) continue;
       sections.push({
         title: fc.competition.name,
-        subtitle: `${fc.competition.competition_category?.name ?? ""} · ${fc.competition.gender ?? "Common"}`,
-        rows: sortPdfRows(explodeTeamRows(scoped)),
+        subtitle: pdfCompetitionSubtitle(fc.competition.competition_category?.name, fc.competition.gender),
+        rows: sortPdfRows(explodeTeamRows(scoped)).map((r) => ({ ...r, ...hierarchyNamesFor(r.shakhaId) })),
       });
     }
     const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
-    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine, layout);
+    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine, layout, resultColumns);
     openPrintWindow(html);
   }
+
+  // Shared "which columns print" toggle row — rendered inside both the
+  // single-competition "Print Result" dialog and the "Export All" ->
+  // PrintLayoutDialog, so both flows go through the same confirm-time choice.
+  const columnsPicker = (
+    <div className="mb-4">
+      <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Columns to print</p>
+      <div className="flex flex-wrap gap-1.5">
+        {(
+          [
+            { key: "point", label: "Point" },
+            { key: "grade", label: "Grade" },
+            { key: "shakha", label: "Shakha" },
+            ...(org?.hierarchy_level && org.hierarchy_level !== "shakha" ? [{ key: "meghala", label: "Meghala" }] : []),
+            ...(org?.hierarchy_level === "diocese" ? [{ key: "diocese", label: "Diocese" }] : []),
+          ] as { key: keyof ResultColumns; label: string }[]
+        ).map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => toggleResultColumn(c.key)}
+            className={`rounded-lg border-2 px-2.5 py-1.5 text-xs font-bold ${resultColumns[c.key] ? "border-[#6B46FF] bg-[#EDE9FE] text-[#4C1D95]" : "border-neutral-200 text-neutral-400"}`}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -984,6 +1040,7 @@ export default function ResultsPage() {
                 </button>
               ))}
             </div>
+            {columnsPicker}
             <p className="mb-4 text-sm text-neutral-600">
               {noResultFiltersSelected
                 ? "Select at least one option above to print."
@@ -1008,6 +1065,7 @@ export default function ResultsPage() {
         <PrintLayoutDialog
           onClose={() => setPrintLayoutOpen(false)}
           onChoose={(layout) => { setPrintLayoutOpen(false); exportAll(layout); }}
+          columnsPicker={columnsPicker}
         />
       )}
 
@@ -1145,6 +1203,15 @@ export default function ResultsPage() {
   );
 }
 
+// PDF sheet header line under the competition title — was interpolating
+// the raw stored gender ("boy"/"girl"/"common") straight into the page
+// instead of a proper display word; now goes through the same
+// genderDisplayWord mapping (incl. the Elder -> Men/Women override) as the
+// dropdowns, print-dialog text, certificates and poster.
+function pdfCompetitionSubtitle(categoryName: string | null | undefined, gender: string | null | undefined): string {
+  return [categoryName, genderDisplayWord(gender, categoryName, true) ?? "Common"].filter(Boolean).join(" · ");
+}
+
 // Colored "pill" cells, matching cml-mission-hub's admin/results print
 // sheet — same GRADE_SOLID/POS_COLORS/POS_EMOJI as the on-screen
 // GradeCell/PosCell above, so the printed page reads like the live table.
@@ -1163,10 +1230,24 @@ function pdfPosCell(pos: number | null, pts: number): string {
 
 function buildResultsHtml(
   title: string,
-  sections: { title: string; subtitle: string; rows: (EntryRow & Preview)[] }[],
-  orgLine?: string,
-  layout: PrintLayout = "continuous"
+  sections: { title: string; subtitle: string; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[],
+  orgLine: string | undefined,
+  layout: PrintLayout,
+  columns: ResultColumns
 ): string {
+  // #, Reg No, Name and Position always print; the rest follow the
+  // "PDF Columns" picker above the table on-screen.
+  const colCount = 5 + [columns.shakha, columns.meghala, columns.diocese, columns.grade, columns.point].filter(Boolean).length;
+  const headerRow = [
+    `<th>#</th><th>Reg No</th><th>Name</th>`,
+    columns.shakha ? `<th>Shakha</th>` : "",
+    columns.meghala ? `<th>Meghala</th>` : "",
+    columns.diocese ? `<th>Diocese</th>` : "",
+    columns.grade ? `<th class="c-grade">Grade</th>` : "",
+    `<th class="c-pos">Position</th>`,
+    columns.point ? `<th class="c-pos">Total</th>` : "",
+  ].join("");
+
   const sheets = sections
     .map(
       (s) => `<div class="sheet">
@@ -1176,16 +1257,23 @@ function buildResultsHtml(
           ${s.subtitle ? `<p class="cat">${s.subtitle}</p>` : ""}
         </div>
         <table>
-          <thead><tr><th>#</th><th>Reg No</th><th>Name</th><th>Shakha</th><th class="c-grade">Grade</th><th class="c-pos">Position</th><th class="c-pos">Total</th></tr></thead>
+          <thead><tr>${headerRow}</tr></thead>
           <tbody>${
             s.rows.length
               ? s.rows
                   .map(
                     (r, i) =>
-                      `<tr><td class="sl">${i + 1}</td><td class="reg">${r.regNo}</td><td class="name">${r.name}</td><td class="shakha">${r.shakhaName}</td><td class="grade">${pdfGradeCell(r.grade, r.gradePoints)}</td><td class="pos">${pdfPosCell(r.position, r.positionPoints)}</td><td class="total">${r.totalPoints}</td></tr>`
+                      `<tr><td class="sl">${i + 1}</td><td class="reg">${r.regNo}</td><td class="name">${r.name}</td>${
+                        columns.shakha ? `<td class="shakha">${r.shakhaName}</td>` : ""
+                      }${columns.meghala ? `<td class="shakha">${r.meghalaName}</td>` : ""}${
+                        columns.diocese ? `<td class="shakha">${r.dioceseName}</td>` : ""
+                      }${columns.grade ? `<td class="grade">${pdfGradeCell(r.grade, r.gradePoints)}</td>` : ""}<td class="pos">${pdfPosCell(
+                        r.position,
+                        r.positionPoints
+                      )}</td>${columns.point ? `<td class="total">${r.totalPoints}</td>` : ""}</tr>`
                   )
                   .join("")
-              : `<tr><td colspan="7" class="empty">No graded results yet</td></tr>`
+              : `<tr><td colspan="${colCount}" class="empty">No graded results yet</td></tr>`
           }</tbody>
         </table>
       </div>`

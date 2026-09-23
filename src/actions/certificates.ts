@@ -88,7 +88,10 @@ interface CompInfo {
 }
 
 function buildCompetitionLabel(name: string, gender: string | null, categoryName: string | null): string {
-  const genderWord = gender === "boy" ? "Boys" : gender === "girl" ? "Girls" : null; // "common" and null both stay unlabeled
+  // Elder-category entrants are adults — "Boys"/"Girls" reads wrong for them,
+  // so that category (any org's rename of it, e.g. "Elders") gets "Men"/"Women" instead.
+  const isElder = (categoryName ?? "").toLowerCase().startsWith("elder");
+  const genderWord = gender === "boy" ? (isElder ? "Men" : "Boys") : gender === "girl" ? (isElder ? "Women" : "Girls") : null; // "common" and null both stay unlabeled
   return [categoryName, genderWord, name].filter(Boolean).join(" ");
 }
 

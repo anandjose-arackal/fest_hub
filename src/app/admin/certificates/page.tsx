@@ -343,6 +343,9 @@ export default function CertificatesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [copySourceId, setCopySourceId] = useState("");
+  const [copying, setCopying] = useState(false);
+  const [copiedAt, setCopiedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bgMismatch, setBgMismatch] = useState(false);
   const [bgUploading, setBgUploading] = useState(false);
@@ -526,6 +529,33 @@ export default function CertificatesPage() {
     setTimeout(() => setSavedAt(null), 2000);
   }
 
+  // Pulls another fest's saved design (background, paper size, all fields)
+  // into the canvas for the currently-selected fest — this only replaces
+  // local state, same as every other canvas edit, so nothing hits the DB
+  // until "Save My Design" is clicked. Field ids are regenerated so the
+  // copy's fields are independent of the source's (selecting/dragging one
+  // never touches the other fest's saved row).
+  async function handleCopyFrom(sourceFeastId: string) {
+    if (!sourceFeastId || sourceFeastId === feastId) return;
+    setCopying(true);
+    setError(null);
+    const { data, error } = await getCertificateTemplate(sourceFeastId);
+    setCopying(false);
+    if (error) { setError(error); return; }
+    if (!data) { setError("That fest doesn't have a saved certificate design yet."); return; }
+    setTemplate(
+      normalizeTemplate({
+        ...data,
+        feast_id: feastId,
+        fields: data.fields.map((f) => ({ ...f, id: crypto.randomUUID() })),
+      })
+    );
+    setSelectedFieldId(null);
+    setCopySourceId("");
+    setCopiedAt(Date.now());
+    setTimeout(() => setCopiedAt(null), 2500);
+  }
+
   async function handlePrintClick() {
     if (!template) return;
     setRosterLoading(true);
@@ -577,12 +607,31 @@ export default function CertificatesPage() {
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <select className="input max-w-xs" value={feastId} onChange={(e) => setFeastId(e.target.value)}>
           {feasts.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
         </select>
+        {feasts.length > 1 && (
+          <>
+            <span className="text-xs font-semibold text-neutral-400">or copy a design from</span>
+            <select className="input max-w-xs" value={copySourceId} onChange={(e) => setCopySourceId(e.target.value)}>
+              <option value="">Choose a fest…</option>
+              {feasts.filter((f) => f.id !== feastId).map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => handleCopyFrom(copySourceId)}
+              disabled={!copySourceId || copying}
+              className="rounded-xl border-2 border-neutral-200 bg-white px-3 py-2 text-sm font-bold text-neutral-700 hover:border-[#D97706] hover:text-[#D97706] disabled:opacity-50"
+            >
+              {copying ? "Copying…" : "📋 Copy Design"}
+            </button>
+            {copiedAt && <span className="text-xs font-bold text-green-600">Copied — click Save My Design ✓</span>}
+          </>
+        )}
       </div>
 
       <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 lg:hidden">

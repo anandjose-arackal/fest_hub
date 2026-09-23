@@ -57,6 +57,23 @@ export function fetchCompetitionCategories(): Promise<CompetitionCategory[]> {
   return cached;
 }
 
+// Shared "boy"/"girl" -> display-word mapping for any competition/gender +
+// category-name pair — null for "common"/unset (callers decide their own
+// fallback text for that case). Elder-category entrants are adults —
+// "Boy(s)"/"Girl(s)" reads wrong for them, so that category (any org's
+// rename of it, e.g. "Elders") gets "Men"/"Women" instead, singular or not.
+export function genderDisplayWord(
+  gender: string | null | undefined,
+  categoryName: string | null | undefined,
+  plural: boolean = false
+): string | null {
+  const g = (gender ?? "").toLowerCase();
+  const isElder = (categoryName ?? "").toLowerCase().startsWith("elder");
+  if (g.startsWith("boy") || g === "male") return isElder ? "Men" : plural ? "Boys" : "Boy";
+  if (g.startsWith("girl") || g === "female") return isElder ? "Women" : plural ? "Girls" : "Girl";
+  return null;
+}
+
 // "Elocution | Sub Junior | Boy" — used by the competition dropdowns on
 // /admin/participants and /admin/results. Category/gender are omitted
 // (no dangling separator) when the competition doesn't carry one.
@@ -65,9 +82,7 @@ export function formatCompetitionOptionLabel(
   gender: string | null | undefined,
   categoryName: string | null | undefined
 ): string {
-  const g = (gender ?? "").toLowerCase();
-  const genderLabel = g.startsWith("boy") || g === "male" ? "Boy" : g.startsWith("girl") || g === "female" ? "Girl" : null;
-  return [name, categoryName, genderLabel].filter(Boolean).join(" | ");
+  return [name, categoryName, genderDisplayWord(gender, categoryName)].filter(Boolean).join(" | ");
 }
 
 export function getCategorySlug(dob: string, categories: CompetitionCategory[]): CategorySlug | "" {

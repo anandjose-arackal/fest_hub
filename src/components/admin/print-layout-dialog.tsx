@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { X, Rows3, FileStack } from "lucide-react";
 
 // Shared by /admin/participants (exportPDF) and /admin/results (exportAll) —
@@ -9,7 +10,18 @@ import { X, Rows3, FileStack } from "lucide-react";
 // instead of guessing.
 export type PrintLayout = "continuous" | "per-page";
 
-export function PrintLayoutDialog({ onChoose, onClose }: { onChoose: (layout: PrintLayout) => void; onClose: () => void }) {
+// `columnsPicker` is an optional extra block (e.g. /admin/results' "Columns
+// to print" toggles) rendered between the intro line and the layout choices.
+// Participants' plain call site (no columnsPicker) renders nothing extra.
+export function PrintLayoutDialog({
+  onChoose,
+  onClose,
+  columnsPicker,
+}: {
+  onChoose: (layout: PrintLayout) => void;
+  onClose: () => void;
+  columnsPicker?: ReactNode;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
@@ -20,6 +32,7 @@ export function PrintLayoutDialog({ onChoose, onClose }: { onChoose: (layout: Pr
           </button>
         </div>
         <p className="mb-4 text-sm text-neutral-600">How should the competitions be laid out on paper?</p>
+        {columnsPicker}
         <div className="space-y-2">
           <button
             onClick={() => onChoose("continuous")}
