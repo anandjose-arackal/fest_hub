@@ -24,7 +24,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
 };
 
 // Offline-dev fallback only, mirrors the seed in
-// supabase/migrations/002_feast_core.sql — never used once Supabase is
+// supabase/migrations/001_schema.sql — never used once Supabase is
 // configured, since fetchCompetitionCategories() reads the DB then.
 const FALLBACK_CATEGORIES: CompetitionCategory[] = [
   { id: "sub_junior", slug: "sub_junior", name: "Sub Junior", min_dob: "2014-01-01", max_dob: null, sort_order: 1, created_at: "" },

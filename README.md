@@ -68,24 +68,15 @@ Migrations live in [`supabase/migrations/`](./supabase/migrations/), numbered in
 
 | File | What it creates |
 |---|---|
-| `001_shared_auth.sql` | `shakhas`, `profiles`, roles, auto-provisioning trigger |
-| `002_feast_core.sql` | `feasts`, `competitions`, `competition_categories` (+ seeded age-category cutoffs), `stages`, `feast_competitions` |
-| `003_participants.sql` | `participants`, `participant_registrations`, the registration-number sequence |
-| `004_teams.sql` | `team_registrations`, `team_registration_members` |
-| `005_results.sql` | `competition_results`, `team_results`, `shakha_point_ledger`, `shakha_feast_standings` |
-| `006_org_settings.sql` | The `org_settings` singleton (your org's name/logo/tagline) |
-| `007_arts_fest_competitions.sql` *(optional)* | Example competition catalog copied from a real deployment — skip this if you'd rather define your own competitions from scratch in the admin panel |
-| `008_attach_arts_fest_competitions.sql` *(optional)* | Attaches `007`'s catalog to a specific feast — edit the `feast_id` at the top of the file, or skip entirely |
-| `009_feast_competitions_updated_at.sql` | Tracks per-competition status changes for the landing page's Live Updates feed |
-| `010_external_feast_points.sql` | `feasts.is_external` — marks a feast whose shakha points are entered by hand (competition happened outside the app) instead of computed from results |
-| `011_certificate_templates.sql` | `certificate_templates` — one saved certificate layout (paper size, background image URL, field positions) per feast, used by `/admin/certificates` |
-| `012_certificate_assets_bucket.sql` | Creates the public `certificate-assets` Storage bucket, for background/signature images uploaded from `/admin/certificates` |
+| `001_schema.sql` | Every table, index, trigger, function and RLS policy: org hierarchy (`dioceses`/`meghalas`/`shakhas`), `profiles`, `feasts`, `competitions`, `competition_categories` (+ seeded age-category cutoffs), `stages`, `feast_competitions`, `participants`/`participant_registrations`, `team_registrations`/`team_registration_members`, results/points/standings, the `org_settings` singleton, `certificate_templates`, and the public `certificate-assets` Storage bucket |
+| `002_competitions.sql` *(optional)* | Example competition catalogs (Arts Fest + Literature) copied from a real deployment — skip this if you'd rather define your own competitions in the admin panel |
+| `003_feast_competitions.sql` *(optional)* | Creates two draft feasts — കലാ മത്സരം (arts) and സാഹിത്യ മത്സരം (literature) — and attaches `002`'s catalogs to them; configure them in `/admin/feasts`, or skip this file entirely |
 
 **Option A — Supabase SQL Editor (simplest, no CLI needed):**
 
 1. In your Supabase project, open **SQL Editor**.
 2. Open each file in `supabase/migrations/` in order, paste its contents in, and click **Run**.
-3. Repeat for `001` through `006` (and `007`/`008` only if you want the example data).
+3. `001` is required; run `002`/`003` only if you want the example data (`003` needs `002`).
 
 **Option B — Supabase CLI:**
 

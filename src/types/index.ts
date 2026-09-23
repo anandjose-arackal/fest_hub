@@ -5,7 +5,7 @@
 
 export type UserRole = "admin" | "me_admin" | "sa_admin";
 
-// Optional org hierarchy (see supabase/migrations/014_org_hierarchy.sql):
+// Optional org hierarchy (see supabase/migrations/001_schema.sql):
 // Diocese -> Meghala -> Shakha, Shakha is the default/leaf level. Which
 // tiers are in play for an org is org_settings.hierarchy_level, not a
 // per-row flag — dioceses/meghalas simply sit unused for a 'shakha'-level

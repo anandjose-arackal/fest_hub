@@ -26,7 +26,7 @@ const TYPE_BY_STATUS: Record<string, ActivityType | null> = {
 // there's no separate notifications table (and no realtime infra anywhere
 // in this app, by design; see AGENTS.md's polling convention), so this
 // reads whatever most recently transitioned comp_status, using the
-// updated_at trigger added in migration 009.
+// updated_at trigger (supabase/migrations/001_schema.sql).
 export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin

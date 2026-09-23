@@ -11,7 +11,7 @@ import type { CertificateField, CertificateRosterRow, CertificateTemplate } from
 const MAX_ASSET_BYTES = 4 * 1024 * 1024; // 4MB — leaves headroom under next.config.ts's 5mb server-action body limit
 
 // Uploads a background/signature image to the public "certificate-assets"
-// bucket (migration 012). Goes through the service-role client — same
+// bucket (001_schema.sql). Goes through the service-role client — same
 // reason as everything else in this file — so the bucket itself needs no
 // storage RLS policies, just public:true for the printed <img> URLs.
 export async function uploadCertificateAsset(
