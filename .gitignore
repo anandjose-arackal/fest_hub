@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# feast-data-import skill output (contains participant names)
+/supabase/imports/
