@@ -32,7 +32,7 @@ interface EntryRow {
   shakhaId: string;
   chanceNo: number | null;
   savedScore: number | null;
-  members?: string[]; // team competitions only — exploded into one PDF row per member, see explodeTeamRows
+  members?: { name: string; houseName: string }[]; // team competitions only — printed as a name/house-name mini-table under the team's heading, see buildResultsHtml
 }
 
 interface Preview {
@@ -227,7 +227,7 @@ export default function ResultsPage() {
         const [{ data: teams, error: teamsErr }, scoreEntries] = await Promise.all([
           supabase
             .from("team_registrations")
-            .select("id, team_name, chance_no, shakha:shakhas(id, name), team_registration_members(participant:participants(name))")
+            .select("id, team_name, chance_no, shakha:shakhas(id, name), team_registration_members(participant:participants(name, house_name))")
             .eq("feast_competition_id", compId),
           getTeamCompetitionScores(compId),
         ]);
@@ -243,13 +243,13 @@ export default function ResultsPage() {
           const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
           const members = (t.team_registration_members ?? []).map((m) => {
             const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
-            return p?.name ?? "";
+            return { name: p?.name ?? "", houseName: p?.house_name ?? "" };
           });
           return {
             regId: t.id,
             regNo: t.team_name,
             name: t.team_name,
-            sub: members.join(", "),
+            sub: members.map((m) => m.name).join(", "),
             shakhaName: shakha?.name ?? "—",
             shakhaId: shakha?.id ?? "",
             chanceNo: t.chance_no,
@@ -345,19 +345,19 @@ export default function ResultsPage() {
 
   // Rows the single-competition PDF export would print — shared by the
   // print-confirm dialog's live count and exportPdf itself, same "matches
-  // ANY checked filter" rule as /admin/certificates.
+  // ANY checked filter" rule as /admin/certificates. Team competitions print
+  // one row per team (with a member sublist inside that row), not one row
+  // per member — see buildResultsHtml's team-row rendering.
   const resultFilteredRows = useMemo(
     () =>
-      explodeTeamRows(
-        entries
-          .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
-          .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
-          .filter((r) => {
-            const placeMatch = r.position === 1 || r.position === 2 || r.position === 3 ? resultPlaceFilters[r.position] : false;
-            const gradeMatch = r.grade != null ? resultGradeFilters[r.grade] : false;
-            return placeMatch || gradeMatch;
-          })
-      ),
+      entries
+        .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
+        .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
+        .filter((r) => {
+          const placeMatch = r.position === 1 || r.position === 2 || r.position === 3 ? resultPlaceFilters[r.position] : false;
+          const gradeMatch = r.grade != null ? resultGradeFilters[r.grade] : false;
+          return placeMatch || gradeMatch;
+        }),
     [entries, shakhaFilter, preview, resultPlaceFilters, resultGradeFilters]
   );
   const noResultFiltersSelected = !Object.values(resultPlaceFilters).some(Boolean) && !Object.values(resultGradeFilters).some(Boolean);
@@ -581,25 +581,6 @@ export default function ResultsPage() {
     setResultGradeFilters((f) => ({ ...f, [grade]: !f[grade] }));
   }
 
-  // Result-sheet PDFs print one row per team member (mirrors how
-  // /admin/certificates already expands a published team result into one
-  // certificate per member) rather than a single row for the whole team —
-  // a 7-member "First" team prints 7 rows, each carrying the team's shared
-  // grade/position/points. regNo becomes the team name since members don't
-  // have their own registration number. Individual-competition rows have no
-  // `members` and pass through unchanged.
-  function explodeTeamRows<T extends EntryRow>(rows: T[]): T[] {
-    const out: T[] = [];
-    for (const r of rows) {
-      if (r.members && r.members.length > 0) {
-        for (const memberName of r.members) out.push({ ...r, regNo: r.name, name: memberName });
-      } else {
-        out.push(r);
-      }
-    }
-    return out;
-  }
-
   function exportPdf() {
     if (!selectedFc) return;
     setResultPrintOpen(false);
@@ -607,14 +588,14 @@ export default function ResultsPage() {
     const feast = feasts.find((f) => f.id === feastId);
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(feast?.name ?? "", [
-      { title: selectedFc.competition.name, subtitle: pdfCompetitionSubtitle(selectedFc.competition.competition_category?.name, selectedFc.competition.gender), rows: sorted },
+      { title: selectedFc.competition.name, subtitle: pdfCompetitionSubtitle(selectedFc.competition.competition_category?.name, selectedFc.competition.gender), rows: sorted, isGroup },
     ], orgLine, "continuous", resultColumns);
     openPrintWindow(html);
   }
 
   async function exportAll(layout: PrintLayout) {
     const feast = feasts.find((f) => f.id === feastId);
-    const sections: { title: string; subtitle: string; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[] = [];
+    const sections: { title: string; subtitle: string; isGroup: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[] = [];
     for (const fc of feastComps) {
       const group = fc.competition.type === "group";
       let rows: (EntryRow & Preview)[] = [];
@@ -622,7 +603,7 @@ export default function ResultsPage() {
         const [{ data: teams }, scoreEntries] = await Promise.all([
           supabase
             .from("team_registrations")
-            .select("id, team_name, shakha:shakhas(id,name), team_registration_members(participant:participants(name))")
+            .select("id, team_name, shakha:shakhas(id,name), team_registration_members(participant:participants(name, house_name))")
             .eq("feast_competition_id", fc.id),
           getTeamCompetitionScores(fc.id),
         ]);
@@ -631,7 +612,7 @@ export default function ResultsPage() {
           const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
           const members = (t.team_registration_members ?? []).map((m) => {
             const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
-            return p?.name ?? "";
+            return { name: p?.name ?? "", houseName: p?.house_name ?? "" };
           });
           const s = scoreMap.get(t.id);
           return {
@@ -663,7 +644,8 @@ export default function ResultsPage() {
       sections.push({
         title: fc.competition.name,
         subtitle: pdfCompetitionSubtitle(fc.competition.competition_category?.name, fc.competition.gender),
-        rows: sortPdfRows(explodeTeamRows(scoped)).map((r) => ({ ...r, ...hierarchyNamesFor(r.shakhaId) })),
+        isGroup: group,
+        rows: sortPdfRows(scoped).map((r) => ({ ...r, ...hierarchyNamesFor(r.shakhaId) })),
       });
     }
     const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
@@ -1230,7 +1212,7 @@ function pdfPosCell(pos: number | null, pts: number): string {
 
 function buildResultsHtml(
   title: string,
-  sections: { title: string; subtitle: string; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[],
+  sections: { title: string; subtitle: string; isGroup?: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[],
   orgLine: string | undefined,
   layout: PrintLayout,
   columns: ResultColumns
@@ -1248,6 +1230,45 @@ function buildResultsHtml(
     columns.point ? `<th class="c-pos">Total</th>` : "",
   ].join("");
 
+  // Team competitions print as a "table of tables": each team gets its own
+  // heading bar (name, shakha, grade, position, total) followed by a small
+  // Participant/House Name table for its members — rather than one row per
+  // team squeezed into the flat individual-results table below.
+  function buildTeamBlocks(rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[]): string {
+    return rows
+      .map((r, i) => {
+        const badges = [
+          columns.shakha ? `<span class="badge">${r.shakhaName}</span>` : "",
+          columns.meghala ? `<span class="badge">${r.meghalaName}</span>` : "",
+          columns.diocese ? `<span class="badge">${r.dioceseName}</span>` : "",
+          columns.grade ? pdfGradeCell(r.grade, r.gradePoints) : "",
+          pdfPosCell(r.position, r.positionPoints),
+          columns.point ? `<span class="badge total">${r.totalPoints} pts</span>` : "",
+        ]
+          .filter(Boolean)
+          .join("");
+        const members = r.members ?? [];
+        return `<div class="team-block">
+          <div class="team-head">
+            <span class="team-no">${i + 1}</span>
+            <span class="team-name">${r.name}</span>
+            <span class="badges">${badges}</span>
+          </div>
+          ${
+            members.length
+              ? `<table class="member-table">
+                  <thead><tr><th>#</th><th>Participant</th><th>House Name</th></tr></thead>
+                  <tbody>${members
+                    .map((m, mi) => `<tr><td class="sl">${mi + 1}</td><td class="name">${m.name}</td><td class="shakha">${m.houseName || "—"}</td></tr>`)
+                    .join("")}</tbody>
+                </table>`
+              : `<p class="empty">No participants listed</p>`
+          }
+        </div>`;
+      })
+      .join("");
+  }
+
   const sheets = sections
     .map(
       (s) => `<div class="sheet">
@@ -1256,7 +1277,12 @@ function buildResultsHtml(
           <p class="comp">${s.title}</p>
           ${s.subtitle ? `<p class="cat">${s.subtitle}</p>` : ""}
         </div>
-        <table>
+        ${
+          s.isGroup
+            ? s.rows.length
+              ? buildTeamBlocks(s.rows)
+              : `<p class="empty">No graded results yet</p>`
+            : `<table>
           <thead><tr>${headerRow}</tr></thead>
           <tbody>${
             s.rows.length
@@ -1275,7 +1301,8 @@ function buildResultsHtml(
                   .join("")
               : `<tr><td colspan="${colCount}" class="empty">No graded results yet</td></tr>`
           }</tbody>
-        </table>
+        </table>`
+        }
       </div>`
     )
     .join("");
@@ -1307,5 +1334,18 @@ function buildResultsHtml(
     .pill b { font-size: 9px; font-weight: 800; }
     .none { color: #9CA3AF; font-weight: 700; }
     .empty { text-align: center; color: #9CA3AF; padding: 22px; font-size: 13px; }
+    .team-block { border: 1.5px solid #c4b5fd; border-radius: 10px; margin-bottom: 14px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+    .team-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; background: linear-gradient(90deg,#ede9fe,#f5f3ff); border-bottom: 1.5px solid #c4b5fd; }
+    .team-no { font-weight: 800; color: #4C1D95; font-size: 12.5px; }
+    .team-name { font-weight: 800; font-size: 14px; color: #1e1b4b; margin-right: auto; }
+    .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .badge { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; background: #ede9fe; color: #4C1D95; font-weight: 700; font-size: 10.5px; }
+    .badge.total { background: #4C1D95; color: #fff; }
+    table.member-table { margin-top: 0; }
+    table.member-table th { border: none; border-bottom: 1px solid #e5e7eb; font-size: 9.5px; padding: 5px 10px; }
+    table.member-table td { border: none; border-bottom: 1px solid #f1f0fb; padding: 5px 10px; }
+    table.member-table tbody tr:last-child td { border-bottom: none; }
+    table.member-table tbody tr:nth-child(even) { background: #faf9ff; }
+    .team-block .empty { padding: 10px; }
     </style></head><body>${PRINT_FALLBACK_BUTTON}${sheets}</body></html>`;
 }
