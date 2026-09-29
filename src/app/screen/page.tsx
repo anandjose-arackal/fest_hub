@@ -230,7 +230,7 @@ function Screen2Competition({ comp, subIdx, shakhaColor }: { comp: ScreenCompeti
                 </div>
                 <div style={{ marginTop: 8, fontFamily: "var(--font-anek), var(--font-oswald), sans-serif", fontSize: 20, fontWeight: 800, color: w ? "#fff" : "rgba(150,180,240,.35)" }}>{w?.name ?? "—"}</div>
                 {w?.houseName && <div style={{ fontSize: 14, color: "#c9d3f5" }}>{w.houseName}</div>}
-                {w && <div style={{ fontSize: 15, color: shakhaColor(w.shakha) }}>⛪ {w.shakha}</div>}
+                {w && <div style={{ fontSize: 15, color: shakhaColor(w.shakha) }}>⛪ {w.shakha}{w.meghalaName ? ` · ${w.meghalaName}` : ""}</div>}
               </div>
             );
           })}
@@ -248,7 +248,7 @@ function Screen2Competition({ comp, subIdx, shakhaColor }: { comp: ScreenCompeti
               <PhotoFrame url={winner.photoUrl} medalColor={mc} size={220} />
               <div style={{ marginTop: 16, fontFamily: "var(--font-anek), var(--font-oswald), sans-serif", fontSize: 38, fontWeight: 800, color: "#fff" }}>{winner.name}</div>
               {winner.houseName && <div style={{ marginTop: 4, fontSize: 22 }}>🏠 {winner.houseName}</div>}
-              <div style={{ marginTop: 6, fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 26, color: shakhaColor(winner.shakha) }}>⛪ {winner.shakha}</div>
+              <div style={{ marginTop: 6, fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 26, color: shakhaColor(winner.shakha) }}>⛪ {winner.shakha}{winner.meghalaName ? ` · ${winner.meghalaName}` : ""}</div>
             </>
           ) : (
             <div style={{ opacity: 0.4 }}>
@@ -286,7 +286,7 @@ function Screen2Competition({ comp, subIdx, shakhaColor }: { comp: ScreenCompeti
                   {achievers.map((a, i) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,.06)", animation: "scFadeIn .4s ease both", animationDelay: `${i * 0.07}s` }}>
                       <span style={{ fontFamily: "var(--font-anek), var(--font-barlow), sans-serif", fontWeight: 800, color: "#fff", fontSize: 13 }}>{a.name}{a.houseName && <span style={{ display: "block", fontSize: 11, color: "rgba(200,210,240,.6)", fontWeight: 400 }}>{a.houseName}</span>}</span>
-                      <span style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 12, color: shakhaColor(a.shakha) }}>{a.shakha}</span>
+                      <span style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 12, color: shakhaColor(a.shakha) }}>{a.shakha}{a.meghalaName ? ` · ${a.meghalaName}` : ""}</span>
                     </div>
                   ))}
                 </div>

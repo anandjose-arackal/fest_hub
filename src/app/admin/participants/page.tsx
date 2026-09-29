@@ -17,6 +17,12 @@ import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 type ParticipantRow = Participant & { shakha: Shakha | null; events: number };
 
+// "Which columns print" for the Participants/Teams PDF exports — same pattern
+// as /admin/results' ResultColumns, shakha always shown, meghala/diocese
+// optional and only offered once the org has opted into that hierarchy tier.
+interface ParticipantPdfColumns { meghala: boolean; diocese: boolean }
+const DEFAULT_PARTICIPANT_PDF_COLUMNS: ParticipantPdfColumns = { meghala: false, diocese: false };
+
 const PER_PAGE = 30;
 
 function normGender(g: string | null | undefined): "boy" | "girl" | "" {
@@ -213,6 +219,7 @@ export default function ParticipantsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [printLayoutTarget, setPrintLayoutTarget] = useState<"individual" | "team" | null>(null);
+  const [pdfColumns, setPdfColumns] = useState<ParticipantPdfColumns>(DEFAULT_PARTICIPANT_PDF_COLUMNS);
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -605,6 +612,56 @@ export default function ParticipantsPage() {
       .join(" · ");
   }
 
+  // Meghala/Diocese names for a row's shakha — same convention as
+  // /admin/results' hierarchyNamesFor: "—" when the shakha isn't assigned
+  // into that tier yet.
+  function hierarchyNamesFor(shakhaId: string | null): { meghalaName: string; dioceseName: string } {
+    const shakha = shakhaId ? shakhas.find((s) => s.id === shakhaId) : undefined;
+    const meghala = shakha?.meghala_id ? hierarchy.meghalas.find((m) => m.id === shakha.meghala_id) : undefined;
+    const diocese = meghala?.diocese_id ? hierarchy.dioceses.find((d) => d.id === meghala.diocese_id) : undefined;
+    return { meghalaName: meghala?.name ?? "—", dioceseName: diocese?.name ?? "—" };
+  }
+
+  // On-screen "Shakha" column/badge: the meghala name as a second, smaller
+  // line underneath — only once the org has opted into that hierarchy tier,
+  // and only when this particular shakha is actually assigned into one.
+  function meghalaNameFor(shakhaId: string | null): string | null {
+    if (hierarchy.hierarchyLevel === "shakha") return null;
+    const shakha = shakhaId ? shakhas.find((s) => s.id === shakhaId) : undefined;
+    const meghala = shakha?.meghala_id ? hierarchy.meghalas.find((m) => m.id === shakha.meghala_id) : undefined;
+    return meghala?.name ?? null;
+  }
+
+  function togglePdfColumn(key: keyof ParticipantPdfColumns) {
+    setPdfColumns((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  // Shared "which columns print" toggle — mirrors /admin/results' columnsPicker,
+  // rendered inside the PrintLayoutDialog for both individual and team exports.
+  const pdfColumnsPicker =
+    hierarchy.hierarchyLevel === "shakha" ? null : (
+      <div className="mb-4">
+        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-neutral-500">Extra columns to print</p>
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              { key: "meghala", label: "Meghala" },
+              ...(hierarchy.hierarchyLevel === "diocese" ? [{ key: "diocese", label: "Diocese" }] : []),
+            ] as { key: keyof ParticipantPdfColumns; label: string }[]
+          ).map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => togglePdfColumn(c.key)}
+              className={`rounded-lg border-2 px-2.5 py-1.5 text-xs font-bold ${pdfColumns[c.key] ? "border-[#6B46FF] bg-[#EDE9FE] text-[#4C1D95]" : "border-neutral-200 text-neutral-400"}`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+
   function exportPDF(layout: PrintLayout) {
     const compsToprint = compFilter ? feastComps.filter((c) => c.id === compFilter) : feastComps;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
@@ -613,10 +670,12 @@ export default function ParticipantsPage() {
         const rows = filtered.filter((p) => participantRegs[p.id]?.includes(fc.id));
         if (rows.length === 0) return "";
         const rowsHtml = rows
-          .map(
-            (p, i) =>
-              `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="blank"></td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td><td class="remarks"></td></tr>`
-          )
+          .map((p, i) => {
+            const { meghalaName, dioceseName } = hierarchyNamesFor(p.shakha_id);
+            return `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="blank"></td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td>${
+              pdfColumns.meghala ? `<td>${meghalaName}</td>` : ""
+            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td class="remarks"></td></tr>`;
+          })
           .join("");
         const sub = competitionSubLine(fc);
         return `<div class="sheet">
@@ -625,7 +684,9 @@ export default function ParticipantsPage() {
             <div class="comp-name">${fc.competition.name}</div>
             ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
           </div>
-          <table><thead><tr><th>SL</th><th>Reg No</th><th>Chance No</th><th>Name</th><th>House Name</th><th>Shakha</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          <table><thead><tr><th>SL</th><th>Reg No</th><th>Chance No</th><th>Name</th><th>House Name</th><th>Shakha</th>${
+            pdfColumns.meghala ? "<th>Meghala</th>" : ""
+          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>`;
       })
       .filter(Boolean);
@@ -641,10 +702,12 @@ export default function ParticipantsPage() {
         const rows = teams.filter((t) => t.feastCompetitionId === fc.id && (!shakhaFilter || t.shakhaId === shakhaFilter));
         if (rows.length === 0) return "";
         const rowsHtml = rows
-          .map(
-            (t, i) =>
-              `<tr><td>${i + 1}</td><td class="name">${t.teamName}</td><td>${t.shakhaName}</td><td>${t.members.join(", ") || "—"}</td><td class="remarks"></td></tr>`
-          )
+          .map((t, i) => {
+            const { meghalaName, dioceseName } = hierarchyNamesFor(t.shakhaId);
+            return `<tr><td>${i + 1}</td><td class="name">${t.teamName}</td><td>${t.shakhaName}</td>${
+              pdfColumns.meghala ? `<td>${meghalaName}</td>` : ""
+            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td>${t.members.join(", ") || "—"}</td><td class="remarks"></td></tr>`;
+          })
           .join("");
         const sub = competitionSubLine(fc);
         return `<div class="sheet">
@@ -653,7 +716,9 @@ export default function ParticipantsPage() {
             <div class="comp-name">${fc.competition.name}</div>
             ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
           </div>
-          <table><thead><tr><th>SL</th><th>Team</th><th>Shakha</th><th>Members</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          <table><thead><tr><th>SL</th><th>Team</th><th>Shakha</th>${
+            pdfColumns.meghala ? "<th>Meghala</th>" : ""
+          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Members</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>`;
       })
       .filter(Boolean);
@@ -734,6 +799,7 @@ export default function ParticipantsPage() {
                 {pageRows.map((p, i) => {
                   const cat = categories.find((c) => c.id === p.competition_category_id);
                   const pill = categoryPill(cat?.name, p.gender);
+                  const meghalaName = meghalaNameFor(p.shakha_id);
                   const isEven = i % 2 === 0;
                   return (
                     <tr
@@ -746,7 +812,10 @@ export default function ParticipantsPage() {
                       <td className="whitespace-nowrap px-3 py-3"><RegNoBadge regNo={p.registration_number} /></td>
                       <td className="px-3 py-3"><p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{p.name}</p></td>
                       <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{p.house_name || "—"}</span></td>
-                      <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span></td>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        {meghalaName && <span className="block text-[13px] font-black" style={{ color: "#374151" }}>{meghalaName}</span>}
+                        <span className={`block ${meghalaName ? "text-[11px] font-semibold" : "text-[13px] font-semibold"}`} style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span>
+                      </td>
                       <td className="whitespace-nowrap px-3 py-3">
                         <span className="inline-block rounded-lg px-2.5 py-1 text-[12px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
                       </td>
@@ -768,6 +837,7 @@ export default function ParticipantsPage() {
             {pageRows.map((p) => {
               const cat = categories.find((c) => c.id === p.competition_category_id);
               const pill = categoryPill(cat?.name, p.gender);
+              const meghalaName = meghalaNameFor(p.shakha_id);
               return (
                 <div key={p.id} className="overflow-hidden rounded-xl bg-white" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
                   <div className="px-3.5 py-3">
@@ -783,7 +853,10 @@ export default function ParticipantsPage() {
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <RegNoBadge regNo={p.registration_number} />
-                      <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span>
+                      <span className="flex flex-col" style={{ color: "#374151" }}>
+                        {meghalaName && <span className="text-[12px] font-black">{meghalaName}</span>}
+                        <span className={meghalaName ? "text-[10.5px] font-semibold" : "text-[12px] font-bold"}>{p.shakha?.name ?? "—"}</span>
+                      </span>
                       <span className="rounded-lg px-2 py-1 text-[11px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
                     </div>
                   </div>
@@ -1067,6 +1140,7 @@ export default function ParticipantsPage() {
             if (target === "team") exportTeamPDF(layout);
             else exportPDF(layout);
           }}
+          columnsPicker={pdfColumnsPicker}
         />
       )}
 

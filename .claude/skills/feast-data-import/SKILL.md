@@ -108,7 +108,7 @@ Save to `<scratchpad>/normalized.json`:
     { "row": "Sheet1!12", "name": "Joel Thomas", "house_name": "Kizhakkel", "shakha": "Kalpetta",
       "meghala": "Kalpetta Meghala", "diocese": null,
       "category": "junior", "gender": "boy", "competition": "Speech",
-      "grade": "A", "position": 1, "absent": false, "phone": null }
+      "grade": "A", "position": 1, "absent": false, "phone": null, "dob": "2012-05-03" }
   ],
   "teams": [
     { "row": "Group!4", "shakha": "Kalpetta", "meghala": null, "competition": "Group Song", "team_name": null,
@@ -171,10 +171,14 @@ and house under another category or shakha) is **flagged, never auto-merged**.
 People matching an existing participant of the feast exactly are reused, in
 the script and again in the SQL, so re-runs don't duplicate anyone.
 
-**DOB.** Generated in SQL from the category's own `competition_categories`
-cut-offs: the midpoint of `min_dob..max_dob`, `min_dob + 2y` for open-ended
-youngest, `max_dob − 10y` for open-ended eldest. The DB stays the single
-source of truth, so no thresholds are duplicated here.
+**DOB.** `dob` on an entry/team member is optional, `YYYY-MM-DD`. When given
+it's used as-is (cross-checked against the category's cut-offs — a mismatch
+is a warning, not a blocking error, since the sheet's own category may be the
+correct one). Without it, SQL generates a placeholder from the category's own
+`competition_categories` cut-offs: the midpoint of `min_dob..max_dob`,
+`min_dob + 2y` for open-ended youngest, `max_dob − 10y` for open-ended
+eldest. The DB stays the single source of truth, so no thresholds are
+duplicated here.
 
 **Scores** are a % of `feast_competitions.max_score`. The SQL sets it to 100
 where unset, because Publish refuses without it. Buckets mirror `calcGrade()`

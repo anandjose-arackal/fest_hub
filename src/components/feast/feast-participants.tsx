@@ -50,7 +50,7 @@ function ParticipantCard({ row, color }: { row: ParticipantSearchRow; color: str
               {row.houseName && <span className="text-[13.5px]" style={{ color: "var(--fp-primary)" }}><span style={{ color: "var(--fp-primary-light)" }}>| </span>{row.houseName}</span>}
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-sm" style={{ background: `${color}1a`, color }}>⛪ {row.shakha}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-sm" style={{ background: `${color}1a`, color }}>⛪ {row.shakha}{row.meghalaName ? ` · ${row.meghalaName}` : ""}</span>
               {row.category && <span className="rounded-lg px-2 py-0.5 text-xs" style={{ background: "rgba(var(--fp-primary-rgb),0.12)", color: "var(--fp-ink)" }}>{CATEGORY_LABELS[row.category] ?? row.category}</span>}
             </div>
           </div>

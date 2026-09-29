@@ -397,7 +397,7 @@ export async function getPublishedResults(feastCompetitionId: string) {
   const { data } = await getSupabaseAdmin()
     .from("competition_results")
     .select(
-      "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))"
+      "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))"
     )
     .eq("feast_competition_id", feastCompetitionId)
     .not("published_at", "is", null);
@@ -671,6 +671,7 @@ export interface ParticipantSearchRow {
   name: string;
   houseName: string | null;
   shakha: string;
+  meghalaName: string | null;
   regNo: string;
   category: string | null;
   results: {
@@ -694,7 +695,7 @@ export async function searchParticipantResults(
   const { data, error } = await admin
     .from("participants")
     .select(
-      "id, name, house_name, registration_number, competition_category:competition_categories(slug), shakha:shakhas(name), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
+      "id, name, house_name, registration_number, competition_category:competition_categories(slug), shakha:shakhas(name, meghala:meghalas(name)), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
     )
     .eq("feast_id", feast.id)
     .ilike("name", `%${query}%`)
@@ -703,6 +704,7 @@ export async function searchParticipantResults(
 
   const rows: ParticipantSearchRow[] = (data ?? []).map((p) => {
     const shakha = Array.isArray(p.shakha) ? p.shakha[0] : p.shakha;
+    const shakhaMeghala = Array.isArray(shakha?.meghala) ? shakha?.meghala[0] : shakha?.meghala;
     const cat = Array.isArray(p.competition_category) ? p.competition_category[0] : p.competition_category;
     const results = (p.participant_registrations ?? []).map((reg) => {
       const fc = Array.isArray(reg.feast_competition) ? reg.feast_competition[0] : reg.feast_competition;
@@ -722,6 +724,7 @@ export async function searchParticipantResults(
       name: p.name,
       houseName: p.house_name,
       shakha: shakha?.name ?? "—",
+      meghalaName: shakhaMeghala?.name ?? null,
       regNo: p.registration_number ?? "",
       category: cat?.slug ?? null,
       results,
@@ -732,8 +735,8 @@ export async function searchParticipantResults(
 }
 
 // ── /screen big-display data ──────────────────────────────────────────────
-export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; }
-export interface ScreenPosition { place: 1 | 2 | 3; name: string; houseName: string | null; shakha: string; photoUrl: string | null; }
+export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; }
+export interface ScreenPosition { place: 1 | 2 | 3; name: string; houseName: string | null; shakha: string; meghalaName: string | null; photoUrl: string | null; }
 export interface ScreenCompetitionResult {
   competitionId: string;
   competitionName: string;
@@ -764,7 +767,7 @@ export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenD
 
   const { data: results, error: resErr } = await admin
     .from("competition_results")
-    .select("feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))")
+    .select("feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))")
     .in("feast_competition_id", fcs.map((f) => f.id))
     .not("published_at", "is", null);
   if (resErr) return { error: resErr.message };
@@ -788,8 +791,9 @@ export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenD
       const partReg = Array.isArray(r.participant_registration) ? r.participant_registration[0] : r.participant_registration;
       const participant = Array.isArray(partReg?.participant) ? partReg?.participant[0] : partReg?.participant;
       const shakha = Array.isArray(participant?.shakha) ? participant?.shakha[0] : participant?.shakha;
+      const shakhaMeghala = Array.isArray(shakha?.meghala) ? shakha?.meghala[0] : shakha?.meghala;
       if (!participant) continue;
-      const entry = { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—" };
+      const entry = { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: shakhaMeghala?.name ?? null };
 
       if (r.position != null && r.position >= 1 && r.position <= 3) {
         positions.push({ place: r.position as 1 | 2 | 3, ...entry, photoUrl: null });

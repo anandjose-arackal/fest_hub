@@ -466,6 +466,16 @@ export default function ResultsPage() {
     return { meghalaName: meghala?.name ?? "—", dioceseName: diocese?.name ?? "—" };
   }
 
+  // On-screen "Shakha" column/badge: the meghala name as a second, smaller
+  // line underneath — only once the org has opted into that hierarchy tier,
+  // and only when this particular shakha is actually assigned into one.
+  function meghalaNameFor(shakhaId: string): string | null {
+    if (!org?.hierarchy_level || org.hierarchy_level === "shakha") return null;
+    const shakha = shakhas.find((s) => s.id === shakhaId);
+    const meghala = shakha?.meghala_id ? meghalas.find((m) => m.id === shakha.meghala_id) : null;
+    return meghala?.name ?? null;
+  }
+
   function toggleResultColumn(key: keyof ResultColumns) {
     setResultColumns((prev) => ({ ...prev, [key]: !prev[key] }));
   }
@@ -817,6 +827,7 @@ export default function ResultsPage() {
                 {entries.map((e, i) => {
                   const p = preview.get(e.regId);
                   const val = typedScores[e.regId] ?? (e.savedScore != null ? String(e.savedScore) : "");
+                  const meghalaName = meghalaNameFor(e.shakhaId);
                   const isEven = i % 2 === 0;
                   return (
                     <tr
@@ -859,7 +870,8 @@ export default function ResultsPage() {
                         )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3">
-                        <span className="text-[13px] font-semibold" style={{ color: "#4B5563" }}>{e.shakhaName}</span>
+                        {meghalaName && <span className="block text-[13px] font-black" style={{ color: "#4B5563" }}>{meghalaName}</span>}
+                        <span className={`block ${meghalaName ? "text-[11px] font-semibold" : "text-[13px] font-semibold"}`} style={{ color: "#4B5563" }}>{e.shakhaName}</span>
                       </td>
                       <td className="px-3 py-3 text-center"><GradeCell grade={p?.grade ?? null} pts={p?.gradePoints ?? 0} /></td>
                       <td className="px-3 py-3 text-center"><PosCell pos={p?.position ?? null} pts={p?.positionPoints ?? 0} /></td>
@@ -883,6 +895,7 @@ export default function ResultsPage() {
             {entries.map((e, i) => {
               const p = preview.get(e.regId);
               const val = typedScores[e.regId] ?? (e.savedScore != null ? String(e.savedScore) : "");
+              const meghalaName = meghalaNameFor(e.shakhaId);
               return (
                 <div key={e.regId} className="overflow-hidden rounded-xl" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
                   <div className="flex items-center gap-2.5 bg-white px-3.5 pb-2.5 pt-3">
@@ -895,7 +908,10 @@ export default function ResultsPage() {
                         {e.chanceNo != null && (
                           <span className="rounded-md px-2 py-0.5 font-mono text-[12px] font-black tracking-wide text-white" style={{ background: "#6B46FF" }}>#{e.chanceNo}</span>
                         )}
-                        <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{e.shakhaName}</span>
+                        <span className="flex flex-col" style={{ color: "#374151" }}>
+                          {meghalaName && <span className="text-[12px] font-black">{meghalaName}</span>}
+                          <span className={meghalaName ? "text-[10.5px] font-semibold" : "text-[12px] font-bold"}>{e.shakhaName}</span>
+                        </span>
                       </div>
                     </div>
                     <div className="shrink-0 text-right">

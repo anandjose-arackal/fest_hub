@@ -73,6 +73,7 @@ if (input.feast && ![feast.id, feast.slug].includes(input.feast) && norm(input.f
 }
 const categorySlugs = new Map();
 for (const c of ref.categories) { categorySlugs.set(norm(c.slug), c.slug); categorySlugs.set(norm(c.name), c.slug); categorySlugs.set(norm(c.slug.replace(/_/g, " ")), c.slug); }
+const catMetaAll = new Map(ref.categories.map((c) => [c.slug, c]));
 const shakhaByNorm = new Map(ref.shakhas.map((s) => [norm(s.name), s]));
 const shakhaById = new Map(ref.shakhas.map((s) => [s.id, s]));
 const fcById = new Map(ref.feast_competitions.map((fc) => [fc.id, fc]));
@@ -256,7 +257,18 @@ function collectPerson(src, row, fallback = {}) {
   if (!category) { add(errors, `No age category for "${name}" — needed to derive a DOB`, row); }
   const gender = resolveGender(src.gender ?? fallback.gender, row);
   if (!shakha || !category) return null;
-  const p = { row, name, house_name: String(src.house_name ?? "").trim().replace(/\s+/g, " ") || null, category, gender, shakha, phone: src.phone ? String(src.phone).trim() : null };
+  let dob = null;
+  if (src.dob) {
+    const m = String(src.dob).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) add(warnings, `DOB "${src.dob}" for "${name}" is not YYYY-MM-DD — ignored, placeholder DOB used instead`, row);
+    else {
+      dob = src.dob.trim();
+      const cat = catMetaAll.get(category);
+      if (cat?.min_dob && dob < cat.min_dob) add(warnings, `DOB ${dob} for "${name}" is before the ${category} cut-off (${cat.min_dob}) — imported as given`, row);
+      if (cat?.max_dob && dob > cat.max_dob) add(warnings, `DOB ${dob} for "${name}" is after the ${category} cut-off (${cat.max_dob}) — imported as given`, row);
+    }
+  }
+  const p = { row, name, house_name: String(src.house_name ?? "").trim().replace(/\s+/g, " ") || null, category, gender, shakha, phone: src.phone ? String(src.phone).trim() : null, dob };
   p.key = personKeyOf(p);
   if (!parent.has(p.key)) parent.set(p.key, p.key);
   rawPeople.push(p);
@@ -335,6 +347,8 @@ for (const p of rawPeople) {
     if (!c.gender && p.gender) c.gender = p.gender;
     if (!c.phone && p.phone) c.phone = p.phone;
     if (!c.house_name && p.house_name) c.house_name = p.house_name;
+    if (!c.dob && p.dob) c.dob = p.dob;
+    if (c.dob && p.dob && c.dob !== p.dob) add(warnings, `Merged rows for "${c.name}" disagree on DOB (${c.dob} vs ${p.dob}) — kept ${c.dob}`, p.row);
   }
   c.rows.push(p.row);
 }
@@ -552,7 +566,7 @@ const newPeople = plistFinal.filter((p) => !p.existing);
 const regList = [...regs.values()];
 const teamList = [...teamMap.values()];
 const scoredCount = regList.filter((r) => r.scored).length + teamList.filter((t) => t.scored).length;
-const catMeta = new Map(ref.categories.map((c) => [c.slug, c]));
+const catMeta = catMetaAll;
 const md = [];
 md.push(`# Import review — ${feast.name} (${feast.slug})`, "");
 md.push(`Source: ${input.source ?? "(not given)"} · Mode: ${isResults ? "registrations + results" : "registrations only"} · Hierarchy: ${LEVEL} · Reference fetched ${ref.fetched_at ?? "?"}`, "");
@@ -607,14 +621,16 @@ for (const g of ["A", "B", "C", "none"]) {
   md.push(`| ${g === "none" ? "No grade" : "Grade " + g} | ${b.hi} / ${b.hi - 1} / ${b.hi - 2}% | ${b.mid}% |`);
 }
 md.push("");
-md.push("## Generated DOBs", "");
-md.push("The sheet has no DOB, so each new participant gets a placeholder DOB inside their category's cut-offs from `competition_categories`:", "");
+const dobCount = newPeople.filter((p) => p.dob).length;
+md.push("## DOBs", "");
+if (dobCount) md.push(`${dobCount} of ${newPeople.length} new participants have a real DOB from the sheet, used as-is. The rest (no DOB given) get a placeholder inside their category's cut-offs from \`competition_categories\`:`, "");
+else md.push("The sheet has no DOB, so each new participant gets a placeholder DOB inside their category's cut-offs from `competition_categories`:", "");
 for (const c of ref.categories) md.push(`- ${c.slug}: ${c.min_dob ?? "…"} → ${c.max_dob ?? "…"}`);
 md.push("");
 md.push("## People", "");
-md.push("| # | Name | House | Category | Gender | Shakha | Status | Rows |", "|---|---|---|---|---|---|---|---|");
+md.push("| # | Name | House | DOB | Category | Gender | Shakha | Status | Rows |", "|---|---|---|---|---|---|---|---|---|");
 plistFinal.forEach((p, i) =>
-  md.push(`| ${i + 1} | ${p.name} | ${p.house_name ?? ""} | ${catMeta.get(p.category)?.name ?? p.category} | ${p.gender ?? ""} | ${placeLabel(p.shakha)} | ${p.existing ? `reuse ${p.existing.registration_number} (${p.existing.how})` : "new"} | ${p.rows.join(", ")} |`)
+  md.push(`| ${i + 1} | ${p.name} | ${p.house_name ?? ""} | ${p.dob ?? "_(placeholder)_"} | ${catMeta.get(p.category)?.name ?? p.category} | ${p.gender ?? ""} | ${placeLabel(p.shakha)} | ${p.existing ? `reuse ${p.existing.registration_number} (${p.existing.how})` : "new"} | ${p.rows.join(", ")} |`)
 );
 md.push("");
 fs.writeFileSync(reportPath, md.join("\n"));
@@ -645,7 +661,7 @@ const valuesBlock = (rows) => rows.map((r, i) => `  ${r.sql}${i === rows.length 
 const describe = (u) => [u.position ? `pos ${u.position}` : null, u.grade ? `grade ${u.grade}` : u.scored ? "no grade" : null, u.scored ? null : u.participated ? "participated" : "registration only"].filter(Boolean).join(", ");
 
 const personRows = plistFinal.map((p) => ({
-  sql: `(${ord.get(p.key)}, ${q(p.name)}, ${q(p.house_name)}, ${q(p.shakha.id)}, ${q(p.category)}, ${q(p.gender)}, ${q(p.phone)}, ${p.existing ? q(p.existing.id) : "null"})`,
+  sql: `(${ord.get(p.key)}, ${q(p.name)}, ${q(p.house_name)}, ${q(p.shakha.id)}, ${q(p.category)}, ${q(p.gender)}, ${q(p.phone)}, ${q(p.dob)}, ${p.existing ? q(p.existing.id) : "null"})`,
   comment: `${placeLabel(p.shakha)} · rows ${p.rows.join(", ")}${p.existing ? ` · reuse ${p.existing.registration_number}` : ""}`,
 }));
 const regRows = regList.map((r) => ({
@@ -689,6 +705,7 @@ create temp table _imp_person (
   category_slug  text not null,
   gender         text,
   phone          text,
+  dob            date,              -- real DOB from the sheet, when given; else null (placeholder computed below)
   participant_id uuid,              -- pre-set = reviewed/exact link to an existing participant
   is_new         boolean not null default false
 );
@@ -717,7 +734,7 @@ create temp table _imp_team_member (
   primary key (team_ord, person_ord)
 );
 ${personRows.length ? `
-insert into _imp_person (ord, name, house_name, shakha_id, category_slug, gender, phone, participant_id) values
+insert into _imp_person (ord, name, house_name, shakha_id, category_slug, gender, phone, dob, participant_id) values
 ${valuesBlock(personRows)}
 ` : ""}${regRows.length ? `
 insert into _imp_reg (person_ord, fc_id, participated, score_pct) values
@@ -784,19 +801,22 @@ where i.participant_id is null;
 
 update _imp_person set participant_id = gen_random_uuid(), is_new = true where participant_id is null;
 
--- New participants. The sheet has no DOB, so each gets a placeholder DOB
--- inside its category's own cut-offs (competition_categories is the single
--- source of truth). Registration numbers follow createParticipantAdmin():
--- getRegPrefix(feast) || '-' || next_reg_number(feast).
+-- New participants. Uses the sheet's own DOB when given; otherwise a
+-- placeholder inside its category's own cut-offs (competition_categories is
+-- the single source of truth). Registration numbers follow
+-- createParticipantAdmin(): getRegPrefix(feast) || '-' || next_reg_number(feast).
 insert into participants
   (id, feast_id, shakha_id, name, house_name, date_of_birth, gender, competition_category_id, phone, registration_number)
 select
   i.participant_id, ${F}, i.shakha_id, i.name, i.house_name,
-  case
-    when cc.min_dob is not null and cc.max_dob is not null then cc.min_dob + (cc.max_dob - cc.min_dob) / 2
-    when cc.min_dob is not null then cc.min_dob + 730
-    else cc.max_dob - 3650
-  end,
+  coalesce(
+    i.dob,
+    case
+      when cc.min_dob is not null and cc.max_dob is not null then cc.min_dob + (cc.max_dob - cc.min_dob) / 2
+      when cc.min_dob is not null then cc.min_dob + 730
+      else cc.max_dob - 3650
+    end
+  ),
   i.gender, cc.id, i.phone,
   '${regPrefix}-' || next_reg_number(${F})
 from _imp_person i

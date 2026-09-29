@@ -155,7 +155,7 @@ export async function getPublishedTeamResults(feastCompetitionId: string) {
   const { data } = await getSupabaseAdmin()
     .from("team_results")
     .select(
-      "id, score, grade, position, total_points, team_registration:team_registrations(team_name, shakha:shakhas(name), team_registration_members(participant:participants(name)))"
+      "id, score, grade, position, total_points, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name)))"
     )
     .eq("feast_competition_id", feastCompetitionId)
     .not("published_at", "is", null);

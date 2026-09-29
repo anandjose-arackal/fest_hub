@@ -12,6 +12,7 @@ export interface PublicResultRow {
   name: string;
   houseName: string | null;
   shakha: string;
+  meghalaName?: string | null;
   grade: "A" | "B" | "C" | null;
   position: number | null;
   totalPoints: number;
@@ -84,7 +85,7 @@ export function ResultRow({ row, onGeneratePoster }: { row: PublicResultRow; onG
               </span>
             )}
           </p>
-          <p className="truncate text-xs" style={{ color: "var(--fp-sub)" }}>⛪ {row.shakha}</p>
+          <p className="truncate text-xs" style={{ color: "var(--fp-sub)" }}>⛪ {row.shakha}{row.meghalaName ? ` · ${row.meghalaName}` : ""}</p>
           {row.isTeam && row.houseName && <p className="mt-0.5 text-xs" style={{ color: "var(--fp-primary)" }}>Members: {row.houseName}</p>}
         </div>
         {showPosterButton && (

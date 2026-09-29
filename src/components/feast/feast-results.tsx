@@ -24,6 +24,7 @@ function mapRow(r: Record<string, unknown>, isTeam: boolean): PublicResultRow {
   if (isTeam) {
     const teamReg = Array.isArray(r.team_registration) ? (r.team_registration as Record<string, unknown>[])[0] : (r.team_registration as Record<string, unknown> | undefined);
     const shakha = Array.isArray(teamReg?.shakha) ? (teamReg?.shakha as Record<string, unknown>[])[0] : (teamReg?.shakha as Record<string, unknown> | undefined);
+    const shakhaMeghala = Array.isArray(shakha?.meghala) ? (shakha?.meghala as Record<string, unknown>[])[0] : (shakha?.meghala as Record<string, unknown> | undefined);
     const members = ((teamReg?.team_registration_members as Record<string, unknown>[] | undefined) ?? []).map((m) => {
       const p = Array.isArray(m.participant) ? (m.participant as Record<string, unknown>[])[0] : (m.participant as Record<string, unknown> | undefined);
       return (p?.name as string) ?? "";
@@ -33,6 +34,7 @@ function mapRow(r: Record<string, unknown>, isTeam: boolean): PublicResultRow {
       name: (teamReg?.team_name as string) ?? "Team",
       houseName: members.join(", "),
       shakha: (shakha?.name as string) ?? "—",
+      meghalaName: (shakhaMeghala?.name as string | undefined) ?? null,
       grade: r.grade as PublicResultRow["grade"],
       position: r.position as number | null,
       totalPoints: r.total_points as number,
@@ -42,11 +44,13 @@ function mapRow(r: Record<string, unknown>, isTeam: boolean): PublicResultRow {
   const partReg = Array.isArray(r.participant_registration) ? (r.participant_registration as Record<string, unknown>[])[0] : (r.participant_registration as Record<string, unknown> | undefined);
   const participant = Array.isArray(partReg?.participant) ? (partReg?.participant as Record<string, unknown>[])[0] : (partReg?.participant as Record<string, unknown> | undefined);
   const shakha = Array.isArray(participant?.shakha) ? (participant?.shakha as Record<string, unknown>[])[0] : (participant?.shakha as Record<string, unknown> | undefined);
+  const shakhaMeghala = Array.isArray(shakha?.meghala) ? (shakha?.meghala as Record<string, unknown>[])[0] : (shakha?.meghala as Record<string, unknown> | undefined);
   return {
     registrationId: r.id as string,
     name: (participant?.name as string) ?? "—",
     houseName: (participant?.house_name as string) ?? null,
     shakha: (shakha?.name as string) ?? "—",
+    meghalaName: (shakhaMeghala?.name as string | undefined) ?? null,
     grade: r.grade as PublicResultRow["grade"],
     position: r.position as number | null,
     totalPoints: r.total_points as number,
