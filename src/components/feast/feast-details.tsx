@@ -143,9 +143,37 @@ function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>[
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: catColor }} />
       <div className="pl-2">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-[19px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{comp.name}</p>
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="text-[19px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{comp.name}</p>
+            {gender && (
+              <span className="rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white" style={{ background: gender.color }}>
+                {gender.label}
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
             <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: pill.bg, color: pill.color }}>{pill.label}</span>
+            {comp.compStatus === "published" && (
+              <button
+                onClick={toggleResults}
+                aria-label={resultsOpen ? "Hide results" : "View results"}
+                aria-expanded={resultsOpen}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white ring-2 ring-white transition-transform active:scale-90"
+                style={{
+                  background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))",
+                  boxShadow: "0 4px 12px rgba(var(--fp-primary-rgb),0.45)",
+                }}
+              >
+                {loadingResults ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  // Gentle downward nudge while closed hints "tap to see results".
+                  <span className={resultsOpen ? undefined : "animate-[resultsNudge_1.6s_ease-in-out_infinite]"}>
+                    <ChevronDown className="h-[18px] w-[18px] transition-transform" strokeWidth={2.75} style={{ transform: resultsOpen ? "rotate(180deg)" : undefined }} />
+                  </span>
+                )}
+              </button>
+            )}
             {comp.info && (comp.compStatus === "upcoming" || comp.compStatus === "progressing") && (
               <button onClick={() => setInfoOpen((o) => !o)}>
                 <ChevronDown className="h-4 w-4 transition-transform" style={{ color: theme.faint, transform: infoOpen ? "rotate(180deg)" : undefined }} />
@@ -154,7 +182,6 @@ function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>[
           </div>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]" style={{ color: "#3D3A6B", fontFamily: "var(--font-anek), sans-serif" }}>
-          {gender && <span style={{ color: gender.color, fontWeight: 600 }}>{gender.label}</span>}
           {comp.stage && <span>Stage {comp.stage.number} — {comp.stage.title}</span>}
           {comp.scheduledTime && <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{comp.scheduledTime}</span>}
           {comp.venue && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{comp.venue}</span>}
@@ -176,11 +203,6 @@ function CompetitionCard({ comp, feastId }: { comp: ReturnType<typeof useFeast>[
           </div>
         )}
 
-        {comp.compStatus === "published" && (
-          <button onClick={toggleResults} className="mt-2 text-xs font-semibold" style={{ color: theme.purple }}>
-            {resultsOpen ? "Hide Results" : "View Results"}
-          </button>
-        )}
         {resultsOpen && (
           loadingResults ? (
             <div className="flex justify-center py-3"><Loader2 className="h-4 w-4 animate-spin" style={{ color: theme.lavender }} /></div>

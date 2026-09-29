@@ -6,7 +6,7 @@ import { Calendar, ChevronRight, Search, Loader2, ArrowRight, Users, ListChecks,
 import { useFeasts } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { GlassPanel, GlowBtn, StatusPill, SectionTitle, LoginSheet, theme } from "./feast-shared";
-import { LiveActivityFeed, TopShakhasWidget } from "./feast-dashboard-widgets";
+import { LiveActivityFeed, TopRankingWidget } from "./feast-dashboard-widgets";
 import { MissionCountdown } from "./feast-countdown";
 import { getLatestPublishedResultsFeast, type PublishedResultsFeast } from "@/actions/results";
 import type { OrgSettings } from "@/types";
@@ -42,6 +42,7 @@ function useBannerConfetti(): ConfettiPiece[] {
 
 export function FeastLanding({ org }: { org: OrgSettings }) {
   const { feasts, loading } = useFeasts();
+  const showMeghalas = org.hierarchy_level === "meghala" || org.hierarchy_level === "diocese";
   const { session } = useAuth();
   const [loginOpen, setLoginOpen] = useState(false);
   const bannerConfetti = useBannerConfetti();
@@ -284,7 +285,8 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
               sidebar covers wide screens instead. */}
           <div className="mt-6 space-y-4 lg:hidden">
             <LiveActivityFeed />
-            <TopShakhasWidget />
+            <TopRankingWidget />
+            {showMeghalas && <TopRankingWidget tier="meghala" />}
           </div>
 
           <Link href="/search" className="mt-6 block">
@@ -304,7 +306,8 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
         {/* Sidebar — wide screens only (mobile/tablet copy renders above) */}
         <div className="sticky top-4 mt-8 hidden space-y-4 lg:mt-[52px] lg:block">
           <LiveActivityFeed />
-          <TopShakhasWidget />
+          <TopRankingWidget />
+          {showMeghalas && <TopRankingWidget tier="meghala" />}
         </div>
       </div>
 

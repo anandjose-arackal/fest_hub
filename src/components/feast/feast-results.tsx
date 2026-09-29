@@ -94,16 +94,31 @@ function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: Feast
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: catColor }} />
       <button onClick={toggle} className="w-full pl-4 pr-3 py-2.5 text-left">
         <div className="flex items-start justify-between gap-2">
-          <p className="flex-1 text-[18px] leading-tight" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{comp.name}</p>
+          <p className="flex-1 text-[18px] font-bold leading-tight" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{comp.name}</p>
           <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
             {isPublished ? (
               <span className="flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.14)", color: theme.purple }}><Trophy className="mr-0.5 h-2.5 w-2.5" />Results</span>
             ) : (
               <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: theme.fill, color: theme.faint }}>Pending</span>
             )}
-            <span className="flex h-6 w-6 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(var(--fp-primary-rgb),0.1)", transform: open ? "rotate(180deg)" : undefined }}>
-              <ChevronDown className="h-3.5 w-3.5" style={{ color: theme.purple }} />
-            </span>
+            {isPublished ? (
+              // Same prominent toggle as the feast-details competition card.
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white ring-2 ring-white"
+                style={{
+                  background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))",
+                  boxShadow: "0 4px 12px rgba(var(--fp-primary-rgb),0.45)",
+                }}
+              >
+                <span className={open ? undefined : "animate-[resultsNudge_1.6s_ease-in-out_infinite]"}>
+                  <ChevronDown className="h-[18px] w-[18px] transition-transform" strokeWidth={2.75} style={{ transform: open ? "rotate(180deg)" : undefined }} />
+                </span>
+              </span>
+            ) : (
+              <span className="flex h-6 w-6 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(var(--fp-primary-rgb),0.1)", transform: open ? "rotate(180deg)" : undefined }}>
+                <ChevronDown className="h-3.5 w-3.5" style={{ color: theme.purple }} />
+              </span>
+            )}
           </div>
         </div>
         {(comp.gender === "boy" || comp.gender === "girl") && (
@@ -119,7 +134,9 @@ function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: Feast
           ) : (results?.length ?? 0) === 0 ? (
             <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: theme.fill, color: "#9CA3AF" }}>No results recorded</div>
           ) : (
-            <div className="lg:grid lg:grid-cols-2 lg:gap-5">
+            // Side-by-side only when both tables have rows — otherwise the lone
+            // table (ResultTable renders nothing when empty) gets the full width.
+            <div className={positions.length > 0 && grades.length > 0 ? "lg:grid lg:grid-cols-2 lg:gap-5" : undefined}>
               <ResultTable title="Positions" rows={positions} color={catColor} onGeneratePoster={handleGeneratePoster} />
               <ResultTable title="Grades" rows={grades} color={catColor} />
             </div>

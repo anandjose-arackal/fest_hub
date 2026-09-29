@@ -176,9 +176,13 @@ export function FeastLeaderboard() {
   const { feasts, loading: feastsLoading } = useFeasts();
   const hierarchy = useOrgHierarchy();
   const availableTiers = tiersFor(hierarchy.hierarchyLevel);
-  const [tier, setTier] = useState<Tier>("shakha");
+  // ?tier=meghala|diocese&mode=overall deep-link from the landing page's Top Shakhas/Meghalas widgets.
+  const [tier, setTier] = useState<Tier>(() => {
+    const t = search.get("tier");
+    return t === "meghala" || t === "diocese" ? t : "shakha";
+  });
   const [activeSlug, setActiveSlug] = useState(search.get("feast") ?? "");
-  const [mode, setMode] = useState<"feast" | "overall">("feast");
+  const [mode, setMode] = useState<"feast" | "overall">(search.get("mode") === "overall" ? "overall" : "feast");
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [animated, setAnimated] = useState(false);

@@ -396,3 +396,8 @@
   --fp-glass-border: rgba(94, 234, 212, 0.18);
   --fp-nav-bg: rgba(22, 40, 32, 0.65);
 }
+/* Competition card "view results" arrow — gentle downward nudge */
+@keyframes resultsNudge {
+  0%, 100% { transform: translateY(-1px); }
+  50% { transform: translateY(2px); }
+}

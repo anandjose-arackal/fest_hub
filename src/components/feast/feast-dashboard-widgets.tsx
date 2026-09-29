@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Trophy, CheckCircle2, Zap, Radio } from "lucide-react";
 import { getRecentActivity, type ActivityItem, type ActivityType } from "@/actions/activity";
-import { getOverallLeaderboard, type LeaderboardRow } from "@/actions/results";
-import { useShakhas } from "@/hooks/use-feast";
+import { getOverallLeaderboard, getOverallMeghalaLeaderboard, type LeaderboardRow } from "@/actions/results";
+import { useOrgHierarchy } from "@/hooks/use-feast";
 import { GlassPanel, theme } from "./feast-shared";
 
 const ACTIVITY_POLL_MS = 120_000;
@@ -104,16 +104,29 @@ export function LiveActivityFeed() {
 const MEDAL = ["🥇", "🥈", "🥉"];
 const MEDAL_COLOR = ["#F5C542", "#9CA3AF", "#E0936A"];
 
-export function TopShakhasWidget() {
+const TIER_CONFIG = {
+  shakha: { title: "Top Shakhas", fetch: getOverallLeaderboard },
+  meghala: { title: "Top Meghalas", fetch: getOverallMeghalaLeaderboard },
+} as const;
+
+// Top-3 overall standings for one hierarchy tier. The meghala variant is only
+// rendered when org_settings.hierarchy_level groups shakhas under meghalas.
+export function TopRankingWidget({ tier = "shakha" }: { tier?: keyof typeof TIER_CONFIG }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const { shakhas } = useShakhas();
+  const { shakhas, meghalas } = useOrgHierarchy();
+  const config = TIER_CONFIG[tier];
 
   useEffect(() => {
-    getOverallLeaderboard().then(({ data }) => { setRows((data ?? []).slice(0, 3)); setLoaded(true); });
-  }, []);
+    config.fetch().then(({ data }) => {
+      // "__unassigned__" buckets shakhas with no meghala — not a real contender.
+      setRows((data ?? []).filter((r) => r.shakhaId !== "__unassigned__").slice(0, 3));
+      setLoaded(true);
+    });
+  }, [config]);
 
-  const shakhaColor = (name: string) => shakhas.find((s) => s.name === name)?.color ?? theme.lavender;
+  const rowColor = (id: string) =>
+    (tier === "meghala" ? meghalas.find((m) => m.id === id)?.color : shakhas.find((s) => s.id === id)?.color) ?? theme.lavender;
   const hasResults = rows.some((r) => r.points > 0);
 
   if (loaded && !hasResults) return null;
@@ -121,8 +134,8 @@ export function TopShakhasWidget() {
   return (
     <GlassPanel strong className="p-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-semibold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Top Shakhas</p>
-        <Link href="/rankings" className="text-xs font-semibold" style={{ color: theme.purple }}>See all →</Link>
+        <p className="text-sm font-semibold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{config.title}</p>
+        <Link href={`/rankings?tier=${tier}&mode=overall`} className="text-xs font-semibold" style={{ color: theme.purple }}>See all →</Link>
       </div>
       {!loaded ? (
         <p className="text-xs" style={{ color: theme.faint }}>Loading…</p>
@@ -131,7 +144,7 @@ export function TopShakhasWidget() {
           {rows.map((r, i) => (
             <div key={r.shakhaId} className="flex items-center gap-3 rounded-xl px-3 py-2" style={{ background: `${MEDAL_COLOR[i]}14` }}>
               <span className="text-lg">{MEDAL[i]}</span>
-              <span className="h-2 w-2 rounded-full" style={{ background: shakhaColor(r.name) }} />
+              <span className="h-2 w-2 rounded-full" style={{ background: rowColor(r.shakhaId) }} />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold" style={{ color: theme.text }}>{r.name}</span>
               <span className="text-sm font-bold tabular-nums" style={{ color: MEDAL_COLOR[i] }}>{r.points} pts</span>
             </div>
