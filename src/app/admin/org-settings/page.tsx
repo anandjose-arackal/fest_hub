@@ -21,6 +21,8 @@ const THEME_OPTIONS: { value: PortalTheme; label: string; swatches: string[] }[]
   { value: "aurora", label: "Aurora Skies", swatches: ["#5B6EE8", "#F696D5", "#18BBD9"] },
   { value: "carnival", label: "Carnival Spark", swatches: ["#9A6BC2", "#EA1A7F", "#FEC603"] },
   { value: "amethyst", label: "Amethyst Dusk", swatches: ["#605399", "#D562BE", "#F0B429"] },
+  { value: "golden", label: "Golden Violet", swatches: ["#7357D8", "#FFD84D", "#F8F7F2"] },
+  { value: "plum", label: "Plum Mist", swatches: ["#593C8F", "#A8D5BA", "#FAF6EE"] },
   { value: "midnight", label: "Midnight Mode", swatches: ["#171325", "#8B6FFF", "#FF6FB0"] },
   { value: "emerald", label: "Emerald Night", swatches: ["#0D1A16", "#16D9A0", "#FF7A5C"] },
 ];
