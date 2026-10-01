@@ -262,10 +262,13 @@ function collectPerson(src, row, fallback = {}) {
     const m = String(src.dob).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
     if (!m) add(warnings, `DOB "${src.dob}" for "${name}" is not YYYY-MM-DD — ignored, placeholder DOB used instead`, row);
     else {
-      dob = src.dob.trim();
+      // The sheet's category is authoritative: a DOB outside its cut-offs is
+      // dropped so SQL generates a placeholder that matches the category.
+      const given = src.dob.trim();
       const cat = catMetaAll.get(category);
-      if (cat?.min_dob && dob < cat.min_dob) add(warnings, `DOB ${dob} for "${name}" is before the ${category} cut-off (${cat.min_dob}) — imported as given`, row);
-      if (cat?.max_dob && dob > cat.max_dob) add(warnings, `DOB ${dob} for "${name}" is after the ${category} cut-off (${cat.max_dob}) — imported as given`, row);
+      if (cat?.min_dob && given < cat.min_dob) add(warnings, `DOB ${given} for "${name}" is before the ${category} cut-off (${cat.min_dob}) — replaced with a placeholder DOB inside ${category}`, row);
+      else if (cat?.max_dob && given > cat.max_dob) add(warnings, `DOB ${given} for "${name}" is after the ${category} cut-off (${cat.max_dob}) — replaced with a placeholder DOB inside ${category}`, row);
+      else dob = given;
     }
   }
   const p = { row, name, house_name: String(src.house_name ?? "").trim().replace(/\s+/g, " ") || null, category, gender, shakha, phone: src.phone ? String(src.phone).trim() : null, dob };
@@ -347,7 +350,7 @@ for (const p of rawPeople) {
     if (!c.gender && p.gender) c.gender = p.gender;
     if (!c.phone && p.phone) c.phone = p.phone;
     if (!c.house_name && p.house_name) c.house_name = p.house_name;
-    if (!c.dob && p.dob) c.dob = p.dob;
+    if (!c.dob && p.dob && p.category === c.category) c.dob = p.dob;
     if (c.dob && p.dob && c.dob !== p.dob) add(warnings, `Merged rows for "${c.name}" disagree on DOB (${c.dob} vs ${p.dob}) — kept ${c.dob}`, p.row);
   }
   c.rows.push(p.row);
@@ -623,7 +626,7 @@ for (const g of ["A", "B", "C", "none"]) {
 md.push("");
 const dobCount = newPeople.filter((p) => p.dob).length;
 md.push("## DOBs", "");
-if (dobCount) md.push(`${dobCount} of ${newPeople.length} new participants have a real DOB from the sheet, used as-is. The rest (no DOB given) get a placeholder inside their category's cut-offs from \`competition_categories\`:`, "");
+if (dobCount) md.push(`${dobCount} of ${newPeople.length} new participants have a real DOB from the sheet inside their category, used as-is. The rest (no DOB given, or one outside the category — see Warnings) get a placeholder inside their category's cut-offs from \`competition_categories\`:`, "");
 else md.push("The sheet has no DOB, so each new participant gets a placeholder DOB inside their category's cut-offs from `competition_categories`:", "");
 for (const c of ref.categories) md.push(`- ${c.slug}: ${c.min_dob ?? "…"} → ${c.max_dob ?? "…"}`);
 md.push("");
@@ -654,7 +657,6 @@ if (!args.approved) {
 const q = (v) => (v === null || v === undefined || v === "" ? "null" : `'${String(v).replace(/'/g, "''")}'`);
 const cmt = (s) => String(s).replace(/[\r\n]+/g, " ").replace(/\*\//g, "* /");
 const F = q(feast.id);
-const regPrefix = `F${feast.id.replace(/-/g, "").slice(0, 4).toUpperCase()}`; // getRegPrefix() in src/lib/feast-data.ts
 
 const ord = new Map(plistFinal.map((p, i) => [p.key, i + 1]));
 const valuesBlock = (rows) => rows.map((r, i) => `  ${r.sql}${i === rows.length - 1 ? ";" : ","}${r.comment ? ` -- ${cmt(r.comment)}` : ""}`).join("\n");
@@ -804,7 +806,7 @@ update _imp_person set participant_id = gen_random_uuid(), is_new = true where p
 -- New participants. Uses the sheet's own DOB when given; otherwise a
 -- placeholder inside its category's own cut-offs (competition_categories is
 -- the single source of truth). Registration numbers follow
--- createParticipantAdmin(): getRegPrefix(feast) || '-' || next_reg_number(feast).
+-- createParticipantAdmin(): 'F' || next_reg_number(feast) (formatRegNumber()).
 insert into participants
   (id, feast_id, shakha_id, name, house_name, date_of_birth, gender, competition_category_id, phone, registration_number)
 select
@@ -818,7 +820,7 @@ select
     end
   ),
   i.gender, cc.id, i.phone,
-  '${regPrefix}-' || next_reg_number(${F})
+  'F' || next_reg_number(${F})
 from _imp_person i
 join competition_categories cc on cc.slug = i.category_slug
 where i.is_new

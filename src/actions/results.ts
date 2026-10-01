@@ -1,7 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { calcGrade, calcPositions, DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
+import { calcGrade, calcPositions, DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface StandingsRow {
@@ -444,11 +444,13 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
     .eq("feast_competition_id", feastCompetitionId);
   if (!draftRows || draftRows.length === 0) return { error: "No scores entered yet" };
 
+  // External feast: grade/position still published (winners), points stay 0.
+  const external = await isExternalFeast(fc.feast_id, admin);
   const entries = draftRows.map((r) => ({ id: r.participant_registration_id, score: Number(r.score) }));
-  const posMap = calcPositions(entries, DEFAULT_POSITION_POINTS);
+  const posMap = calcPositions(entries, external ? NO_POSITION_POINTS : DEFAULT_POSITION_POINTS);
 
   const calculated = draftRows.map((r) => {
-    const { grade, gradePoints } = calcGrade(Number(r.score), fc.max_score!, DEFAULT_GRADE_POINTS);
+    const { grade, gradePoints } = calcGrade(Number(r.score), fc.max_score!, external ? NO_GRADE_POINTS : DEFAULT_GRADE_POINTS);
     const pos = posMap.get(r.participant_registration_id) ?? { position: null, positionPoints: 0 };
     return {
       feast_competition_id: feastCompetitionId,
@@ -476,7 +478,7 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
     : competition?.competition_category;
   const categorySlug = category?.slug ?? "unknown";
 
-  const ledgerRows = draftRows
+  const ledgerRows = (external ? [] : draftRows)
     .map((r, i) => {
       const participantReg = Array.isArray(r.participant_registration) ? r.participant_registration[0] : r.participant_registration;
       const participant = Array.isArray(participantReg?.participant) ? participantReg?.participant[0] : participantReg?.participant;
@@ -538,9 +540,21 @@ const BUCKETS: Record<string, keyof Pick<
   elder: "elderPoints",
 };
 
+// An external feast's points were calculated outside the app: its
+// standings are what an admin typed into /admin/feasts/[id]/external-points
+// (saveExternalFeastPoints), and its published results carry grade/position
+// only — no points, no ledger rows. Publishing must never sum them again.
+export async function isExternalFeast(feastId: string, admin: SupabaseClient): Promise<boolean> {
+  const { data } = await admin.from("feasts").select("is_external").eq("id", feastId).single();
+  return !!data?.is_external;
+}
+
 // Exported — shared by team-results.ts so individual + team publishing feed
-// into one unified standings rebuild.
+// into one unified standings rebuild. A no-op for an external feast, whose
+// standings are entered by hand instead.
 export async function rebuildStandings(feastId: string, admin: SupabaseClient): Promise<string | null> {
+  if (await isExternalFeast(feastId, admin)) return null;
+
   const { data: shakhas, error: shakhaErr } = await admin.from("shakhas").select("id, name");
   if (shakhaErr) return shakhaErr.message;
 
@@ -623,33 +637,43 @@ export async function rebuildStandings(feastId: string, admin: SupabaseClient): 
   return null;
 }
 
-// ── external feasts (played outside the app; points entered by hand) ──────
+// ── external feasts (points calculated outside the app; entered by hand) ──
 // shakha_feast_standings is normally derived from shakha_point_ledger via
-// rebuildStandings(). An external feast has no competitions/ledger rows to
-// derive from, so this writes its standings row directly — grand_total is
-// the only real number, category buckets stay 0 (they show as "—" in the
-// standings UI, same as any shakha with no points in that bucket).
-export async function saveExternalFeastPoints(
-  feastId: string,
-  rows: { shakhaId: string; points: number }[]
-): Promise<{ error?: string }> {
+// rebuildStandings(). An external feast's points come from outside — it may
+// have no competitions at all, or competitions whose results are published
+// here for grade/position only (no points, no ledger rows; see
+// isExternalFeast) — so this writes its standings row directly: the
+// hand-entered age-category (and team) points, grand_total = their sum.
+// Place/grade counts stay 0.
+export interface ExternalFeastPointsRow {
+  shakhaId: string;
+  subJunior: number;
+  junior: number;
+  senior: number;
+  superSenior: number;
+  elder: number;
+  team: number;
+}
+
+export async function saveExternalFeastPoints(feastId: string, rows: ExternalFeastPointsRow[]): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
 
   const { data: feast, error: feastErr } = await admin.from("feasts").select("is_external").eq("id", feastId).single();
   if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
   if (!feast.is_external) return { error: "This feast isn't marked as external." };
 
-  const sorted = [...rows].sort((a, b) => b.points - a.points);
+  const withTotals = rows.map((r) => ({ ...r, total: r.subJunior + r.junior + r.senior + r.superSenior + r.elder + r.team }));
+  const sorted = withTotals.sort((a, b) => b.total - a.total);
   const upsertRows = sorted.map((r, i) => ({
     feast_id: feastId,
     shakha_id: r.shakhaId,
-    sub_junior_points: 0,
-    junior_points: 0,
-    senior_points: 0,
-    super_senior_points: 0,
-    elder_points: 0,
-    team_points: 0,
-    grand_total: r.points,
+    sub_junior_points: r.subJunior,
+    junior_points: r.junior,
+    senior_points: r.senior,
+    super_senior_points: r.superSenior,
+    elder_points: r.elder,
+    team_points: r.team,
+    grand_total: r.total,
     first_place_count: 0,
     second_place_count: 0,
     third_place_count: 0,

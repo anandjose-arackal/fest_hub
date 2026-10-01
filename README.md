@@ -71,12 +71,14 @@ Migrations live in [`supabase/migrations/`](./supabase/migrations/), numbered in
 | `001_schema.sql` | Every table, index, trigger, function and RLS policy: org hierarchy (`dioceses`/`meghalas`/`shakhas`), `profiles`, `feasts`, `competitions`, `competition_categories` (+ seeded age-category cutoffs), `stages`, `feast_competitions`, `participants`/`participant_registrations`, `team_registrations`/`team_registration_members`, results/points/standings, the `org_settings` singleton, `certificate_templates`, and the public `certificate-assets` Storage bucket |
 | `002_competitions.sql` *(optional)* | Example competition catalogs (Arts Fest + Literature) copied from a real deployment — skip this if you'd rather define your own competitions in the admin panel |
 | `003_feast_competitions.sql` *(optional)* | Creates two draft feasts — കലാ മത്സരം (arts) and സാഹിത്യ മത്സരം (literature) — and attaches `002`'s catalogs to them; configure them in `/admin/feasts`, or skip this file entirely |
+| `004`–`006` *(optional)* | One organization's shakha/meghala seed data — skip for any other org |
+| `007_shared_reg_number_counter.sql` | Registration numbers as `F1405` from one counter shared by every feast (replaces the per-feast `F5848-1405` counter) |
 
 **Option A — Supabase SQL Editor (simplest, no CLI needed):**
 
 1. In your Supabase project, open **SQL Editor**.
 2. Open each file in `supabase/migrations/` in order, paste its contents in, and click **Run**.
-3. `001` is required; run `002`/`003` only if you want the example data (`003` needs `002`).
+3. `001` and `007` are required; run `002`/`003` only if you want the example data (`003` needs `002`). A database set up before `007` existed only needs `007` run.
 
 **Option B — Supabase CLI:**
 

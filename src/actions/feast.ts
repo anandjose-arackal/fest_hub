@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
-import { DEFAULT_MAX_PER_SHAKHA, getRegPrefix } from "@/lib/feast-data";
+import { DEFAULT_MAX_PER_SHAKHA, formatRegNumber } from "@/lib/feast-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompStatus } from "@/types";
 
@@ -94,7 +94,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     const { data: nextNum, error: rpcErr } = await supabase.rpc("next_reg_number", { p_feast_id: feast.id });
     if (rpcErr || nextNum == null) return { error: "Could not allocate a registration number." };
 
-    const regNo = `${getRegPrefix(feast.id)}-${nextNum}`;
+    const regNo = formatRegNumber(nextNum);
 
     const { data: participant, error: insertErr } = await supabase
       .from("participants")
@@ -162,7 +162,7 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
     const { data: nextNum, error: rpcErr } = await admin.rpc("next_reg_number", { p_feast_id: input.feastId });
     if (rpcErr || nextNum == null) return { error: "Could not allocate a registration number." };
 
-    const regNo = `${getRegPrefix(input.feastId)}-${nextNum}`;
+    const regNo = formatRegNumber(nextNum);
 
     const { data: participant, error: insertErr } = await admin
       .from("participants")

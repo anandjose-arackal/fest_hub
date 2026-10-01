@@ -8,6 +8,7 @@ import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamC
 import {
   calcGrade, calcPositions, positionLabel,
   DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS,
+  NO_GRADE_POINTS, NO_POSITION_POINTS,
   type Grade,
 } from "@/lib/result-calculator";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
@@ -87,7 +88,7 @@ function GradeCell({ grade, pts }: { grade: Grade; pts: number }) {
       >
         Grade {grade}
       </span>
-      <span className="text-[12px] font-black" style={{ color: ptsColor }}>+{pts} pts</span>
+      {pts > 0 && <span className="text-[12px] font-black" style={{ color: ptsColor }}>+{pts} pts</span>}
     </div>
   );
 }
@@ -201,8 +202,11 @@ export default function ResultsPage() {
   const isGroup = selectedFc?.competition.type === "group";
   const isPublished = selectedFc?.result_status === "published";
   const maxScore = selectedFc?.max_score ?? null;
-  const gradeScale = isGroup ? GROUP_GRADE_POINTS : DEFAULT_GRADE_POINTS;
-  const positionScale = isGroup ? GROUP_POSITION_POINTS : DEFAULT_POSITION_POINTS;
+  // External fest: points were calculated outside the app, so the preview
+  // (like publishResults) shows grade/position with no points.
+  const isExternal = feasts.find((f) => f.id === feastId)?.is_external ?? false;
+  const gradeScale = isExternal ? NO_GRADE_POINTS : isGroup ? GROUP_GRADE_POINTS : DEFAULT_GRADE_POINTS;
+  const positionScale = isExternal ? NO_POSITION_POINTS : isGroup ? GROUP_POSITION_POINTS : DEFAULT_POSITION_POINTS;
 
   const visibleFeastComps = useMemo(
     () => (statusFilter ? feastComps.filter((c) => c.result_status === statusFilter) : feastComps),
@@ -1216,7 +1220,7 @@ function pdfCompetitionSubtitle(categoryName: string | null | undefined, gender:
 function pdfGradeCell(grade: Grade, pts: number): string {
   if (!grade) return `<span class="none">—</span>`;
   const { bg } = GRADE_SOLID[grade];
-  return `<span class="pill" style="background:${bg}">Grade ${grade}<b>+${pts} pts</b></span>`;
+  return `<span class="pill" style="background:${bg}">Grade ${grade}${pts > 0 ? `<b>+${pts} pts</b>` : ""}</span>`;
 }
 
 function pdfPosCell(pos: number | null, pts: number): string {

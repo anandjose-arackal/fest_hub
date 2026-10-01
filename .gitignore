@@ -46,3 +46,6 @@ next-env.d.ts
 
 # feast-data-import skill output (contains participant names)
 /supabase/imports/
+
+# locally generated admin credentials — never commit
+/credentials/

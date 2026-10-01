@@ -171,10 +171,10 @@ and house under another category or shakha) is **flagged, never auto-merged**.
 People matching an existing participant of the feast exactly are reused, in
 the script and again in the SQL, so re-runs don't duplicate anyone.
 
-**DOB.** `dob` on an entry/team member is optional, `YYYY-MM-DD`. When given
-it's used as-is (cross-checked against the category's cut-offs — a mismatch
-is a warning, not a blocking error, since the sheet's own category may be the
-correct one). Without it, SQL generates a placeholder from the category's own
+**DOB.** `dob` on an entry/team member is optional, `YYYY-MM-DD`. The sheet's
+category is authoritative: a given DOB inside the category's cut-offs is used
+as-is, one outside them is dropped (reported as a warning) and replaced by the
+placeholder below. Without a usable DOB, SQL generates a placeholder from the category's own
 `competition_categories` cut-offs: the midpoint of `min_dob..max_dob`,
 `min_dob + 2y` for open-ended youngest, `max_dob − 10y` for open-ended
 eldest. The DB stays the single source of truth, so no thresholds are
@@ -195,7 +195,7 @@ Placed entries always score above unplaced ones, so the app's dense ranking
 reproduces the sheet's positions. When the grades make that impossible, the
 grade wins (it decides points) and the conflict shows up in the report.
 
-**Registration numbers** follow `createParticipantAdmin()`: `getRegPrefix(feast)-next_reg_number(feast)`.
+**Registration numbers** follow `createParticipantAdmin()`: `'F' || next_reg_number(feast)` (e.g. `F1405`, `formatRegNumber()`), from one counter shared by every feast in the database.
 `participated` is true for every non-absent row of a result sheet. Entry caps
 (per shakha, or per meghala/diocese at those hierarchy levels) are reported but
 not enforced.

@@ -40,6 +40,11 @@ export const DEFAULT_POSITION_POINTS: PositionPointScale = { first: 5, second: 3
 export const GROUP_GRADE_POINTS: GradePointScale = { A: 5, B: 3, C: 1 };
 export const GROUP_POSITION_POINTS: PositionPointScale = { first: 10, second: 5, third: 3 };
 
+// External feasts (points calculated outside the app): grade and position
+// are still worked out, but nothing earns points.
+export const NO_GRADE_POINTS: GradePointScale = { A: 0, B: 0, C: 0 };
+export const NO_POSITION_POINTS: PositionPointScale = { first: 0, second: 0, third: 0 };
+
 // ── Grade ──────────────────────────────────────────────────────────────────
 
 export function calcGrade(score: number, maxScore: number, points: GradePointScale = DEFAULT_GRADE_POINTS): GradeResult {

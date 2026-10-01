@@ -167,21 +167,22 @@ export default function FeastsPage() {
                     {f.venue || "No venue"} · {f.participant_count} participants · {f.slug}
                   </p>
                 </div>
-                {f.is_external ? (
-                  <Link
-                    href={`/admin/feasts/${f.id}/external-points`}
-                    className="flex items-center gap-1 text-xs font-semibold text-[#7C3AED] hover:underline"
-                  >
-                    Enter Points <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                ) : (
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <Link
                     href={`/admin/feasts/${f.id}`}
                     className="flex items-center gap-1 text-xs font-semibold text-[#7C3AED] hover:underline"
                   >
                     Competitions <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
-                )}
+                  {f.is_external && (
+                    <Link
+                      href={`/admin/feasts/${f.id}/external-points`}
+                      className="flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline"
+                    >
+                      Enter Points <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                </div>
                 <button onClick={() => openEdit(f)} className="text-neutral-400 hover:text-neutral-700">
                   <Pencil className="h-4 w-4" />
                 </button>
@@ -256,9 +257,10 @@ export default function FeastsPage() {
                   onChange={(e) => setForm({ ...form, is_external: e.target.checked })}
                 />
                 <span>
-                  <span className="font-semibold">External fest</span> — competitions happened outside this app.
-                  Instead of a competition lineup, you&apos;ll enter each shakha&apos;s total points by hand, and
-                  they&apos;ll be summed into Overall Standings alongside the app-tracked fests.
+                  <span className="font-semibold">External points</span> — points were calculated outside this app.
+                  You enter each shakha&apos;s points per age category by hand, and they&apos;re summed into Overall Standings
+                  alongside the app-tracked fests. Competition results can still be published here to show grades
+                  and positions, but they won&apos;t add points.
                 </span>
               </label>
             </div>

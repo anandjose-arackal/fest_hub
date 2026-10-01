@@ -1,8 +1,8 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { calcGrade, calcPositions, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
-import { rebuildStandings, type ScoreEntry, type DraftScore } from "@/actions/results";
+import { calcGrade, calcPositions, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
+import { isExternalFeast, rebuildStandings, type ScoreEntry, type DraftScore } from "@/actions/results";
 import { TEAM_CATEGORY_SLUG } from "@/lib/feast-data";
 
 export async function getTeamCompetitionScores(feastCompetitionId: string): Promise<ScoreEntry[]> {
@@ -78,11 +78,13 @@ export async function publishTeamResults(feastCompetitionId: string): Promise<{ 
     .eq("feast_competition_id", feastCompetitionId);
   if (!draftRows || draftRows.length === 0) return { error: "No scores entered yet" };
 
+  // External feast: grade/position still published (winners), points stay 0.
+  const external = await isExternalFeast(fc.feast_id, admin);
   const entries = draftRows.map((r) => ({ id: r.team_registration_id, score: Number(r.score) }));
-  const posMap = calcPositions(entries, GROUP_POSITION_POINTS);
+  const posMap = calcPositions(entries, external ? NO_POSITION_POINTS : GROUP_POSITION_POINTS);
 
   const calculated = draftRows.map((r) => {
-    const { grade, gradePoints } = calcGrade(Number(r.score), fc.max_score!, GROUP_GRADE_POINTS);
+    const { grade, gradePoints } = calcGrade(Number(r.score), fc.max_score!, external ? NO_GRADE_POINTS : GROUP_GRADE_POINTS);
     const pos = posMap.get(r.team_registration_id) ?? { position: null, positionPoints: 0 };
     return {
       feast_competition_id: feastCompetitionId,
@@ -102,7 +104,7 @@ export async function publishTeamResults(feastCompetitionId: string): Promise<{ 
 
   await admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId);
 
-  const ledgerRows = draftRows
+  const ledgerRows = (external ? [] : draftRows)
     .map((r, i) => {
       const teamReg = Array.isArray(r.team_registration) ? r.team_registration[0] : r.team_registration;
       if (!teamReg?.shakha_id) return null;

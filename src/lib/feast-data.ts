@@ -22,11 +22,10 @@ export function feastPosterHeading(feast: { type: string; name: string }): strin
   return FEAST_TYPE_POSTER_LABEL[feast.type] ?? feast.name;
 }
 
-// Decision #1 / multi-org: the source app hard-coded a lookup table of
-// known feast slugs ("literature_2026" -> "LF26", etc.) that silently broke
-// for any org whose slugs weren't in the table. This product has no fixed
-// slug vocabulary, so the prefix is always derived from the feast's own
-// UUID — collision-proof across feasts/orgs without hardcoding anything.
-export function getRegPrefix(feastId: string): string {
-  return `F${feastId.replace(/-/g, "").slice(0, 4).toUpperCase()}`;
+// "F1405" — no feast-specific prefix (an earlier "F5848-1405" format carried
+// a slice of the feast UUID). registration_number is unique across every
+// feast, so next_reg_number() hands out n from one counter shared by all
+// feasts in the database instead of one per feast.
+export function formatRegNumber(n: number): string {
+  return `F${n}`;
 }
