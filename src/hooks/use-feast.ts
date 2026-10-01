@@ -33,6 +33,8 @@ const THEMED_TINT: Record<string, { literature: [string, string]; arts: [string,
   sunset: { literature: ["#E8823D", "#FFC585"], arts: ["#FFC585", "#18C5C7"] },
   aurora: { literature: ["#5B6EE8", "#8DAFFC"], arts: ["#8DAFFC", "#F696D5"] },
   carnival: { literature: ["#9A6BC2", "#AF87CE"], arts: ["#AF87CE", "#EA1A7F"] },
+  golden: { literature: ["#7357D8", "#A48EEE"], arts: ["#A48EEE", "#F5A524"] },
+  plum: { literature: ["#593C8F", "#9A80D0"], arts: ["#9A80D0", "#3DAE82"] },
   midnight: { literature: ["#8B6FFF", "#B9A6FF"], arts: ["#B9A6FF", "#FF6FB0"] },
   emerald: { literature: ["#16D9A0", "#5EEAD4"], arts: ["#5EEAD4", "#FF7A5C"] },
 };

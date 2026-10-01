@@ -335,7 +335,62 @@
   --fp-bg-3: #E3FBEF;
 }
 
-/* midnight — the one dark theme. Unlike the 6 light themes above, this
+/* golden — Golden Yellow #FFD84D / Electric Violet #7357D8 / Soft Ivory
+   #F8F7F2 reference trio, with ink taken from the deep indigo lettering on
+   that swatch set. Violet is primary, the yellow is gold; accent is a deeper
+   marigold of the same yellow (not a third hue) so primary→accent→gold
+   gradients sweep violet→amber→yellow and still hold white icons on the
+   amber end. The page gradient mirrors the reference composition: warm
+   yellow wash top, Soft Ivory middle, lavender bottom. */
+[data-fp-theme="golden"] {
+  --fp-ink: #22145C;
+  --fp-sub: #6E6496;
+  --fp-faint: #A8A1C6;
+  --fp-gold: #FFD84D;
+  --fp-gold-rgb: 255, 216, 77;
+  --fp-primary: #7357D8;
+  --fp-primary-rgb: 115, 87, 216;
+  --fp-primary-dark: #503D97;
+  --fp-primary-light: #A48EEE;
+  --fp-primary-light-rgb: 164, 142, 238;
+  --fp-accent: #F5A524;
+  --fp-accent-rgb: 245, 165, 36;
+  --fp-cyan: #1FB5C9;
+  --fp-fill: #EFEBFA;
+  --fp-bg-1: #FFF4CF;
+  --fp-bg-2: #F8F7F2;
+  --fp-bg-3: #ECE6FF;
+}
+
+/* plum — Royal Plum #593C8F / Mint Mist #A8D5BA / Vanilla Cream #FAF6EE
+   reference trio, ink from the deep plum lettering on that swatch set.
+   Mint Mist itself is too pale to carry white icons or text, so it only
+   tints the page (bg-1); accent is a deeper mint of the same hue for the
+   primary→accent gradients and team/registration tints. The reference has
+   no yellow, so gold is a muted honey that sits quietly on Vanilla Cream
+   (trophies/medals still need a gold). Page gradient mirrors the reference
+   composition: mint wash top, Vanilla Cream middle, lavender bottom. */
+[data-fp-theme="plum"] {
+  --fp-ink: #2A1660;
+  --fp-sub: #6F6590;
+  --fp-faint: #ADA5C8;
+  --fp-gold: #E9B949;
+  --fp-gold-rgb: 233, 185, 73;
+  --fp-primary: #593C8F;
+  --fp-primary-rgb: 89, 60, 143;
+  --fp-primary-dark: #3E2A64;
+  --fp-primary-light: #9A80D0;
+  --fp-primary-light-rgb: 154, 128, 208;
+  --fp-accent: #3DAE82;
+  --fp-accent-rgb: 61, 174, 130;
+  --fp-cyan: #4A9FE0;
+  --fp-fill: #EFEAF7;
+  --fp-bg-1: #E3F4EA;
+  --fp-bg-2: #FAF6EE;
+  --fp-bg-3: #ECE4FA;
+}
+
+/* midnight — the one dark theme. Unlike the 8 light themes above, this
    isn't just a hue swap: the page background, glass-card surfaces, and text
    all invert together (light ink on dark glass/bg), because theme.text is
    used both on the raw page background AND inside glass cards throughout
