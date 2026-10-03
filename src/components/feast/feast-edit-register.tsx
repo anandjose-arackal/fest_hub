@@ -111,7 +111,11 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   }
 
   async function handleDelete() {
-    await deleteParticipant(participantId);
+    const result = await deleteParticipant(participantId);
+    if (result.error) {
+      setServerError(result.error);
+      return;
+    }
     router.push(`/feast/${slug}/registrations`);
   }
 
@@ -148,6 +152,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
           ) : (
             <div className="mt-3 rounded-[14px] p-3" style={{ background: "#fee2e2" }}>
               <p className="mb-2 text-sm" style={{ color: "#b91c1c" }}>Delete this registration permanently?</p>
+              {serverError && <p className="mb-2 text-xs" style={{ color: "#b91c1c" }}>{serverError}</p>}
               <div className="flex gap-2">
                 <button onClick={() => setConfirmingDelete(false)} className="flex-1 rounded-lg border border-neutral-300 bg-white py-1.5 text-sm">Cancel</button>
                 <button onClick={handleDelete} className="flex-1 rounded-lg bg-red-600 py-1.5 text-sm font-semibold text-white">Yes, Delete</button>

@@ -220,6 +220,25 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       .single();
     if (!existing) return { error: "Participant not found." };
 
+    // Diff, don't replace: competition_results and shakha_point_ledger cascade
+    // on participant_registrations delete, so dropping and re-inserting every
+    // registration wiped this participant's scores on any edit (even a name
+    // fix) and left the other entries' published positions with a hole —
+    // 2nd missing, the real 3rd stuck at no position. Registrations still
+    // selected keep their id (and with it score, chance_no, participated).
+    const { data: currentRegs, error: currentErr } = await admin
+      .from("participant_registrations")
+      .select(REG_WITH_RESULT_SELECT)
+      .eq("participant_id", input.participantId);
+    if (currentErr) return { error: currentErr.message };
+
+    const wanted = new Set(input.feastCompetitionIds);
+    const removed = (currentRegs ?? []).filter((r) => !wanted.has(r.feast_competition_id));
+    const lockedError = publishedResultError(removed, "removed from");
+    if (lockedError) return { error: lockedError };
+    const kept = new Set((currentRegs ?? []).map((r) => r.feast_competition_id));
+    const added = input.feastCompetitionIds.filter((id) => !kept.has(id));
+
     if (input.feastCompetitionIds.length > 0 && existing.shakha_id) {
       const full = await findFullCompetitionsForShakha(
         admin,
@@ -249,13 +268,17 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       .eq("id", input.participantId);
     if (updateErr) return { error: updateErr.message };
 
-    // "Replace" semantics: delete all existing registrations, re-insert the
-    // new selected set — matches the source app's edit flow.
-    await admin.from("participant_registrations").delete().eq("participant_id", input.participantId);
+    if (removed.length > 0) {
+      const { error: delErr } = await admin
+        .from("participant_registrations")
+        .delete()
+        .in("id", removed.map((r) => r.id));
+      if (delErr) return { error: delErr.message };
+    }
 
-    if (input.feastCompetitionIds.length > 0) {
+    if (added.length > 0) {
       const { error: regErr } = await admin.from("participant_registrations").insert(
-        input.feastCompetitionIds.map((fcId) => ({
+        added.map((fcId) => ({
           participant_id: input.participantId,
           feast_competition_id: fcId,
         }))
@@ -271,9 +294,47 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
 }
 
 export async function deleteParticipant(participantId: string): Promise<{ error?: string }> {
-  const { error } = await getSupabaseAdmin().from("participants").delete().eq("id", participantId);
+  const admin = getSupabaseAdmin();
+  const { data: regs, error: regsErr } = await admin
+    .from("participant_registrations")
+    .select(REG_WITH_RESULT_SELECT)
+    .eq("participant_id", participantId);
+  if (regsErr) return { error: regsErr.message };
+  const lockedError = publishedResultError(regs ?? [], "deleted from");
+  if (lockedError) return { error: lockedError };
+
+  const { error } = await admin.from("participants").delete().eq("id", participantId);
   if (error) return { error: error.message };
   return {};
+}
+
+// Deleting a registration cascades away its competition_results and
+// shakha_point_ledger rows. For a published result that silently breaks the
+// competition's published positions and standings, so it's refused until the
+// competition is unpublished (republishing afterwards recalculates both).
+const REG_WITH_RESULT_SELECT =
+  "id, feast_competition_id, competition_results(published_at), feast_competition:feast_competitions(competition:competitions(name))";
+
+interface RegWithResult {
+  id: string;
+  feast_competition_id: string;
+  competition_results: { published_at: string | null } | { published_at: string | null }[] | null;
+  feast_competition: { competition: { name: string } | { name: string }[] | null } | { competition: { name: string } | { name: string }[] | null }[] | null;
+}
+
+function publishedResultError(regs: RegWithResult[], verb: string): string | null {
+  const names = regs
+    .filter((r) => {
+      const result = Array.isArray(r.competition_results) ? r.competition_results[0] : r.competition_results;
+      return !!result?.published_at;
+    })
+    .map((r) => {
+      const fc = Array.isArray(r.feast_competition) ? r.feast_competition[0] : r.feast_competition;
+      const competition = Array.isArray(fc?.competition) ? fc?.competition[0] : fc?.competition;
+      return competition?.name ?? "a competition";
+    });
+  if (names.length === 0) return null;
+  return `Results for ${names.join(", ")} are already published. Unpublish them first — this participant can't be ${verb} a published competition.`;
 }
 
 // ── attendance / progress ────────────────────────────────────────────────

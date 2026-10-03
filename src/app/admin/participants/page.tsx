@@ -420,7 +420,11 @@ export default function ParticipantsPage() {
 
   async function handleDeleteParticipant() {
     if (!editId) return;
-    await deleteParticipant(editId);
+    const result = await deleteParticipant(editId);
+    if (result.error) {
+      setPanelError(result.error);
+      return;
+    }
     setPanelOpen(false);
     load();
   }
