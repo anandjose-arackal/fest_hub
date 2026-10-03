@@ -21,6 +21,8 @@ const THEME_COLORS: Record<PortalTheme, string> = {
   aurora: "#5B6EE8",
   carnival: "#9A6BC2",
   amethyst: "#605399",
+  golden: "#7357D8",
+  plum: "#593C8F",
   midnight: "#171325",
   emerald: "#0D1A16",
 };
