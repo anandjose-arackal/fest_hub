@@ -3,20 +3,6 @@
 import { useEffect, useState } from "react";
 import { theme } from "./feast-shared";
 
-const FLOWER_EMOJI = ["🌸", "🌺", "🌼", "🌷", "🌹", "💐", "🏵️"];
-
-interface Petal {
-  id: number;
-  emoji: string;
-  left: number;
-  duration: number;
-  size: number;
-  drift: number;
-  rotate: number;
-}
-
-let petalSeq = 0;
-
 interface Remaining {
   days: number;
   hours: number;
@@ -38,107 +24,54 @@ function timeLeft(targetMs: number): Remaining | null {
 
 function Unit({ value, label }: { value: number; label: string }) {
   return (
-    <div className="flex flex-1 flex-col items-center rounded-2xl px-2 py-2.5" style={{ background: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.75)" }}>
-      <span className="text-[22px] font-bold leading-none tabular-nums sm:text-[26px]" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>
-        {String(value).padStart(2, "0")}
-      </span>
-      <span className="mt-1 text-[9.5px] font-semibold uppercase tracking-wide" style={{ color: theme.sub }}>{label}</span>
+    <div className="rounded-2xl pb-2.5 pt-3 text-center" style={{ background: theme.surface3, border: `1px solid ${theme.line}` }}>
+      <div className="fp-num text-[32px] sm:text-[38px]">{String(value).padStart(2, "0")}</div>
+      <div className="fp-cap mt-1.5 text-[9.5px]" style={{ color: theme.sub }}>{label}</div>
     </div>
   );
 }
 
-// Feast Portal dashboard: countdown to the soonest active feast's start date
-// (feasts are already ordered by start_date — see useFeasts's query — so
-// callers just pass feasts[0]). Flower petals drift down every couple
-// seconds as a small decorative flourish. `start_date` is a plain `date`
-// column (no time-of-day, same caveat as isRegistrationClosed in
-// feast-details.tsx) so this counts down to that date's UTC midnight.
-// Once the target passes, the component unmounts itself (returns null)
-// rather than freezing at 00:00:00:00.
+// Feast Portal dashboard: countdown to the soonest upcoming feast's start
+// date. `start_date` is a plain `date` column (no time-of-day, same caveat as
+// isRegistrationClosed in feast-details.tsx) so this counts down to that
+// date's UTC midnight. Once the target passes, the component unmounts itself
+// (returns null) rather than freezing at 00:00:00:00.
 export function MissionCountdown({ startDate, feastName }: { startDate: string | null; feastName?: string }) {
   const target = startDate ? new Date(startDate).getTime() : null;
   const [left, setLeft] = useState<Remaining | null>(() => (target ? timeLeft(target) : null));
-  const [petals, setPetals] = useState<Petal[]>([]);
 
   useEffect(() => {
     if (!target) return;
-    setLeft(timeLeft(target));
-    const id = setInterval(() => setLeft(timeLeft(target)), 1000);
-    return () => clearInterval(id);
-  }, [target]);
-
-  useEffect(() => {
-    if (!target) return;
-    const id = setInterval(() => {
-      const petal: Petal = {
-        id: petalSeq++,
-        emoji: FLOWER_EMOJI[Math.floor(Math.random() * FLOWER_EMOJI.length)],
-        left: 6 + Math.random() * 88,
-        duration: 4 + Math.random() * 2.5,
-        size: 14 + Math.random() * 10,
-        drift: (Math.random() - 0.5) * 40,
-        rotate: (Math.random() - 0.5) * 240,
-      };
-      setPetals((prev) => [...prev.slice(-7), petal]);
-      setTimeout(() => setPetals((prev) => prev.filter((p) => p.id !== petal.id)), petal.duration * 1000 + 150);
-    }, 2000);
-    return () => clearInterval(id);
+    const tick = () => setLeft(timeLeft(target));
+    const first = requestAnimationFrame(tick);
+    const id = setInterval(tick, 1000);
+    return () => { cancelAnimationFrame(first); clearInterval(id); };
   }, [target]);
 
   if (!target || !left) return null;
+  const dateLabel = new Date(target).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 
   return (
-    <div
-      className="relative mt-4 overflow-hidden rounded-[22px] p-4"
-      style={{ background: "linear-gradient(135deg, rgba(var(--fp-primary-rgb),0.10), rgba(var(--fp-accent-rgb),0.10) 55%, rgba(var(--fp-gold-rgb),0.14))", border: "1px solid rgba(var(--fp-primary-rgb),0.14)" }}
+    <section
+      aria-label={feastName ? `${feastName} countdown` : "Countdown"}
+      className="relative mt-6 overflow-hidden rounded-3xl px-4 pb-4 pt-[18px]"
+      style={{ ...theme.glassStrong, background: theme.surface2, border: `1px solid ${theme.line}`, boxShadow: theme.shadow }}
     >
-      <p className="relative flex items-center gap-2 text-[19px] font-extrabold leading-tight sm:text-[24px]" style={{ fontFamily: "var(--font-anek), sans-serif" }}>
-        <span className="inline-block" style={{ fontSize: "1.15em", animation: "rocket-bounce 1.6s ease-in-out infinite" }}>🚀</span>
-        <span
-          style={{
-            background: "linear-gradient(100deg, var(--fp-primary), var(--fp-accent), var(--fp-gold))",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
-        >
-          {feastName ? `${feastName} Starts In` : "Next Mission Starts In"}
-        </span>
-      </p>
-      <div className="relative mt-3 flex gap-2 sm:gap-3">
+      <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-[60px] h-[200px] w-[200px] rounded-full" style={{ background: "radial-gradient(circle, color-mix(in srgb, var(--fp-cyan) 22%, transparent), transparent 70%)" }} />
+      <div className="relative flex items-center gap-2.5">
+        <span className="inline-flex h-[26px] items-center rounded-full px-2.5 text-[11.5px] font-extrabold" style={{ background: theme.surface3, color: "var(--fp-link)", border: `1px solid ${theme.line2}` }}>Up next</span>
+        <span className="text-[12px] font-bold" style={{ color: theme.sub }}>{dateLabel}</span>
+      </div>
+      <h2 className="relative m-0 mt-2.5 text-[21px] font-extrabold leading-[1.3]">
+        {feastName ? <span className="fp-ml">{feastName}</span> : "The next fest"}{" "}
+        <span className="font-bold" style={{ color: theme.sub }}>starts in</span>
+      </h2>
+      <div className="relative mt-3.5 grid grid-cols-4 gap-2 sm:gap-3" role="timer" aria-live="off">
         <Unit value={left.days} label="Days" />
         <Unit value={left.hours} label="Hours" />
         <Unit value={left.minutes} label="Min" />
         <Unit value={left.seconds} label="Sec" />
       </div>
-
-      {petals.map((p) => (
-        <span
-          key={p.id}
-          className="pointer-events-none absolute select-none"
-          style={{
-            left: `${p.left}%`,
-            top: "-10%",
-            fontSize: p.size,
-            animation: `feast-petal-fall ${p.duration}s ease-in forwards`,
-            "--petal-drift": `${p.drift}px`,
-            "--petal-rotate": `${p.rotate}deg`,
-          } as React.CSSProperties}
-        >
-          {p.emoji}
-        </span>
-      ))}
-
-      <style jsx>{`
-        @keyframes feast-petal-fall {
-          0% { transform: translate(0, 0) rotate(0deg); opacity: 0; }
-          12% { opacity: 1; }
-          100% { transform: translate(var(--petal-drift), 160px) rotate(var(--petal-rotate)); opacity: 0; }
-        }
-        @keyframes rocket-bounce {
-          0%, 100% { transform: translateY(0) rotate(-8deg); }
-          50% { transform: translateY(-4px) rotate(4deg); }
-        }
-      `}</style>
-    </div>
+    </section>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { ClipboardCheck, Check, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchAllIn, groupBy } from "@/lib/fetch-all";
 import { setParticipation, setChanceNo } from "@/actions/feast";
 import { setTeamParticipation, setTeamChanceNo } from "@/actions/team";
 import { CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/competition-categories";
@@ -248,20 +249,34 @@ export default function ParticipationPage() {
     }, 900);
   }
 
+  // Two batched reads (chunked and paged) for every competition in the fest,
+  // instead of one sequential round trip per competition.
   async function fetchRegNosByComp(participatedOnly: boolean): Promise<{ comp: FCRow; regNos: string[] }[]> {
+    const groupIds = feastComps.filter((fc) => fc.competition.type === "group").map((fc) => fc.id);
+    const indivIds = feastComps.filter((fc) => fc.competition.type !== "group").map((fc) => fc.id);
+    const [teams, regs] = await Promise.all([
+      fetchAllIn(groupIds, (ids, from, to) =>
+        supabase.from("team_registrations").select("id, feast_competition_id, team_name, participated").in("feast_competition_id", ids).order("id").range(from, to)
+      ),
+      fetchAllIn(indivIds, (ids, from, to) =>
+        supabase
+          .from("participant_registrations")
+          .select("id, feast_competition_id, participated, participant:participants(registration_number)")
+          .in("feast_competition_id", ids)
+          .order("id")
+          .range(from, to)
+      ),
+    ]);
+    const teamsByFc = groupBy(teams.data, (t) => t.feast_competition_id);
+    const regsByFc = groupBy(regs.data, (r) => r.feast_competition_id);
     const out: { comp: FCRow; regNos: string[] }[] = [];
     for (const fc of feastComps) {
       const group = fc.competition.type === "group";
       if (group) {
-        const { data } = await supabase.from("team_registrations").select("team_name, participated").eq("feast_competition_id", fc.id);
-        const rows = (data ?? []).filter((r) => !participatedOnly || r.participated);
+        const rows = (teamsByFc.get(fc.id) ?? []).filter((r) => !participatedOnly || r.participated);
         if (rows.length > 0) out.push({ comp: fc, regNos: rows.map((r) => r.team_name) });
       } else {
-        const { data } = await supabase
-          .from("participant_registrations")
-          .select("participated, participant:participants(registration_number)")
-          .eq("feast_competition_id", fc.id);
-        const rows = (data ?? []).filter((r) => !participatedOnly || r.participated);
+        const rows = (regsByFc.get(fc.id) ?? []).filter((r) => !participatedOnly || r.participated);
         const regNos = rows.map((r) => {
           const p = Array.isArray(r.participant) ? r.participant[0] : r.participant;
           return p?.registration_number ?? "";

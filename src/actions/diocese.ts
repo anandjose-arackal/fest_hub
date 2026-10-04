@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, expireTags } from "@/lib/cache-tags";
 
 // dioceses has no authenticated write RLS policy (public read only) — all
 // writes go through the service-role client, same convention as shakhas
@@ -22,6 +23,7 @@ export async function createDiocese(input: DioceseInput): Promise<{ error?: stri
   const slug = input.slug?.trim() || slugify(name);
   const { error } = await getSupabaseAdmin().from("dioceses").insert({ name, slug, color: input.color });
   if (error) return { error: error.message };
+  expireTags(TAG.hierarchy, TAG.standings);
   return {};
 }
 
@@ -31,11 +33,13 @@ export async function updateDiocese(id: string, input: DioceseInput): Promise<{ 
   const slug = input.slug?.trim() || slugify(name);
   const { error } = await getSupabaseAdmin().from("dioceses").update({ name, slug, color: input.color }).eq("id", id);
   if (error) return { error: error.message };
+  expireTags(TAG.hierarchy, TAG.standings);
   return {};
 }
 
 export async function deleteDiocese(id: string): Promise<{ error?: string }> {
   const { error } = await getSupabaseAdmin().from("dioceses").delete().eq("id", id);
   if (error) return { error: error.message };
+  expireTags(TAG.hierarchy, TAG.standings);
   return {};
 }

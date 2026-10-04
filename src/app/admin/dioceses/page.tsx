@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { invalidateOrgHierarchy } from "@/hooks/use-feast";
 import { Church, Pencil, Trash2, Plus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { createDiocese, updateDiocese, deleteDiocese } from "@/actions/diocese";
@@ -19,6 +20,7 @@ export default function DiocesesPage() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
+    invalidateOrgHierarchy();
     setLoading(true);
     const { data } = await supabase.from("dioceses").select("*").order("name");
     setDioceses(data ?? []);

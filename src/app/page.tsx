@@ -1,4 +1,4 @@
-import { getOrgSettings } from "@/lib/org-settings";
+import { getOrgSettingsCached as getOrgSettings } from "@/lib/org-settings-server";
 import { FeastShell } from "@/components/feast/feast-shared";
 import { FeastLanding } from "@/components/feast/feast-landing";
 

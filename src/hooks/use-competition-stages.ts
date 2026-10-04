@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { CATEGORY_COLORS, CATEGORY_LABELS } from "@/lib/competition-categories";
 
@@ -108,40 +108,29 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
   const pollIntervalMs = options?.intervalMs ?? POLL_MS;
   const [stages, setStages] = useState<CompetitionStage[]>([]);
   const [loading, setLoading] = useState(isSupabaseConfigured);
-  const feastIdRef = useRef<string | null>(null);
 
   const load = useCallback(async (silent: boolean) => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
     if (!silent) setLoading(true);
     try {
-      let feastId = feastIdRef.current;
-      if (!feastId) {
-        const { data: feastRow } = await supabase.from("feasts").select("id").eq("slug", slug).maybeSingle();
-        if (!feastRow) { setStages([]); setLoading(false); return; }
-        feastId = feastRow.id;
-        feastIdRef.current = feastId;
-      }
-
-      const [{ data: fcs, error: fcErr }, { data: catRows }] = await Promise.all([
-        supabase
-          .from("feast_competitions")
-          .select("id, stage_id, scheduled_time, comp_status, progress_pct, display_order, stage:stages(id, number, title, venue), competition:competitions(name, gender, competition_category_id)")
-          .eq("feast_id", feastId)
-          .not("stage_id", "is", null)
-          .order("display_order"),
-        supabase.from("competition_categories").select("id, slug"),
-      ]);
+      // One request per poll: the fest is matched by slug through an inner
+      // join and the category slug is embedded, instead of a slug→id lookup
+      // plus a separate competition_categories read on every tick.
+      const { data: fcs, error: fcErr } = await supabase
+        .from("feast_competitions")
+        .select("id, stage_id, scheduled_time, comp_status, progress_pct, display_order, feast:feasts!inner(slug), stage:stages(id, number, title, venue), competition:competitions(name, gender, competition_category:competition_categories(slug))")
+        .eq("feast.slug", slug)
+        .not("stage_id", "is", null)
+        .order("display_order");
       if (fcErr) { console.error("[useCompetitionStages]", fcErr.message); setLoading(false); return; }
-
-      const catSlugMap: Record<string, string> = {};
-      for (const c of catRows ?? []) catSlugMap[c.id] = c.slug;
 
       const groups = new Map<string, { number: number; title: string; venue: string | null; items: StageCompetition[] }>();
       for (const fc of fcs ?? []) {
         const stage = Array.isArray(fc.stage) ? fc.stage[0] : fc.stage;
         if (!stage) continue;
         const comp = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
-        const categorySlug = comp?.competition_category_id ? catSlugMap[comp.competition_category_id] ?? null : null;
+        const cat = Array.isArray(comp?.competition_category) ? comp?.competition_category[0] : comp?.competition_category;
+        const categorySlug = cat?.slug ?? null;
         const compName = comp?.name ?? "Competition";
         const item: StageCompetition = {
           id: fc.id,
@@ -170,7 +159,6 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
   }, [slug]);
 
   useEffect(() => {
-    feastIdRef.current = null;
     load(false);
     const interval = setInterval(() => {
       if (alwaysPoll || (document.visibilityState === "visible" && document.hasFocus())) load(true);

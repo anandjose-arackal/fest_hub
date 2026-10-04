@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Landmark, Pencil, Trash2, Plus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getOrgSettings } from "@/lib/org-settings";
+import { loadOrgSettingsCached as getOrgSettings, invalidateOrgHierarchy } from "@/hooks/use-feast";
 import { createShakha, updateShakha, deleteShakha } from "@/actions/shakha";
 import type { HierarchyLevel, Meghala, Shakha } from "@/types";
 
@@ -23,6 +23,7 @@ export default function ShakhasPage() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
+    invalidateOrgHierarchy();
     setLoading(true);
     const [{ data: s }, { data: m }, org] = await Promise.all([
       supabase.from("shakhas").select("*").order("name"),

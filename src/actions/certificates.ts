@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { fetchAllIn } from "@/lib/fetch-all";
 import type { CertificateField, CertificateRosterRow, CertificateTemplate } from "@/types";
 
 // certificate_templates has no RLS (no public consumer — only this file's
@@ -107,16 +108,35 @@ async function buildRosterRows(
 ): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
   const rows: CertificateRosterRow[] = [];
 
-  const { data: indivResults, error: indivErr } = await admin
-    .from("competition_results")
-    .select(
-      "feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))"
-    )
-    .in("feast_competition_id", fcIds)
-    .not("published_at", "is", null);
-  if (indivErr) return { error: indivErr.message };
+  // Both reads are independent and can each exceed 1000 rows for a whole fest.
+  const [indiv, team] = await Promise.all([
+    fetchAllIn(fcIds, (ids, from, to) =>
+      admin
+        .from("competition_results")
+        .select(
+          "id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))"
+        )
+        .in("feast_competition_id", ids)
+        .not("published_at", "is", null)
+        .order("id")
+        .range(from, to)
+    ),
+    fetchAllIn(fcIds, (ids, from, to) =>
+      admin
+        .from("team_results")
+        .select(
+          "id, feast_competition_id, grade, position, team_registration:team_registrations(shakha:shakhas(name), team_registration_members(participant:participants(name, house_name)))"
+        )
+        .in("feast_competition_id", ids)
+        .not("published_at", "is", null)
+        .order("id")
+        .range(from, to)
+    ),
+  ]);
+  if (indiv.error) return { error: indiv.error };
+  if (team.error) return { error: team.error };
 
-  for (const r of indivResults ?? []) {
+  for (const r of indiv.data) {
     const partReg = Array.isArray(r.participant_registration) ? r.participant_registration[0] : r.participant_registration;
     const participant = Array.isArray(partReg?.participant) ? partReg?.participant[0] : partReg?.participant;
     const shakha = Array.isArray(participant?.shakha) ? participant?.shakha[0] : participant?.shakha;
@@ -135,16 +155,7 @@ async function buildRosterRows(
     });
   }
 
-  const { data: teamResults, error: teamErr } = await admin
-    .from("team_results")
-    .select(
-      "feast_competition_id, grade, position, team_registration:team_registrations(shakha:shakhas(name), team_registration_members(participant:participants(name, house_name)))"
-    )
-    .in("feast_competition_id", fcIds)
-    .not("published_at", "is", null);
-  if (teamErr) return { error: teamErr.message };
-
-  for (const r of teamResults ?? []) {
+  for (const r of team.data) {
     const teamReg = Array.isArray(r.team_registration) ? r.team_registration[0] : r.team_registration;
     const shakha = Array.isArray(teamReg?.shakha) ? teamReg?.shakha[0] : teamReg?.shakha;
     const members = teamReg?.team_registration_members ?? [];

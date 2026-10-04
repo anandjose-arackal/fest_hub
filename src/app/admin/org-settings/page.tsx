@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Settings, Check } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { updateOrgSettings } from "@/actions/org-settings";
+import { invalidateCached } from "@/lib/client-cache";
+import { invalidateOrgHierarchy } from "@/hooks/use-feast";
 import type { HierarchyLevel, OrgSettings, PortalTheme } from "@/types";
 
 const HIERARCHY_OPTIONS: { value: HierarchyLevel; label: string; hint: string }[] = [
@@ -25,6 +27,8 @@ const THEME_OPTIONS: { value: PortalTheme; label: string; swatches: string[] }[]
   { value: "plum", label: "Plum Mist", swatches: ["#593C8F", "#A8D5BA", "#FAF6EE"] },
   { value: "midnight", label: "Midnight Mode", swatches: ["#171325", "#8B6FFF", "#FF6FB0"] },
   { value: "emerald", label: "Emerald Night", swatches: ["#0D1A16", "#16D9A0", "#FF7A5C"] },
+  { value: "championship", label: "Championship Night", swatches: ["#1C1946", "#F5C542", "#FF6FB0"] },
+  { value: "burgundy", label: "Burgundy Night", swatches: ["#3A0F1E", "#F5C542", "#EA6B8A"] },
 ];
 
 export default function OrgSettingsPage() {
@@ -87,6 +91,8 @@ export default function OrgSettingsPage() {
       setError(result.error);
       return;
     }
+    invalidateCached("fp:org-settings");
+    invalidateOrgHierarchy();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }

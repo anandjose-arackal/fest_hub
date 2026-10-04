@@ -1,8 +1,10 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, expireTags } from "@/lib/cache-tags";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
+import { countScopeRegistrations, resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
+import { leaveTeams, prepareTeamJoin, pruneEmptyTeams } from "@/lib/scope-teams";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { DEFAULT_MAX_PER_SHAKHA, formatRegNumber } from "@/lib/feast-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -19,17 +21,13 @@ async function findFullCompetitionsForShakha(
 ): Promise<string[]> {
   if (feastCompetitionIds.length === 0) return [];
 
-  const scopeShakhaIds = new Set(await resolveCapScopeShakhaIds(client, shakhaId));
-
-  const { data: regs } = await client
-    .from("participant_registrations")
-    .select("feast_competition_id, participant_id, participant:participants!inner(shakha_id)")
-    .in("feast_competition_id", feastCompetitionIds);
-
-  const { data: fcs } = await client
-    .from("feast_competitions")
-    .select("id, competition:competitions(max_per_shakha)")
-    .in("id", feastCompetitionIds);
+  // Scope and caps are independent; the count is filtered to the scope in
+  // the database (see countScopeRegistrations) rather than read in full.
+  const [scopeShakhaIds, { data: fcs }] = await Promise.all([
+    resolveCapScopeShakhaIds(client, shakhaId),
+    client.from("feast_competitions").select("id, competition:competitions(max_per_shakha)").in("id", feastCompetitionIds),
+  ]);
+  const counts = await countScopeRegistrations(client, feastCompetitionIds, scopeShakhaIds, excludeParticipantId);
 
   const capById = new Map<string, number>();
   for (const fc of fcs ?? []) {
@@ -37,16 +35,8 @@ async function findFullCompetitionsForShakha(
     capById.set(fc.id, comp?.max_per_shakha ?? DEFAULT_MAX_PER_SHAKHA);
   }
 
-  const countById = new Map<string, number>();
-  for (const r of regs ?? []) {
-    const participant = Array.isArray(r.participant) ? r.participant[0] : r.participant;
-    if (!participant?.shakha_id || !scopeShakhaIds.has(participant.shakha_id)) continue;
-    if (excludeParticipantId && r.participant_id === excludeParticipantId) continue;
-    countById.set(r.feast_competition_id, (countById.get(r.feast_competition_id) ?? 0) + 1);
-  }
-
   return feastCompetitionIds.filter(
-    (id) => (countById.get(id) ?? 0) >= (capById.get(id) ?? DEFAULT_MAX_PER_SHAKHA)
+    (id) => (counts[id] ?? 0) >= (capById.get(id) ?? DEFAULT_MAX_PER_SHAKHA)
   );
 }
 
@@ -60,6 +50,9 @@ export interface RegInput {
   gender: string;
   phone?: string;
   feastCompetitionIds: string[];
+  // Team events to add this person to (their scope's team, created on its
+  // first registration — see lib/scope-teams).
+  teamCompetitionIds?: string[];
 }
 export type RegOutput = { regNo: string };
 export type RegError = { error: string };
@@ -86,6 +79,9 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
         };
       }
     }
+
+    const teamPlan = await prepareTeamJoin(feast.id, input.shakhaId, input.teamCompetitionIds ?? []);
+    if ("error" in teamPlan) return { error: teamPlan.error };
 
     const categories = await fetchCompetitionCategories();
     const catSlug = getCategorySlug(input.dob, categories);
@@ -123,6 +119,14 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
       if (regErr) console.error("[registerParticipant] registration insert failed:", regErr);
     }
 
+    // All or nothing: if a team can't take them after all, the participant
+    // is removed again so the form can be resubmitted without that event.
+    const joined = await teamPlan.join(participant.id);
+    if (joined.error) {
+      await getSupabaseAdmin().from("participants").delete().eq("id", participant.id);
+      return { error: joined.error };
+    }
+
     return { regNo };
   } catch (err) {
     console.error("[registerParticipant]", err);
@@ -140,6 +144,9 @@ export interface AdminRegInput {
   gender: string;
   phone?: string;
   feastCompetitionIds: string[];
+  // Team events to add this person to — same scope teams as the portal's
+  // registerParticipant (see lib/scope-teams).
+  teamCompetitionIds?: string[];
 }
 
 export async function createParticipantAdmin(input: AdminRegInput): Promise<{ error?: string; regNo?: string; participantId?: string }> {
@@ -154,6 +161,9 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
         };
       }
     }
+
+    const teamPlan = await prepareTeamJoin(input.feastId, input.shakhaId, input.teamCompetitionIds ?? []);
+    if ("error" in teamPlan) return { error: teamPlan.error };
 
     const categories = await fetchCompetitionCategories();
     const catSlug = getCategorySlug(input.dob, categories);
@@ -191,6 +201,13 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
       if (regErr) return { error: regErr.message };
     }
 
+    // All or nothing, as in registerParticipant.
+    const joined = await teamPlan.join(participant.id);
+    if (joined.error) {
+      await admin.from("participants").delete().eq("id", participant.id);
+      return { error: joined.error };
+    }
+
     return { regNo, participantId: participant.id };
   } catch (err) {
     console.error("[createParticipantAdmin]", err);
@@ -207,6 +224,9 @@ export interface UpdateInput {
   gender: string;
   phone?: string;
   feastCompetitionIds: string[];
+  // Team events this participant should be on. Omitted = leave their teams
+  // as they are (the admin Participants page manages teams separately).
+  teamCompetitionIds?: string[];
 }
 
 export async function updateParticipant(input: UpdateInput): Promise<{ error?: string }> {
@@ -215,7 +235,7 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
 
     const { data: existing } = await admin
       .from("participants")
-      .select("shakha_id")
+      .select("shakha_id, feast_id")
       .eq("id", input.participantId)
       .single();
     if (!existing) return { error: "Participant not found." };
@@ -250,6 +270,31 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
         return { error: "The registration limit has been reached for one of the selected competitions." };
       }
     }
+
+    // Team events diff the same way. The teams to join must have room
+    // before anything is written.
+    let teamJoin: ((participantId: string) => Promise<{ error?: string }>) | null = null;
+    let teamsToLeave: string[] = [];
+    if (input.teamCompetitionIds) {
+      const { data: currentTeams } = await admin
+        .from("team_registration_members")
+        .select("feast_competition_id")
+        .eq("participant_id", input.participantId);
+      const onTeams = new Set((currentTeams ?? []).map((t) => t.feast_competition_id));
+      const wantedTeams = new Set(input.teamCompetitionIds);
+      teamsToLeave = [...onTeams].filter((id) => !wantedTeams.has(id));
+      const teamsToJoin = [...wantedTeams].filter((id) => !onTeams.has(id));
+      if (teamsToJoin.length > 0) {
+        if (!existing.shakha_id) return { error: "This participant has no Shakha, so they can't join a team." };
+        const prepared = await prepareTeamJoin(existing.feast_id, existing.shakha_id, teamsToJoin);
+        if ("error" in prepared) return { error: prepared.error };
+        teamJoin = prepared.join;
+      }
+    }
+    // Checks for published team results before removing anything, so a
+    // refusal here leaves the participant untouched.
+    const leaveResult = await leaveTeams(input.participantId, teamsToLeave);
+    if (leaveResult.error) return { error: leaveResult.error };
 
     const categories = await fetchCompetitionCategories();
     const catSlug = getCategorySlug(input.dob, categories);
@@ -286,6 +331,13 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       if (regErr) return { error: regErr.message };
     }
 
+    if (teamJoin) {
+      const joinResult = await teamJoin(input.participantId);
+      if (joinResult.error) return { error: joinResult.error };
+    }
+
+    // Names/houses/shakhas show on published results.
+    expireTags(TAG.results);
     return {};
   } catch (err) {
     console.error("[updateParticipant]", err);
@@ -303,8 +355,11 @@ export async function deleteParticipant(participantId: string): Promise<{ error?
   const lockedError = publishedResultError(regs ?? [], "deleted from");
   if (lockedError) return { error: lockedError };
 
+  const { data: teams } = await admin.from("team_registration_members").select("team_registration_id").eq("participant_id", participantId);
   const { error } = await admin.from("participants").delete().eq("id", participantId);
   if (error) return { error: error.message };
+  // Their memberships cascade away; a team left with nobody goes too.
+  await pruneEmptyTeams((teams ?? []).map((t) => t.team_registration_id));
   return {};
 }
 
@@ -421,5 +476,7 @@ export async function updateCompetitionStatus(input: CompStatusInput): Promise<{
     })
     .eq("id", input.feastCompetitionId);
   if (error) return { error: error.message };
+  // Status changes drive the landing page's live-updates feed.
+  expireTags(TAG.results);
   return {};
 }

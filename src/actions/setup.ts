@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, expireTags } from "@/lib/cache-tags";
 
 export interface BootstrapInput {
   fullName: string;
@@ -57,6 +58,7 @@ export async function bootstrapFirstAdmin(input: BootstrapInput): Promise<Bootst
         area_name_en: areaNameEn || "",
       })
       .eq("id", true);
+    expireTags(TAG.org);
   }
 
   return {};

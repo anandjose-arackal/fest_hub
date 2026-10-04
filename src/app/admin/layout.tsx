@@ -8,7 +8,7 @@ import {
   Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { getOrgSettings } from "@/lib/org-settings";
+import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import type { HierarchyLevel } from "@/types";
 
 interface NavItem {

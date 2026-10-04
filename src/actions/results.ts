@@ -1,6 +1,9 @@
 "use server";
 
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { fetchAll, fetchAllIn } from "@/lib/fetch-all";
+import { TAG, TTL, expireTags } from "@/lib/cache-tags";
 import { calcGrade, calcPositions, DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -78,9 +81,12 @@ export async function getFeastStandings(feastId: string): Promise<StandingsRow[]
 }
 
 export async function getOverallStandings(): Promise<StandingsRow[]> {
-  const { data } = await getSupabaseAdmin().from("shakha_feast_standings").select(STANDINGS_SELECT);
+  const admin = getSupabaseAdmin();
+  const { data } = await fetchAll((from, to) =>
+    admin.from("shakha_feast_standings").select(STANDINGS_SELECT).order("id").range(from, to)
+  );
   const bucket = new Map<string, StandingsRow>();
-  for (const raw of data ?? []) {
+  for (const raw of data) {
     const row = mapStandingsRow(raw);
     const existing = bucket.get(row.shakhaId);
     if (!existing) {
@@ -147,21 +153,47 @@ function toLeaderboardRow(r: StandingsRow, rank: number): LeaderboardRow {
   };
 }
 
-// Public-facing (Rankings screen). shakha_feast_standings has no RLS, so
-// this still goes through the admin client, same as the standings actions
-// above — "public" here just means "no auth required to call", not a
-// client-side-queryable table.
+// Public-facing (Rankings screen, landing widgets, /screen). The fest is
+// matched by slug through an inner join, so this is one round trip instead
+// of slug→id then standings.
+const STANDINGS_BY_SLUG_SELECT =
+  "rank, shakha_id, sub_junior_points, junior_points, senior_points, super_senior_points, elder_points, team_points, grand_total, first_place_count, second_place_count, third_place_count, a_grade_count, b_grade_count, c_grade_count, shakha:shakhas(name), feast:feasts!inner(slug)";
+
+async function readFeastStandingsBySlug(feastSlug: string): Promise<StandingsRow[]> {
+  const { data } = await getSupabaseAdmin()
+    .from("shakha_feast_standings")
+    .select(STANDINGS_BY_SLUG_SELECT)
+    .eq("feast.slug", feastSlug)
+    .order("rank", { ascending: true, nullsFirst: false });
+  return (data ?? []).map(mapStandingsRow);
+}
+
+type LeaderboardTier = "shakha" | "meghala" | "diocese";
+
+// Shared by every viewer: one database read per publish (the standings tag
+// is expired by rebuildStandings) instead of one per phone refresh.
+const cachedLeaderboard = unstable_cache(
+  async (scope: "feast" | "overall", tier: LeaderboardTier, feastSlug: string): Promise<LeaderboardRow[]> => {
+    if (tier === "shakha") {
+      const rows = scope === "overall" ? await getOverallStandings() : await readFeastStandingsBySlug(feastSlug);
+      return rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1));
+    }
+    const [rows, groupMap] = await Promise.all([
+      scope === "overall" ? getOverallStandings() : readFeastStandingsBySlug(feastSlug),
+      getShakhaGroupMap(tier),
+    ]);
+    return groupStandingsRows(rows, groupMap).map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1));
+  },
+  ["fp-leaderboard"],
+  { tags: [TAG.standings, TAG.hierarchy], revalidate: TTL.standard },
+);
+
 export async function getLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
-  const admin = getSupabaseAdmin();
-  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
-  const rows = await getFeastStandings(feast.id);
-  return { data: rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1)) };
+  return { data: await cachedLeaderboard("feast", "shakha", feastSlug) };
 }
 
 export async function getOverallLeaderboard(): Promise<{ data?: LeaderboardRow[]; error?: string }> {
-  const rows = await getOverallStandings();
-  return { data: rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1)) };
+  return { data: await cachedLeaderboard("overall", "shakha", "") };
 }
 
 // ── Meghala/Diocese rollups (optional org hierarchy) ─────────────────────
@@ -317,29 +349,19 @@ function toLeaderboardRowFromGroup(r: GroupStandingsRow, rank: number): Leaderbo
 }
 
 export async function getMeghalaLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
-  const admin = getSupabaseAdmin();
-  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
-  const rows = await getMeghalaStandings(feast.id);
-  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+  return { data: await cachedLeaderboard("feast", "meghala", feastSlug) };
 }
 
 export async function getDioceseLeaderboard(feastSlug: string): Promise<{ data?: LeaderboardRow[]; error?: string }> {
-  const admin = getSupabaseAdmin();
-  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
-  const rows = await getDioceseStandings(feast.id);
-  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+  return { data: await cachedLeaderboard("feast", "diocese", feastSlug) };
 }
 
 export async function getOverallMeghalaLeaderboard(): Promise<{ data?: LeaderboardRow[]; error?: string }> {
-  const rows = await getOverallMeghalaStandings();
-  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+  return { data: await cachedLeaderboard("overall", "meghala", "") };
 }
 
 export async function getOverallDioceseLeaderboard(): Promise<{ data?: LeaderboardRow[]; error?: string }> {
-  const rows = await getOverallDioceseStandings();
-  return { data: rows.map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1)) };
+  return { data: await cachedLeaderboard("overall", "diocese", "") };
 }
 
 // ── score entry / publishing ──────────────────────────────────────────────
@@ -376,12 +398,17 @@ export async function getCompetitionScores(feastCompetitionId: string): Promise<
 
 export async function getScoresForCompetitions(feastCompetitionIds: string[]): Promise<Record<string, ScoreEntry[]>> {
   if (feastCompetitionIds.length === 0) return {};
-  const { data } = await getSupabaseAdmin()
-    .from("competition_results")
-    .select("feast_competition_id, participant_registration_id, score, grade, position, total_points")
-    .in("feast_competition_id", feastCompetitionIds);
+  const admin = getSupabaseAdmin();
+  const { data } = await fetchAllIn(feastCompetitionIds, (ids, from, to) =>
+    admin
+      .from("competition_results")
+      .select("feast_competition_id, participant_registration_id, score, grade, position, total_points")
+      .in("feast_competition_id", ids)
+      .order("id")
+      .range(from, to)
+  );
   const out: Record<string, ScoreEntry[]> = {};
-  for (const r of data ?? []) {
+  for (const r of data) {
     (out[r.feast_competition_id] ??= []).push({
       registrationId: r.participant_registration_id,
       score: Number(r.score),
@@ -393,15 +420,57 @@ export async function getScoresForCompetitions(feastCompetitionIds: string[]): P
   return out;
 }
 
+const cachedPublishedResults = unstable_cache(
+  async (feastCompetitionId: string) => {
+    const { data } = await getSupabaseAdmin()
+      .from("competition_results")
+      .select(
+        "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))"
+      )
+      .eq("feast_competition_id", feastCompetitionId)
+      .not("published_at", "is", null);
+    return data ?? [];
+  },
+  ["fp-published-results"],
+  { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.standard },
+);
+
 export async function getPublishedResults(feastCompetitionId: string) {
-  const { data } = await getSupabaseAdmin()
-    .from("competition_results")
-    .select(
-      "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))"
-    )
-    .eq("feast_competition_id", feastCompetitionId)
-    .not("published_at", "is", null);
-  return data ?? [];
+  return cachedPublishedResults(feastCompetitionId);
+}
+
+// Most recently published result among the given feast competitions —
+// drives the public Results screen's "Latest result" card. Read-only; checks
+// both individual and team results since either table can hold the newest.
+export async function getLatestPublishedCompetition(
+  feastCompetitionIds: string[],
+): Promise<{ feastCompetitionId: string; publishedAt: string } | null> {
+  if (feastCompetitionIds.length === 0) return null;
+  return cachedLatestPublished([...feastCompetitionIds].sort());
+}
+
+const cachedLatestPublished = unstable_cache(
+  async (feastCompetitionIds: string[]) => readLatestPublished(feastCompetitionIds),
+  ["fp-latest-published"],
+  { tags: [TAG.results], revalidate: TTL.standard },
+);
+
+async function readLatestPublished(feastCompetitionIds: string[]): Promise<{ feastCompetitionId: string; publishedAt: string } | null> {
+  const admin = getSupabaseAdmin();
+  const latest = (table: "competition_results" | "team_results") =>
+    admin
+      .from(table)
+      .select("feast_competition_id, published_at")
+      .in("feast_competition_id", feastCompetitionIds)
+      .not("published_at", "is", null)
+      .order("published_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+  const [ind, team] = await Promise.all([latest("competition_results"), latest("team_results")]);
+  const picks = [ind.data, team.data].filter((r): r is { feast_competition_id: string; published_at: string } => !!r?.published_at);
+  if (picks.length === 0) return null;
+  picks.sort((a, b) => b.published_at.localeCompare(a.published_at));
+  return { feastCompetitionId: picks[0].feast_competition_id, publishedAt: picks[0].published_at };
 }
 
 export interface DraftScore { registrationId: string; score: number; }
@@ -430,22 +499,26 @@ export async function saveDraftScores(input: {
 export async function publishResults(feastCompetitionId: string): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
 
-  const { data: fc } = await admin
-    .from("feast_competitions")
-    .select("id, feast_id, max_score, competition:competitions(competition_category:competition_categories(slug))")
-    .eq("id", feastCompetitionId)
-    .single();
+  // The competition row (with its fest's external flag) and the draft scores
+  // are independent reads — fetch them together.
+  const [{ data: fc }, { data: draftRows }] = await Promise.all([
+    admin
+      .from("feast_competitions")
+      .select("id, feast_id, max_score, feast:feasts(is_external), competition:competitions(competition_category:competition_categories(slug))")
+      .eq("id", feastCompetitionId)
+      .single(),
+    admin
+      .from("competition_results")
+      .select("id, participant_registration_id, score, participant_registration:participant_registrations(participant:participants(id, shakha_id))")
+      .eq("feast_competition_id", feastCompetitionId),
+  ]);
   if (!fc) return { error: "Competition not found." };
   if (!fc.max_score) return { error: "Set max score before publishing" };
-
-  const { data: draftRows } = await admin
-    .from("competition_results")
-    .select("id, participant_registration_id, score, participant_registration:participant_registrations(participant:participants(id, shakha_id))")
-    .eq("feast_competition_id", feastCompetitionId);
   if (!draftRows || draftRows.length === 0) return { error: "No scores entered yet" };
 
   // External feast: grade/position still published (winners), points stay 0.
-  const external = await isExternalFeast(fc.feast_id, admin);
+  const fcFeast = Array.isArray(fc.feast) ? fc.feast[0] : fc.feast;
+  const external = !!fcFeast?.is_external;
   const entries = draftRows.map((r) => ({ id: r.participant_registration_id, score: Number(r.score) }));
   const posMap = calcPositions(entries, external ? NO_POSITION_POINTS : DEFAULT_POSITION_POINTS);
 
@@ -506,25 +579,31 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
     if (ledgerErr) return { error: ledgerErr.message };
   }
 
-  const rebuildErr = await rebuildStandings(fc.feast_id, admin);
+  const [rebuildErr] = await Promise.all([
+    rebuildStandings(fc.feast_id, admin, external),
+    admin.from("feast_competitions").update({ result_status: "published", comp_status: "published" }).eq("id", feastCompetitionId),
+  ]);
+  expireTags(TAG.results);
   if (rebuildErr) return { error: rebuildErr };
-
-  await admin.from("feast_competitions").update({ result_status: "published", comp_status: "published" }).eq("id", feastCompetitionId);
   return {};
 }
 
 export async function unpublishResults(feastCompetitionId: string, feastId: string): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
-  await admin
-    .from("competition_results")
-    .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
-    .eq("feast_competition_id", feastCompetitionId);
-  await admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId);
-  await rebuildStandings(feastId, admin);
-  const { error } = await admin
-    .from("feast_competitions")
-    .update({ result_status: "draft", comp_status: "completed" })
-    .eq("id", feastCompetitionId);
+  // Clearing the results and dropping their ledger rows touch different
+  // tables — run them together, then rebuild once both are done.
+  await Promise.all([
+    admin
+      .from("competition_results")
+      .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
+      .eq("feast_competition_id", feastCompetitionId),
+    admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId),
+  ]);
+  const [, { error }] = await Promise.all([
+    rebuildStandings(feastId, admin),
+    admin.from("feast_competitions").update({ result_status: "draft", comp_status: "completed" }).eq("id", feastCompetitionId),
+  ]);
+  expireTags(TAG.results);
   if (error) return { error: error.message };
   return {};
 }
@@ -552,17 +631,25 @@ export async function isExternalFeast(feastId: string, admin: SupabaseClient): P
 // Exported — shared by team-results.ts so individual + team publishing feed
 // into one unified standings rebuild. A no-op for an external feast, whose
 // standings are entered by hand instead.
-export async function rebuildStandings(feastId: string, admin: SupabaseClient): Promise<string | null> {
-  if (await isExternalFeast(feastId, admin)) return null;
+// `knownExternal` lets a caller that already read the fest's flag skip the
+// lookup. The ledger is paged: a fest with more than 1000 published entries
+// would otherwise be summed from a silently truncated list.
+export async function rebuildStandings(feastId: string, admin: SupabaseClient, knownExternal?: boolean): Promise<string | null> {
+  if (knownExternal ?? (await isExternalFeast(feastId, admin))) return null;
 
-  const { data: shakhas, error: shakhaErr } = await admin.from("shakhas").select("id, name");
+  const [{ data: shakhas, error: shakhaErr }, { data: ledger, error: ledgerErr }] = await Promise.all([
+    admin.from("shakhas").select("id, name"),
+    fetchAll((from, to) =>
+      admin
+        .from("shakha_point_ledger")
+        .select("shakha_id, category_slug, position, grade, total_points")
+        .eq("feast_id", feastId)
+        .order("id")
+        .range(from, to)
+    ),
+  ]);
   if (shakhaErr) return shakhaErr.message;
-
-  const { data: ledger, error: ledgerErr } = await admin
-    .from("shakha_point_ledger")
-    .select("shakha_id, category_slug, position, grade, total_points")
-    .eq("feast_id", feastId);
-  if (ledgerErr) return ledgerErr.message;
+  if (ledgerErr) return ledgerErr;
 
   interface Agg {
     subJuniorPoints: number; juniorPoints: number; seniorPoints: number; superSeniorPoints: number;
@@ -632,6 +719,7 @@ export async function rebuildStandings(feastId: string, admin: SupabaseClient): 
   const { error: upsertErr } = await admin
     .from("shakha_feast_standings")
     .upsert(upsertRows, { onConflict: "feast_id,shakha_id" });
+  expireTags(TAG.standings);
   if (upsertErr) return upsertErr.message;
 
   return null;
@@ -685,6 +773,7 @@ export async function saveExternalFeastPoints(feastId: string, rows: ExternalFea
   }));
 
   const { error } = await admin.from("shakha_feast_standings").upsert(upsertRows, { onConflict: "feast_id,shakha_id" });
+  expireTags(TAG.standings);
   if (error) return { error: error.message };
   return {};
 }
@@ -712,17 +801,18 @@ export async function searchParticipantResults(
   feastSlug: string,
   query: string
 ): Promise<{ data?: ParticipantSearchRow[]; error?: string }> {
-  const admin = getSupabaseAdmin();
-  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
-
-  const { data, error } = await admin
+  // Matches name, house name or registration number. Characters that are
+  // syntax in a PostgREST or() filter (",", "(", ")") or LIKE wildcards are
+  // dropped from the term rather than escaped.
+  const term = query.replace(/[,()*%_\\"]/g, " ").replace(/\s+/g, " ").trim();
+  if (!term) return { data: [] };
+  const { data, error } = await getSupabaseAdmin()
     .from("participants")
     .select(
-      "id, name, house_name, registration_number, competition_category:competition_categories(slug), shakha:shakhas(name, meghala:meghalas(name)), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
+      "id, name, house_name, registration_number, feast:feasts!inner(slug), competition_category:competition_categories(slug), shakha:shakhas(name, meghala:meghalas(name)), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
     )
-    .eq("feast_id", feast.id)
-    .ilike("name", `%${query}%`)
+    .eq("feast.slug", feastSlug)
+    .or(`name.ilike.%${term}%,house_name.ilike.%${term}%,registration_number.ilike.%${term}%`)
     .limit(25);
   if (error) return { error: error.message };
 
@@ -758,6 +848,181 @@ export async function searchParticipantResults(
   return { data: rows };
 }
 
+// ── Results for one top-level group (Search → "Results by …") ─────────────
+// Every published place and grade won by one shakha, meghala or diocese
+// (whichever org_settings.hierarchy_level is), item by item.
+export type GroupLevel = "shakha" | "meghala" | "diocese";
+
+export interface GroupResultEntry {
+  id: string;
+  name: string;
+  houseName: string | null; // team entries: the members, comma-separated
+  shakha: string;
+  position: number | null;
+  grade: "A" | "B" | "C" | null;
+  totalPoints: number;
+  isTeam: boolean;
+}
+
+export interface GroupResultCompetition {
+  feastCompetitionId: string;
+  name: string;
+  categorySlug: string | null;
+  gender: string | null;
+  isTeam: boolean;
+  entries: GroupResultEntry[];
+}
+
+export async function getGroupResults(
+  feastSlug: string,
+  level: GroupLevel,
+  groupId: string,
+): Promise<{ data?: GroupResultCompetition[]; error?: string }> {
+  if (!feastSlug || !groupId || !["shakha", "meghala", "diocese"].includes(level)) return { error: "Unknown group." };
+  try {
+    return { data: await cachedGroupResults(feastSlug, level, groupId) };
+  } catch (err) {
+    console.error("[getGroupResults]", err);
+    return { error: "Couldn't load results. Please try again." };
+  }
+}
+
+const cachedGroupResults = unstable_cache(
+  async (feastSlug: string, level: GroupLevel, groupId: string) => readGroupResults(feastSlug, level, groupId),
+  ["fp-group-results"],
+  { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.standard },
+);
+
+async function groupShakhaIds(admin: SupabaseClient, level: GroupLevel, groupId: string): Promise<string[]> {
+  if (level === "shakha") return [groupId];
+  if (level === "meghala") {
+    const { data } = await admin.from("shakhas").select("id").eq("meghala_id", groupId);
+    return (data ?? []).map((s) => s.id);
+  }
+  const { data: meghalas } = await admin.from("meghalas").select("id").eq("diocese_id", groupId);
+  const meghalaIds = (meghalas ?? []).map((m) => m.id);
+  if (meghalaIds.length === 0) return [];
+  const { data } = await admin.from("shakhas").select("id").in("meghala_id", meghalaIds);
+  return (data ?? []).map((s) => s.id);
+}
+
+const CATEGORY_ORDER = ["sub_junior", "junior", "senior", "super_senior", "elder"];
+const GENDER_ORDER: Record<string, number> = { girl: 0, boy: 1 };
+
+async function readGroupResults(feastSlug: string, level: GroupLevel, groupId: string): Promise<GroupResultCompetition[]> {
+  const admin = getSupabaseAdmin();
+  const [shakhaIds, { data: fcs, error: fcErr }] = await Promise.all([
+    groupShakhaIds(admin, level, groupId),
+    admin
+      .from("feast_competitions")
+      .select("id, display_order, feast:feasts!inner(slug), competition:competitions(name, type, gender, competition_category:competition_categories(slug))")
+      .eq("feast.slug", feastSlug)
+      .eq("result_status", "published"),
+  ]);
+  if (fcErr) throw new Error(fcErr.message);
+  if (shakhaIds.length === 0 || !fcs?.length) return [];
+  const fcIds = fcs.map((f) => f.id);
+
+  // Filtered to the group's shakhas in the database (inner joins), paged
+  // past the 1000-row cap. Small id chunks: the shakha list shares the URL.
+  const [indiv, team] = await Promise.all([
+    fetchAllIn(
+      fcIds,
+      (ids, from, to) =>
+        admin
+          .from("competition_results")
+          .select("id, feast_competition_id, grade, position, total_points, participant_registration:participant_registrations!inner(participant:participants!inner(name, house_name, shakha_id, shakha:shakhas(name)))")
+          .in("feast_competition_id", ids)
+          .in("participant_registration.participant.shakha_id", shakhaIds)
+          .not("published_at", "is", null)
+          .order("id")
+          .range(from, to),
+      30,
+    ),
+    fetchAllIn(
+      fcIds,
+      (ids, from, to) =>
+        admin
+          .from("team_results")
+          .select("id, feast_competition_id, grade, position, total_points, team_registration:team_registrations!inner(team_name, shakha_id, shakha:shakhas(name), team_registration_members(participant:participants(name)))")
+          .in("feast_competition_id", ids)
+          .in("team_registration.shakha_id", shakhaIds)
+          .not("published_at", "is", null)
+          .order("id")
+          .range(from, to),
+      30,
+    ),
+  ]);
+  if (indiv.error) throw new Error(indiv.error);
+  if (team.error) throw new Error(team.error);
+
+  const one = <T,>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : x ?? undefined);
+  const byComp = new Map<string, GroupResultEntry[]>();
+  const add = (fcId: string, e: GroupResultEntry) => {
+    // Only entries that won something: a place, a grade, or both.
+    if (e.position == null && e.grade == null) return;
+    byComp.set(fcId, [...(byComp.get(fcId) ?? []), e]);
+  };
+
+  for (const r of indiv.data) {
+    const participant = one(one(r.participant_registration)?.participant);
+    add(r.feast_competition_id, {
+      id: r.id,
+      name: participant?.name ?? "—",
+      houseName: participant?.house_name ?? null,
+      shakha: one(participant?.shakha)?.name ?? "—",
+      position: r.position,
+      grade: r.grade as Grade | null,
+      totalPoints: r.total_points ?? 0,
+      isTeam: false,
+    });
+  }
+  for (const r of team.data) {
+    const t = one(r.team_registration);
+    const members = (t?.team_registration_members ?? []).map((m) => one(m.participant)?.name).filter(Boolean);
+    add(r.feast_competition_id, {
+      id: r.id,
+      name: t?.team_name ?? "Team",
+      houseName: members.join(", ") || null,
+      shakha: one(t?.shakha)?.name ?? "—",
+      position: r.position,
+      grade: r.grade as Grade | null,
+      totalPoints: r.total_points ?? 0,
+      isTeam: true,
+    });
+  }
+
+  const gradeRank = (g: string | null) => (g === "A" ? 0 : g === "B" ? 1 : g === "C" ? 2 : 3);
+  const comps: { comp: GroupResultCompetition; order: number }[] = [];
+  for (const fc of fcs) {
+    const entries = byComp.get(fc.id);
+    if (!entries?.length) continue;
+    const c = one(fc.competition);
+    const isTeam = c?.type === "group";
+    entries.sort((a, b) => (a.position ?? 99) - (b.position ?? 99) || gradeRank(a.grade) - gradeRank(b.grade) || a.name.localeCompare(b.name));
+    comps.push({
+      comp: {
+        feastCompetitionId: fc.id,
+        name: c?.name ?? "—",
+        categorySlug: isTeam ? null : one(c?.competition_category)?.slug ?? null,
+        gender: c?.gender ?? null,
+        isTeam,
+        entries,
+      },
+      order: fc.display_order ?? 0,
+    });
+  }
+  // Age group (team events last), then girls before boys, then the fest's own order.
+  const catRank = (x: GroupResultCompetition) => (x.isTeam ? 99 : CATEGORY_ORDER.indexOf(x.categorySlug ?? "") + 1 || 50);
+  comps.sort((a, b) =>
+    catRank(a.comp) - catRank(b.comp) ||
+    (GENDER_ORDER[a.comp.gender ?? ""] ?? 2) - (GENDER_ORDER[b.comp.gender ?? ""] ?? 2) ||
+    a.order - b.order ||
+    a.comp.name.localeCompare(b.comp.name),
+  );
+  return comps.map((x) => x.comp);
+}
+
 // ── /screen big-display data ──────────────────────────────────────────────
 export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; }
 export interface ScreenPosition { place: 1 | 2 | 3; name: string; houseName: string | null; shakha: string; meghalaName: string | null; photoUrl: string | null; }
@@ -775,29 +1040,42 @@ export interface ScreenData { competitions: ScreenCompetitionResult[] }
 // source app (which hardcoded one specific prod Supabase storage file as a
 // 100%-of-the-time fallback), positions[].photoUrl is always null here —
 // the UI shows its generic placeholder silhouette instead.
+// Every /screen display polls this; cached so a hall full of screens (and
+// the public results it mirrors) costs one read per publish.
 export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenData; error?: string }> {
-  const admin = getSupabaseAdmin();
-  const { data: feast, error: feastErr } = await admin.from("feasts").select("id").eq("slug", feastSlug).single();
-  if (feastErr || !feast) return { error: feastErr?.message ?? "Fest not found" };
+  return cachedScreenData(feastSlug);
+}
 
+const cachedScreenData = unstable_cache(
+  async (feastSlug: string) => readScreenData(feastSlug),
+  ["fp-screen-data"],
+  { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.live },
+);
+
+async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; error?: string }> {
+  const admin = getSupabaseAdmin();
   const { data: fcs, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, competition:competitions(name, competition_category:competition_categories(name, slug))")
-    .eq("feast_id", feast.id)
+    .select("id, feast:feasts!inner(slug), competition:competitions(name, competition_category:competition_categories(name, slug))")
+    .eq("feast.slug", feastSlug)
     .eq("result_status", "published")
     .order("display_order");
   if (fcErr) return { error: fcErr.message };
   if (!fcs || fcs.length === 0) return { data: { competitions: [] } };
 
-  const { data: results, error: resErr } = await admin
-    .from("competition_results")
-    .select("feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))")
-    .in("feast_competition_id", fcs.map((f) => f.id))
-    .not("published_at", "is", null);
-  if (resErr) return { error: resErr.message };
+  const { data: results, error: resErr } = await fetchAllIn(fcs.map((f) => f.id), (ids, from, to) =>
+    admin
+      .from("competition_results")
+      .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))")
+      .in("feast_competition_id", ids)
+      .not("published_at", "is", null)
+      .order("id")
+      .range(from, to)
+  );
+  if (resErr) return { error: resErr };
 
   const byFc = new Map<string, typeof results>();
-  for (const r of results ?? []) {
+  for (const r of results) {
     (byFc.get(r.feast_competition_id) ?? byFc.set(r.feast_competition_id, []).get(r.feast_competition_id)!).push(r);
   }
 
@@ -843,6 +1121,80 @@ export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenD
   return { data: { competitions } };
 }
 
+// ── dashboard "Latest result" ────────────────────────────────────────────
+export interface LatestResult {
+  feastCompetitionId: string;
+  publishedAt: string;
+  feastName: string;
+  feastSlug: string;
+  feastType: string;
+  competitionName: string;
+  categorySlug: string | null;
+  gender: string | null;
+  isTeam: boolean;
+  participants: number;
+  rows: unknown[];
+}
+
+// The most recently published competition in a non-draft fest, with its
+// published rows — the dashboard's "Latest result" card. Same freshness
+// signal as the landing banner (feast_competitions.updated_at) and cached
+// like the other public reads.
+// The home page features a result only for its first few days; after that
+// the card goes away until the next publish. Checked outside the cache so
+// the age is measured at request time, not when the entry was cached.
+const LATEST_RESULT_MAX_AGE_MS = 4 * 24 * 60 * 60 * 1000;
+
+export async function getLatestResult(): Promise<LatestResult | null> {
+  const latest = await cachedLatestResult();
+  if (!latest) return null;
+  const age = Date.now() - new Date(latest.publishedAt).getTime();
+  return Number.isFinite(age) && age <= LATEST_RESULT_MAX_AGE_MS ? latest : null;
+}
+
+const cachedLatestResult = unstable_cache(async () => readLatestResult(), ["fp-latest-result"], {
+  tags: [TAG.results, TAG.hierarchy],
+  revalidate: TTL.live,
+});
+
+async function readLatestResult(): Promise<LatestResult | null> {
+  const { data: fc } = await getSupabaseAdmin()
+    .from("feast_competitions")
+    .select(
+      "id, updated_at, feast:feasts!inner(name, slug, type, status), competition:competitions(name, type, gender, competition_category:competition_categories(slug)), participant_registrations(count)"
+    )
+    .eq("result_status", "published")
+    .neq("feast.status", "draft")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!fc) return null;
+  const feast = Array.isArray(fc.feast) ? fc.feast[0] : fc.feast;
+  const comp = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
+  const cat = Array.isArray(comp?.competition_category) ? comp?.competition_category[0] : comp?.competition_category;
+  const regCount = Array.isArray(fc.participant_registrations) ? fc.participant_registrations[0] : fc.participant_registrations;
+  const isTeam = comp?.type === "group";
+  // Imported lazily: team-results imports this module (rebuildStandings).
+  const { getPublishedTeamResults } = await import("@/actions/team-results");
+  const [rows, latest] = await Promise.all([
+    isTeam ? getPublishedTeamResults(fc.id) : cachedPublishedResults(fc.id),
+    readLatestPublished([fc.id]),
+  ]);
+  return {
+    feastCompetitionId: fc.id,
+    publishedAt: latest?.publishedAt ?? fc.updated_at,
+    feastName: feast?.name ?? "",
+    feastSlug: feast?.slug ?? "",
+    feastType: feast?.type ?? "",
+    competitionName: comp?.name ?? "Competition",
+    categorySlug: cat?.slug ?? null,
+    gender: comp?.gender ?? null,
+    isTeam,
+    participants: Number((regCount as { count?: number } | undefined)?.count ?? 0),
+    rows,
+  };
+}
+
 export interface PublishedResultsFeast {
   slug: string;
   name: string;
@@ -854,6 +1206,16 @@ export interface PublishedResultsFeast {
 // wins (feast_competitions.updated_at, same signal getRecentActivity uses).
 // A draft feast never surfaces here even if its competitions are published.
 export async function getLatestPublishedResultsFeast(): Promise<PublishedResultsFeast | null> {
+  return cachedLatestResultsFeast();
+}
+
+const cachedLatestResultsFeast = unstable_cache(
+  async () => readLatestPublishedResultsFeast(),
+  ["fp-latest-results-feast"],
+  { tags: [TAG.results], revalidate: TTL.live },
+);
+
+async function readLatestPublishedResultsFeast(): Promise<PublishedResultsFeast | null> {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("feast_competitions")

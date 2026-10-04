@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, expireTags } from "@/lib/cache-tags";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { recalcCompetitionProgress } from "@/actions/feast";
@@ -129,11 +130,14 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
   const maxTeamMembers = await getMaxTeamSize(team.feast_competition_id);
   if (participantIds.length > maxTeamMembers) return { error: `Maximum ${maxTeamMembers} members allowed.` };
 
-  const { data: members } = await admin
-    .from("participants")
-    .select("id, shakha_id, feast_id")
-    .in("id", participantIds);
-  const allBelong = (members ?? []).every((m) => m.shakha_id === team.shakha_id && m.feast_id === team.feast_id);
+  // A team speaks for its whole cap scope: at meghala/diocese level its
+  // members come from any shakha in it (see lib/scope-teams).
+  const [{ data: members }, scopeShakhaIds] = await Promise.all([
+    admin.from("participants").select("id, shakha_id, feast_id").in("id", participantIds),
+    resolveCapScopeShakhaIds(admin, team.shakha_id),
+  ]);
+  const inScope = new Set(scopeShakhaIds);
+  const allBelong = (members ?? []).every((m) => inScope.has(m.shakha_id) && m.feast_id === team.feast_id);
   if (!allBelong || (members?.length ?? 0) !== participantIds.length) {
     return { error: "All members must belong to the team's Shakha." };
   }
@@ -163,6 +167,8 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
   );
   if (memberErr) return { error: memberErr.message };
 
+  // Team names and members show on published team results.
+  expireTags(TAG.results);
   return {};
 }
 

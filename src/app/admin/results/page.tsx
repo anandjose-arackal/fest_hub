@@ -3,8 +3,9 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { Medal, Check, ImageDown, Download, X, Award } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { setMaxScore, saveDraftScores, publishResults, unpublishResults, getCompetitionScores } from "@/actions/results";
-import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores } from "@/actions/team-results";
+import { fetchAllIn, groupBy } from "@/lib/fetch-all";
+import { setMaxScore, saveDraftScores, publishResults, unpublishResults, getCompetitionScores, getScoresForCompetitions } from "@/actions/results";
+import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores, getScoresForTeamCompetitions } from "@/actions/team-results";
 import {
   calcGrade, calcPositions, positionLabel,
   DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/result-calculator";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { formatCompetitionOptionLabel, genderDisplayWord } from "@/lib/competition-categories";
-import { getOrgSettings } from "@/lib/org-settings";
+import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { feastPosterHeading } from "@/lib/feast-data";
 import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, type PosterData, type PosterWinner, type PosterTheme } from "@/lib/poster-render";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
@@ -610,19 +611,39 @@ export default function ResultsPage() {
   async function exportAll(layout: PrintLayout) {
     const feast = feasts.find((f) => f.id === feastId);
     const sections: { title: string; subtitle: string; isGroup: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[] = [];
+    // Every competition's entries and scores in four batched reads (chunked
+    // and paged), instead of two sequential round trips per competition.
+    const groupIds = feastComps.filter((fc) => fc.competition.type === "group").map((fc) => fc.id);
+    const indivIds = feastComps.filter((fc) => fc.competition.type !== "group").map((fc) => fc.id);
+    const [allTeams, allRegs, teamScores, indivScores] = await Promise.all([
+      fetchAllIn(groupIds, (ids, from, to) =>
+        supabase
+          .from("team_registrations")
+          .select("id, feast_competition_id, team_name, shakha:shakhas(id,name), team_registration_members(participant:participants(name, house_name))")
+          .in("feast_competition_id", ids)
+          .order("id")
+          .range(from, to)
+      ),
+      fetchAllIn(indivIds, (ids, from, to) =>
+        supabase
+          .from("participant_registrations")
+          .select("id, feast_competition_id, participant:participants(name, house_name, registration_number, shakha:shakhas(id,name))")
+          .in("feast_competition_id", ids)
+          .order("id")
+          .range(from, to)
+      ),
+      getScoresForTeamCompetitions(groupIds),
+      getScoresForCompetitions(indivIds),
+    ]);
+    const teamsByFc = groupBy(allTeams.data, (t) => t.feast_competition_id);
+    const regsByFc = groupBy(allRegs.data, (r) => r.feast_competition_id);
     for (const fc of feastComps) {
       const group = fc.competition.type === "group";
       let rows: (EntryRow & Preview)[] = [];
       if (group) {
-        const [{ data: teams }, scoreEntries] = await Promise.all([
-          supabase
-            .from("team_registrations")
-            .select("id, team_name, shakha:shakhas(id,name), team_registration_members(participant:participants(name, house_name))")
-            .eq("feast_competition_id", fc.id),
-          getTeamCompetitionScores(fc.id),
-        ]);
-        const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s]));
-        rows = (teams ?? []).map((t) => {
+        const teams = teamsByFc.get(fc.id) ?? [];
+        const scoreMap = new Map((teamScores[fc.id] ?? []).map((s) => [s.registrationId, s]));
+        rows = teams.map((t) => {
           const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
           const members = (t.team_registration_members ?? []).map((m) => {
             const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
@@ -636,12 +657,9 @@ export default function ResultsPage() {
           };
         });
       } else {
-        const [{ data: regs }, scoreEntries] = await Promise.all([
-          supabase.from("participant_registrations").select("id, participant:participants(name, house_name, registration_number, shakha:shakhas(id,name))").eq("feast_competition_id", fc.id),
-          getCompetitionScores(fc.id),
-        ]);
-        const scoreMap = new Map(scoreEntries.map((s) => [s.registrationId, s]));
-        rows = (regs ?? []).map((r) => {
+        const regs = regsByFc.get(fc.id) ?? [];
+        const scoreMap = new Map((indivScores[fc.id] ?? []).map((s) => [s.registrationId, s]));
+        rows = regs.map((r) => {
           const p = Array.isArray(r.participant) ? r.participant[0] : r.participant;
           const shakha = Array.isArray(p?.shakha) ? p?.shakha[0] : p?.shakha;
           const s = scoreMap.get(r.id);

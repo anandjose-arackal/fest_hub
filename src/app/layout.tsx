@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Baloo_Chettan_2, Anek_Malayalam, Gayathri } from "next/font/google";
+import { Baloo_Chettan_2, Anek_Malayalam, Gayathri, Archivo, Manrope } from "next/font/google";
 import { Providers } from "@/components/providers";
 import {
   SITE_URL, SITE_NAME, SITE_SHORT_NAME, SITE_DESCRIPTION,
   SITE_KEYWORDS, SITE_LOCALE, OG_IMAGE,
   ORGANIZATION_SCHEMA, WEBSITE_SCHEMA,
 } from "@/lib/site-config";
-import { getOrgSettings } from "@/lib/org-settings";
+import { getOrgSettingsCached as getOrgSettings } from "@/lib/org-settings-server";
 import type { PortalTheme } from "@/types";
 import "./globals.css";
 
@@ -25,6 +25,8 @@ const THEME_COLORS: Record<PortalTheme, string> = {
   plum: "#593C8F",
   midnight: "#171325",
   emerald: "#0D1A16",
+  championship: "#1C1946",
+  burgundy: "#3A0F1E",
 };
 
 // --font-poppins is used throughout the Feast Portal/admin UI for body text;
@@ -49,6 +51,22 @@ const gayathri = Gayathri({
   subsets: ["latin", "malayalam"],
   weight: ["400", "700"],
   variable: "--font-inter",
+  display: "swap",
+});
+
+// Feast Portal championship design: Archivo (condensed via its wdth axis)
+// for display headings and numbers, Manrope for UI text. Only the portal's
+// fp-* utilities and components read these; admin keeps Baloo/Gayathri.
+const archivo = Archivo({
+  subsets: ["latin"],
+  axes: ["wdth"],
+  variable: "--font-archivo",
+  display: "swap",
+});
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-manrope",
   display: "swap",
 });
 
@@ -108,7 +126,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${balooChettan2.variable} ${anekMalayalam.variable} ${gayathri.variable} h-full antialiased`}
+      className={`${balooChettan2.variable} ${anekMalayalam.variable} ${gayathri.variable} ${archivo.variable} ${manrope.variable} h-full antialiased`}
     >
       <head>
         <script

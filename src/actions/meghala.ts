@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, expireTags } from "@/lib/cache-tags";
 
 // meghalas has no authenticated write RLS policy (public read only) — all
 // writes go through the service-role client, same convention as shakhas
@@ -25,6 +26,7 @@ export async function createMeghala(input: MeghalaInput): Promise<{ error?: stri
     .from("meghalas")
     .insert({ name, slug, color: input.color, diocese_id: input.dioceseId || null });
   if (error) return { error: error.message };
+  expireTags(TAG.hierarchy, TAG.standings);
   return {};
 }
 
@@ -37,11 +39,13 @@ export async function updateMeghala(id: string, input: MeghalaInput): Promise<{ 
     .update({ name, slug, color: input.color, diocese_id: input.dioceseId || null })
     .eq("id", id);
   if (error) return { error: error.message };
+  expireTags(TAG.hierarchy, TAG.standings);
   return {};
 }
 
 export async function deleteMeghala(id: string): Promise<{ error?: string }> {
   const { error } = await getSupabaseAdmin().from("meghalas").delete().eq("id", id);
   if (error) return { error: error.message };
+  expireTags(TAG.hierarchy, TAG.standings);
   return {};
 }
