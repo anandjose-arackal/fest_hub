@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, type DragEvent } from "react";
+import { useCallback, useState, type DragEvent } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Upload, X, Download } from "lucide-react";
 import { GlowBtn } from "../feast-shared";
-import { getOrgSettings } from "@/lib/org-settings";
-import type { OrgSettings } from "@/types";
+import { useOrgSettings } from "@/hooks/use-feast";
 import { SocialPoster, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT } from "./social-poster";
 import { PhotoCropper } from "./photo-cropper";
 import { useSocialPosterGenerator } from "./use-social-poster-generator";
@@ -26,11 +25,7 @@ const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterWinner; onClose: () => void }) {
   const gen = useSocialPosterGenerator(winner.competitionName, winner.winnerName);
   const [dragActive, setDragActive] = useState(false);
-  const [org, setOrg] = useState<OrgSettings | null>(null);
-
-  useEffect(() => {
-    getOrgSettings().then(setOrg);
-  }, []);
+  const org = useOrgSettings();
 
   const handleFiles = useCallback(
     (files: FileList | null) => {

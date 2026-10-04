@@ -1,200 +1,331 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, ChevronDown, Trophy, Search, BookOpen } from "lucide-react";
-import { useFeast, useFeasts, type FeastCompetitionUI } from "@/hooks/use-feast";
-import { getPublishedResults } from "@/actions/results";
-import { getPublishedTeamResults } from "@/actions/team-results";
-import { CATEGORY_LABELS, FeastTabs, FeastTopBar, theme } from "./feast-shared";
+import { Loader2, ChevronRight, Trophy, Search, BookOpen, Clock, Users } from "lucide-react";
+import { showsResults, useFeast, useFeasts, type FeastCompetitionUI } from "@/hooks/use-feast";
+import { FeastTopBar, catStyle, mix, theme } from "./feast-shared";
 import { feastPosterHeading } from "@/lib/feast-data";
-import { ResultTable, sortResults, type PublicResultRow } from "./feast-shared-results";
+import { CompetitionResults, competitionCategoryLabel, genderLabel, loadCompetitionResults, type PublicResultRow } from "./feast-shared-results";
+import { Chip, Eyebrow, Medal } from "./feast-ui";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 
-const CAT_CONFIG = [
-  { slug: "sub_junior", label: "Sub Jr", color: "#34D3EE" },
-  { slug: "junior", label: "Junior", color: "#22C55E" },
-  { slug: "senior", label: "Senior", color: "var(--fp-primary)" },
-  { slug: "super_senior", label: "Super Sr", color: "#F5A742" },
-  { slug: "elder", label: "Elder", color: "#9D99BC" },
+const CAT_TABS = [
+  { slug: "sub_junior", label: "Sub Junior" },
+  { slug: "junior", label: "Junior" },
+  { slug: "senior", label: "Senior" },
+  { slug: "super_senior", label: "Super Senior" },
+  { slug: "elder", label: "Elder" },
 ] as const;
-const TEAM_TAB = { slug: "team", label: "Team", color: "var(--fp-accent)" } as const;
+const TEAM_TAB = { slug: "team", label: "Team" } as const;
 
-function mapRow(r: Record<string, unknown>, isTeam: boolean): PublicResultRow {
-  if (isTeam) {
-    const teamReg = Array.isArray(r.team_registration) ? (r.team_registration as Record<string, unknown>[])[0] : (r.team_registration as Record<string, unknown> | undefined);
-    const shakha = Array.isArray(teamReg?.shakha) ? (teamReg?.shakha as Record<string, unknown>[])[0] : (teamReg?.shakha as Record<string, unknown> | undefined);
-    const shakhaMeghala = Array.isArray(shakha?.meghala) ? (shakha?.meghala as Record<string, unknown>[])[0] : (shakha?.meghala as Record<string, unknown> | undefined);
-    const members = ((teamReg?.team_registration_members as Record<string, unknown>[] | undefined) ?? []).map((m) => {
-      const p = Array.isArray(m.participant) ? (m.participant as Record<string, unknown>[])[0] : (m.participant as Record<string, unknown> | undefined);
-      return (p?.name as string) ?? "";
-    });
-    return {
-      registrationId: r.id as string,
-      name: (teamReg?.team_name as string) ?? "Team",
-      houseName: members.join(", "),
-      shakha: (shakha?.name as string) ?? "—",
-      meghalaName: (shakhaMeghala?.name as string | undefined) ?? null,
-      grade: r.grade as PublicResultRow["grade"],
-      position: r.position as number | null,
-      totalPoints: r.total_points as number,
-      isTeam: true,
-    };
-  }
-  const partReg = Array.isArray(r.participant_registration) ? (r.participant_registration as Record<string, unknown>[])[0] : (r.participant_registration as Record<string, unknown> | undefined);
-  const participant = Array.isArray(partReg?.participant) ? (partReg?.participant as Record<string, unknown>[])[0] : (partReg?.participant as Record<string, unknown> | undefined);
-  const shakha = Array.isArray(participant?.shakha) ? (participant?.shakha as Record<string, unknown>[])[0] : (participant?.shakha as Record<string, unknown> | undefined);
-  const shakhaMeghala = Array.isArray(shakha?.meghala) ? (shakha?.meghala as Record<string, unknown>[])[0] : (shakha?.meghala as Record<string, unknown> | undefined);
-  return {
-    registrationId: r.id as string,
-    name: (participant?.name as string) ?? "—",
-    houseName: (participant?.house_name as string) ?? null,
-    shakha: (shakha?.name as string) ?? "—",
-    meghalaName: (shakhaMeghala?.name as string | undefined) ?? null,
-    grade: r.grade as PublicResultRow["grade"],
-    position: r.position as number | null,
-    totalPoints: r.total_points as number,
-  };
+// ── Hero ring: published / total ────────────────────────────────────────
+function ResultsRing({ done, total, size = 88 }: { done: number; total: number; size?: number }) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div
+      role="img"
+      aria-label={`${done} of ${total} results published`}
+      className="relative shrink-0 rounded-full"
+      style={{ width: size, height: size, background: `conic-gradient(var(--fp-primary) 0%, var(--fp-accent) ${pct * 0.57}%, var(--fp-gold) ${pct}%, var(--fp-track) ${pct}% 100%)` }}
+    >
+      <div className="absolute inset-[6px] flex flex-col items-center justify-center gap-1 rounded-full" style={{ background: "var(--fp-base)" }}>
+        <span className="fp-num" style={{ fontSize: Math.round(size * 0.31) }}>{done}</span>
+        <span className="text-[10px] font-bold" style={{ color: theme.sub }}>of {total} out</span>
+      </div>
+    </div>
+  );
 }
 
-function CompCard({ comp, catColor, feastName, onGeneratePoster }: { comp: FeastCompetitionUI; catColor: string; feastName: string; onGeneratePoster: (winner: SocialPosterWinner) => void }) {
-  const [open, setOpen] = useState(false);
-  const [results, setResults] = useState<PublicResultRow[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const isTeam = comp.cat === "Team";
-  const isPublished = comp.compStatus === "published";
-  const categoryLabel = [CATEGORY_LABELS[comp.competitionCategorySlug ?? ""], comp.gender === "boy" ? "Boys" : comp.gender === "girl" ? "Girls" : null].filter(Boolean).join(" · ");
-  const handleGeneratePoster = (row: PublicResultRow) =>
-    onGeneratePoster({
-      rank: row.position as 1 | 2 | 3,
-      winnerName: row.name,
-      houseName: row.houseName,
-      shakhaName: row.shakha,
-      competitionName: comp.name,
-      categoryLabel,
-      feastName,
-    });
-
-  async function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && results === null) {
-      setLoading(true);
-      const rows = isTeam ? await getPublishedTeamResults(comp.id) : await getPublishedResults(comp.id);
-      setResults(sortResults(rows.map((r) => mapRow(r as unknown as Record<string, unknown>, isTeam))));
-      setLoading(false);
-    }
-  }
-
-  const positions = (results ?? []).filter((r) => r.position !== null);
-  const grades = (results ?? []).filter((r) => r.position === null && r.grade !== null);
-
+// ── Item card (Boys / Girls / Open groups) ──────────────────────────────
+function ItemCard({ comp, open, onToggle, rows, accent, delay, onPoster }: {
+  comp: FeastCompetitionUI;
+  open: boolean;
+  onToggle: () => void;
+  rows: PublicResultRow[] | undefined;
+  accent: { color: string; hi: string };
+  delay: number;
+  onPoster: (row: PublicResultRow) => void;
+}) {
+  const out = comp.compStatus === "published";
+  const g = genderLabel(comp.gender);
+  const gc = g === "Girls" ? "var(--fp-girls)" : "var(--fp-boys)";
+  const winner = rows?.find((r) => r.position === 1);
+  const panelId = `item-${comp.id}`;
   return (
-    <div className="relative mb-2.5 overflow-hidden rounded-2xl border" style={{ background: "var(--fp-glass)", backdropFilter: "blur(16px)", borderColor: "var(--fp-glass-border)" }}>
-      <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: catColor }} />
-      <button onClick={toggle} className="w-full pl-4 pr-3 py-2.5 text-left">
-        <div className="flex items-start justify-between gap-2">
-          <p className="flex-1 text-[18px] font-bold leading-tight" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{comp.name}</p>
-          <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
-            {isPublished ? (
-              <span className="flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: "rgba(var(--fp-primary-rgb),0.14)", color: theme.purple }}><Trophy className="mr-0.5 h-2.5 w-2.5" />Results</span>
-            ) : (
-              <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: theme.fill, color: theme.faint }}>Pending</span>
+    <div
+      id={`comp-${comp.id}`}
+      className="fp-fade-up relative scroll-mt-24 overflow-hidden rounded-[20px] transition-colors"
+      style={{
+        animationDelay: `${delay}s`,
+        background: open ? theme.surface2 : out ? theme.surface : theme.surface3,
+        border: `1px solid ${open ? mix(accent.color, 50) : theme.line}`,
+        boxShadow: open ? theme.shadow : undefined,
+      }}
+    >
+      <span aria-hidden="true" className="absolute left-[18px] right-[18px] top-0 h-[2px] rounded-sm" style={{ background: `linear-gradient(90deg, transparent, ${accent.color}, transparent)`, opacity: open ? 1 : out ? 0.7 : 0.25 }} />
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={!out}
+        aria-expanded={out ? open : undefined}
+        aria-controls={out ? panelId : undefined}
+        className="flex w-full items-center gap-3.5 py-4 pl-4 pr-3.5 text-left disabled:cursor-default"
+        style={{ color: theme.text }}
+      >
+        <span className="flex min-w-0 flex-1 flex-col gap-2">
+          <span className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+            <span className="fp-ml text-[19px] font-bold leading-[1.3]" style={{ color: out ? theme.text : theme.sub }}>{comp.name}</span>
+            {g && (
+              <span className="inline-flex h-6 items-center rounded-full px-2.5 text-[11.5px] font-extrabold" style={{ color: gc, border: `1px solid ${mix(gc, 40)}`, background: mix(gc, 10) }}>{g}</span>
             )}
-            {isPublished ? (
-              // Same prominent toggle as the feast-details competition card.
-              <span
-                className="flex h-8 w-8 items-center justify-center rounded-full text-white ring-2 ring-white"
-                style={{
-                  background: "linear-gradient(135deg, var(--fp-primary), var(--fp-primary-light))",
-                  boxShadow: "0 4px 12px rgba(var(--fp-primary-rgb),0.45)",
-                }}
-              >
-                <span className={open ? undefined : "animate-[resultsNudge_1.6s_ease-in-out_infinite]"}>
-                  <ChevronDown className="h-[18px] w-[18px] transition-transform" strokeWidth={2.75} style={{ transform: open ? "rotate(180deg)" : undefined }} />
-                </span>
-              </span>
-            ) : (
-              <span className="flex h-6 w-6 items-center justify-center rounded-full transition-transform" style={{ background: "rgba(var(--fp-primary-rgb),0.1)", transform: open ? "rotate(180deg)" : undefined }}>
-                <ChevronDown className="h-3.5 w-3.5" style={{ color: theme.purple }} />
-              </span>
+          </span>
+          <span className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12.5px] font-bold" style={{ color: theme.sub }}>
+            {comp.filled > 0 && (
+              <span className="inline-flex items-center gap-[5px]"><Users className="h-[13px] w-[13px]" aria-hidden="true" />{comp.filled} participants</span>
             )}
-          </div>
-        </div>
-        {(comp.gender === "boy" || comp.gender === "girl") && (
-          <p className="mt-0.5 text-sm" style={{ color: comp.gender === "girl" ? "#EC4899" : "#3B82F6" }}>{comp.gender === "girl" ? "Girls" : "Boys"}</p>
-        )}
+            {out ? (
+              <span className="inline-flex items-center gap-[5px]" style={{ color: theme.goldInk }}><Trophy className="h-[13px] w-[13px]" aria-hidden="true" />Results out</span>
+            ) : (
+              <span className="inline-flex items-center gap-[5px]"><Clock className="h-[13px] w-[13px]" aria-hidden="true" />Awaiting results</span>
+            )}
+          </span>
+          {out && !open && winner && (
+            <span className="flex min-w-0 items-center gap-2 text-[13px] font-bold" style={{ color: theme.text }}>
+              <Medal pos={1} size={16} tiny label={false} />
+              <span className="fp-ml min-w-0 truncate">{winner.name} <span style={{ color: theme.faint }}>· {winner.shakha}</span></span>
+            </span>
+          )}
+        </span>
+        <span
+          aria-hidden="true"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-[transform,background] duration-300"
+          style={{
+            background: open ? accent.hi : out ? theme.surface3 : "transparent",
+            color: open ? "var(--fp-on-cat)" : out ? theme.text : theme.faint,
+            transform: open ? "rotate(90deg)" : undefined,
+          }}
+        >
+          {out ? <ChevronRight className="h-[18px] w-[18px]" /> : <Clock className="h-4 w-4" />}
+        </span>
       </button>
       {open && (
-        <div className="px-3 pb-3">
-          {loading ? (
-            <div className="flex justify-center py-6"><Loader2 className="h-[18px] w-[18px] animate-spin" style={{ color: catColor }} /></div>
-          ) : !isPublished ? (
-            <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: theme.fill, color: "#9CA3AF" }}>Results not yet published</div>
-          ) : (results?.length ?? 0) === 0 ? (
-            <div className="rounded-xl py-5 text-center text-[13px]" style={{ background: theme.fill, color: "#9CA3AF" }}>No results recorded</div>
-          ) : (
-            // Side-by-side only when both tables have rows — otherwise the lone
-            // table (ResultTable renders nothing when empty) gets the full width.
-            <div className={positions.length > 0 && grades.length > 0 ? "lg:grid lg:grid-cols-2 lg:gap-5" : undefined}>
-              <ResultTable title="Positions" rows={positions} color={catColor} onGeneratePoster={handleGeneratePoster} />
-              <ResultTable title="Grades" rows={grades} color={catColor} />
-            </div>
-          )}
+        <div id={panelId} className="px-2.5 pb-3">
+          <CompetitionResults rows={rows} accentColor={accent.color} onPoster={onPoster} />
         </div>
       )}
     </div>
   );
 }
 
-function FeastContent({ slug, onGeneratePoster }: { slug: string; onGeneratePoster: (winner: SocialPosterWinner) => void }) {
+function FeastContent({ slug, festChips, onGeneratePoster }: { slug: string; festChips: React.ReactNode; onGeneratePoster: (winner: SocialPosterWinner) => void }) {
   const { feast, loading } = useFeast(slug);
   const [activeTab, setActiveTab] = useState<string>("");
+  const [gender, setGender] = useState<"all" | "girl" | "boy" | "common">("all");
+  // undefined = no choice made yet in this tab/section: the first published
+  // item opens by default. null = the viewer closed everything.
+  const [openId, setOpenId] = useState<string | null | undefined>(undefined);
+  const [cache, setCache] = useState<Record<string, PublicResultRow[]>>({});
+  const requested = useRef(new Set<string>());
 
-  const hasTeam = feast?.competitions.some((c) => c.cat === "Team") ?? false;
-  const available = [
-    ...CAT_CONFIG.filter((cat) => feast?.competitions.some((c) => c.competitionCategorySlug === cat.slug && c.cat !== "Team")),
+  const comps = feast?.competitions ?? [];
+  const hasTeam = comps.some((c) => c.cat === "Team");
+  const tabs = [
+    ...CAT_TABS.filter((cat) => comps.some((c) => c.competitionCategorySlug === cat.slug && c.cat !== "Team")),
     ...(hasTeam ? [TEAM_TAB] : []),
   ];
-  const resolved = available.some((c) => c.slug === activeTab) ? activeTab : available[0]?.slug ?? "";
-  const filtered = resolved === "team" ? feast?.competitions.filter((c) => c.cat === "Team") ?? [] : feast?.competitions.filter((c) => c.competitionCategorySlug === resolved && c.cat !== "Team") ?? [];
-  const activeColor = available.find((c) => c.slug === resolved)?.color ?? theme.purple;
+  const resolved = tabs.some((c) => c.slug === activeTab) ? activeTab : tabs[0]?.slug ?? "";
+  const inTab = (slugKey: string) => (slugKey === "team" ? comps.filter((c) => c.cat === "Team") : comps.filter((c) => c.competitionCategorySlug === slugKey && c.cat !== "Team"));
+  const filtered = inTab(resolved);
+  const accent = catStyle(resolved === "team" ? null : resolved);
+  const doneAll = comps.filter((c) => c.compStatus === "published").length;
 
-  if (loading && !feast?.competitions.length) return <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin" style={{ color: theme.lavender }} /></div>;
-  if (!feast?.competitions.length) return <p className="py-10 text-center text-sm" style={{ color: theme.sub }}>No competitions found for this fest.</p>;
+  function load(comp: FeastCompetitionUI) {
+    if (requested.current.has(comp.id)) return;
+    requested.current.add(comp.id);
+    loadCompetitionResults(comp).then((rows) => setCache((c) => ({ ...c, [comp.id]: rows })));
+  }
+
+  function toggle(comp: FeastCompetitionUI) {
+    setOpenId(effectiveOpenId === comp.id ? null : comp.id);
+  }
+
+  const handlePoster = (comp: FeastCompetitionUI) => (row: PublicResultRow) =>
+    onGeneratePoster({
+      rank: row.position as 1 | 2 | 3,
+      winnerName: row.name,
+      houseName: row.houseName,
+      shakhaName: row.shakha,
+      competitionName: comp.name,
+      categoryLabel: competitionCategoryLabel(comp),
+      feastName: feast ? feastPosterHeading(feast) : "",
+    });
+
+  const groups = ([
+    ["girl", "Girls", "var(--fp-girls)"],
+    ["boy", "Boys", "var(--fp-boys)"],
+    ["common", "Common", accent.color],
+  ] as const)
+    .map(([key, label, line]) => ({
+      key, label, line,
+      items: filtered.filter((c) => (key === "common" ? c.gender !== "girl" && c.gender !== "boy" : c.gender === key)),
+    }))
+    .filter((g) => g.items.length > 0);
+  const showSegments = groups.length > 1;
+  // A section the current tab doesn't have falls back to All.
+  const activeGender = groups.some((g) => g.key === gender) ? gender : "all";
+  const visibleGroups = groups.filter((g) => activeGender === "all" || g.key === activeGender);
+  const firstPublishedId = visibleGroups.flatMap((g) => g.items).find((c) => c.compStatus === "published")?.id ?? null;
+  const effectiveOpenId = openId === undefined ? firstPublishedId : openId;
+  const openComp = effectiveOpenId ? comps.find((c) => c.id === effectiveOpenId) : undefined;
+
+  // Load whichever item is open — including the default first one.
+  useEffect(() => {
+    if (openComp) load(openComp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openComp?.id]);
+
+  const hero = (
+    <section className="flex items-end justify-between gap-3.5 px-1 pt-2">
+      <div className="min-w-0">
+        <Eyebrow>{feast ? `Fests ${feast.year}` : "Fests"}</Eyebrow>
+        <h1 className="fp-disp m-0 mt-3 text-[min(15vw,62px)] xl:text-[clamp(62px,6vw,92px)]">
+          <span className="block">Fest</span>
+          <span className="fp-hl-text block">Results</span>
+        </h1>
+        <p className="m-0 mt-3 text-[15px] font-semibold" style={{ color: theme.sub }}>Celebrating every achievement</p>
+      </div>
+      {comps.length > 0 && <ResultsRing done={doneAll} total={comps.length} />}
+    </section>
+  );
+
+  if (loading && !comps.length) {
+    return (
+      <>
+        {hero}
+        {festChips}
+        <div className="flex justify-center py-12" role="status" aria-label="Loading results"><Loader2 className="h-5 w-5 animate-spin" style={{ color: theme.lavender }} /></div>
+      </>
+    );
+  }
 
   return (
-    <div className="relative overflow-hidden rounded-[20px] p-3" style={{ background: "linear-gradient(145deg,rgba(var(--fp-primary-rgb),0.08),rgba(var(--fp-primary-rgb),0.03),rgba(var(--fp-primary-rgb),0.02),rgba(var(--fp-primary-rgb),0.08))", border: "1px solid rgba(var(--fp-primary-rgb),0.12)" }}>
-      {available.length === 0 ? (
-        <p className="py-8 text-center text-[15px]" style={{ color: "#6B7280" }}>No competitions yet.</p>
+    <>
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-[-80px] top-[260px] h-[360px] transition-[background] duration-500" style={{ background: `radial-gradient(50% 50% at 50% 50%, ${mix(accent.color, 18)} 0%, transparent 70%)` }} />
+      {hero}
+      {festChips}
+
+      {tabs.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-16">
+          <BookOpen className="h-7 w-7" style={{ color: theme.faint }} />
+          <p className="text-sm font-semibold" style={{ color: theme.sub }}>No competitions found for this fest.</p>
+        </div>
       ) : (
         <>
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {available.map((cat) => {
-              const on = cat.slug === resolved;
+          <div role="group" aria-label="Category" className="fp-scroll -mx-4 flex gap-2.5 overflow-x-auto px-4 pb-2 pt-4 sm:mx-0 sm:grid sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))] sm:overflow-visible sm:px-0">
+            {tabs.map((t) => {
+              const on = t.slug === resolved;
+              const cs = catStyle(t.slug === "team" ? null : t.slug);
+              const list = inTab(t.slug);
+              const done = list.filter((c) => c.compStatus === "published").length;
+              const pct = list.length ? Math.round((done / list.length) * 100) : 0;
               return (
                 <button
-                  key={cat.slug}
-                  onClick={() => setActiveTab(cat.slug)}
-                  className="flex shrink-0 items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-[16px] font-extrabold"
-                  style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-primary-light))", color: "#fff", boxShadow: "0 4px 14px rgba(var(--fp-primary-rgb),0.35)" } : { background: "var(--fp-glass)", color: theme.sub, border: "1.5px solid rgba(var(--fp-primary-rgb),0.15)" }}
+                  key={t.slug}
+                  type="button"
+                  onClick={() => { setActiveTab(t.slug); setOpenId(undefined); }}
+                  aria-pressed={on}
+                  className="flex h-[88px] shrink-0 flex-col items-start justify-between rounded-[20px] px-3.5 py-3 text-left transition-[min-width,background,box-shadow] duration-300 sm:min-w-0"
+                  style={{
+                    minWidth: on ? 158 : 118,
+                    background: on ? `linear-gradient(150deg, ${cs.hi} 0%, ${cs.deep} 100%)` : theme.surface,
+                    color: on ? "var(--fp-on-cat)" : theme.text,
+                    border: `1px solid ${on ? "rgba(255,255,255,.3)" : theme.line2}`,
+                    boxShadow: on ? `0 14px 30px ${mix(cs.color, 40)}` : undefined,
+                  }}
                 >
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: on ? "rgba(255,255,255,0.7)" : cat.color }} />
-                  {cat.label}
+                  <span className="flex items-center gap-1.5 text-[11px] font-extrabold tracking-[0.04em] tabular-nums">
+                    <span className="h-[7px] w-[7px] rounded-full" style={{ background: on ? "currentColor" : cs.color }} />
+                    {done} / {list.length}
+                  </span>
+                  <span className="fp-disp whitespace-nowrap transition-[font-size] duration-300" style={{ fontSize: on ? 26 : 19 }}>{t.label}</span>
+                  <span className="block h-[3px] w-full rounded-full" style={{ background: on ? "rgba(0,0,0,.16)" : "var(--fp-track)" }}>
+                    <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: on ? "currentColor" : cs.color }} />
+                  </span>
                 </button>
               );
             })}
           </div>
-          <div className="mt-3">
-            {filtered.length === 0 ? (
-              <p className="py-6 text-center text-[15px]" style={{ color: "#9CA3AF" }}>No competitions in this category.</p>
-            ) : (
-              filtered.map((comp) => <CompCard key={comp.id} comp={comp} catColor={activeColor} feastName={feast ? feastPosterHeading(feast) : ""} onGeneratePoster={onGeneratePoster} />)
-            )}
+
+          <div className="relative mt-4">
+            <div>
+              {showSegments && (
+                <div role="group" aria-label="Filter by section" className="grid max-w-[560px] gap-1 rounded-2xl p-1" style={{ gridTemplateColumns: `repeat(${groups.length + 1}, minmax(0, 1fr))`, background: theme.surface, border: `1px solid ${theme.line2}` }}>
+                  {[{ key: "all" as const, label: "All", n: filtered.length }, ...groups.map((g) => ({ key: g.key, label: g.label, n: g.items.length }))].map((sgm) => {
+                    const on = activeGender === sgm.key;
+                    return (
+                      <button
+                        key={sgm.key}
+                        type="button"
+                        onClick={() => { setGender(sgm.key); setOpenId(undefined); }}
+                        aria-pressed={on}
+                        className="inline-flex h-11 items-center justify-center gap-[7px] rounded-xl text-[13.5px] font-extrabold transition-colors"
+                        style={on ? { background: "var(--fp-chip-on)", color: "var(--fp-chip-on-fg)", boxShadow: "0 6px 16px rgba(var(--fp-primary-rgb),.25)" } : { color: theme.sub }}
+                      >
+                        {sgm.label}
+                        <span className="text-[12px] opacity-70">{sgm.n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {visibleGroups.map((grp) => (
+                <section key={grp.key} className="pt-[26px] first:pt-5">
+                  <div className="flex items-center gap-3 px-1 pb-3">
+                    <h2 className="fp-disp m-0 text-[30px]">{grp.label}</h2>
+                    <span className="text-[12px] font-bold" style={{ color: theme.faint }}>
+                      {grp.items.length} {grp.items.length === 1 ? "item" : "items"} · {grp.items.filter((c) => c.compStatus === "published").length} published
+                    </span>
+                    <span aria-hidden="true" className="h-px flex-1" style={{ background: `linear-gradient(90deg, ${grp.line}, transparent)` }} />
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    {grp.items.map((comp, i) => (
+                      <ItemCard
+                        key={comp.id}
+                        comp={comp}
+                        open={effectiveOpenId === comp.id}
+                        onToggle={() => toggle(comp)}
+                        rows={cache[comp.id]}
+                        accent={accent}
+                        delay={0.05 + Math.min(i, 10) * 0.05}
+                        onPoster={handlePoster(comp)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+
+              <Link
+                href={`/search?feast=${slug}`}
+                className="mt-6 flex items-center gap-3.5 rounded-[20px] p-4"
+                style={{ background: theme.surface, border: `1px solid ${theme.line}`, color: theme.text }}
+              >
+                <span aria-hidden="true" className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-[14px]" style={{ background: mix(accent.color, 16), color: accent.ink }}>
+                  <Search className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15.5px] font-extrabold">Search participants</span>
+                  <span className="mt-1 block text-[12.5px] font-semibold" style={{ color: theme.sub }}>Find anyone by name, house or registration number</span>
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0" style={{ color: theme.faint }} aria-hidden="true" />
+              </Link>
+            </div>
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -202,55 +333,45 @@ export function FeastResults() {
   const router = useRouter();
   const search = useSearchParams();
   const initialSlug = search.get("feast") ?? "";
-  const { feasts, loading: feastsLoading } = useFeasts();
+  const { feasts: allFeasts, loading: feastsLoading } = useFeasts();
+  const feasts = useMemo(() => allFeasts.filter(showsResults), [allFeasts]);
   const [activeSlug, setActiveSlug] = useState(initialSlug);
   const [posterWinner, setPosterWinner] = useState<SocialPosterWinner | null>(null);
 
   useEffect(() => {
-    if (feasts.length > 0 && !feasts.find((f) => f.slug === activeSlug)) setActiveSlug(feasts[0].slug);
-  }, [feasts, activeSlug]);
+    if (feasts.length === 0 || feasts.find((f) => f.slug === activeSlug)) return;
+    setActiveSlug(feasts[0].slug);
+    // A link to a fest that isn't listed (still taking registrations, say)
+    // shows the first listed fest; keep the address bar in step with it.
+    if (activeSlug) router.replace(`/results?feast=${feasts[0].slug}`, { scroll: false });
+  }, [feasts, activeSlug, router]);
 
   function handlePick(s: string) {
     setActiveSlug(s);
     router.replace(`/results?feast=${s}`);
   }
 
-  const searchCta = (
-    <button
-      onClick={() => router.push(`/search?feast=${activeSlug}`)}
-      className="flex w-full items-center gap-2.5 rounded-[14px] px-4 py-3"
-      style={{ background: "var(--fp-glass)", border: "1.5px solid rgba(var(--fp-primary-rgb),0.14)", backdropFilter: "blur(12px)" }}
-    >
-      <div className="flex h-8 w-8 items-center justify-center rounded-full" style={{ background: "rgba(var(--fp-primary-rgb),0.1)" }}><Search className="h-[15px] w-[15px]" style={{ color: "var(--fp-primary)" }} /></div>
-      <div className="flex-1 text-left">
-        <p className="text-sm font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Search Participants</p>
-        <p className="text-[11px]" style={{ color: "#9CA3AF" }}>Find a participant and see their results</p>
-      </div>
-      <ChevronDown className="h-3.5 w-3.5" style={{ color: "var(--fp-primary-light)", transform: "rotate(-90deg)" }} />
-    </button>
-  );
+  // Always shown, even for a single fest: the tab is what says whose
+  // results these are.
+  const festChips = feasts.length > 0 ? (
+    <div className="fp-scroll -mx-4 flex gap-2 overflow-x-auto px-5 pt-4 sm:mx-0 sm:flex-wrap sm:px-1">
+      {feasts.map((f) => (
+        <Chip key={f.slug} ml on={f.slug === activeSlug} onClick={() => handlePick(f.slug)}>{f.name}</Chip>
+      ))}
+    </div>
+  ) : null;
 
   return (
-    <div>
+    <div className="relative pb-6">
       <FeastTopBar title="Results" />
-      <FeastTabs feasts={feasts} active={activeSlug} onPick={handlePick} loading={feastsLoading} />
 
-      <div className="lg:grid lg:grid-cols-[1fr_300px] lg:items-start lg:gap-6">
-        <div className="min-w-0">
-          <div className="mb-4 lg:hidden">{searchCta}</div>
-
-          {!feastsLoading && feasts.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16"><BookOpen className="h-7 w-7" style={{ color: theme.faint }} /><p className="text-sm" style={{ color: theme.sub }}>No fests found.</p></div>
-          ) : !feastsLoading && feasts.length > 0 && !feasts.some((f) => f.slug === activeSlug) ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
-          ) : activeSlug ? (
-            <FeastContent key={activeSlug} slug={activeSlug} onGeneratePoster={setPosterWinner} />
-          ) : null}
-        </div>
-
-        {/* Sidebar — wide screens only (mobile copy renders above) */}
-        <div className="sticky top-4 hidden lg:block">{searchCta}</div>
-      </div>
+      {!feastsLoading && feasts.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-16"><BookOpen className="h-7 w-7" style={{ color: theme.faint }} /><p className="text-sm font-semibold" style={{ color: theme.sub }}>No results yet. They show here once a fest is under way.</p></div>
+      ) : feastsLoading || !feasts.some((f) => f.slug === activeSlug) ? (
+        <div className="flex justify-center py-16" role="status" aria-label="Loading"><Loader2 className="h-[22px] w-[22px] animate-spin" style={{ color: theme.lavender }} /></div>
+      ) : (
+        <FeastContent key={activeSlug} slug={activeSlug} festChips={festChips} onGeneratePoster={setPosterWinner} />
+      )}
 
       {posterWinner && <SocialPosterOverlay winner={posterWinner} onClose={() => setPosterWinner(null)} />}
     </div>

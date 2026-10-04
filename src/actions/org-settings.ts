@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, expireTags } from "@/lib/cache-tags";
 import type { HierarchyLevel, PortalTheme } from "@/types";
 
 export interface OrgSettingsInput {
@@ -32,5 +33,7 @@ export async function updateOrgSettings(input: OrgSettingsInput): Promise<{ erro
     })
     .eq("id", true);
   if (error) return { error: error.message };
+  // The root layout reads the theme through a cached org-settings read.
+  expireTags(TAG.org);
   return {};
 }

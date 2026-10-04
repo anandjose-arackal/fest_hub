@@ -9,7 +9,7 @@ import { X, ChevronDown, UserPlus, Trash2, ClipboardList, FileDown } from "lucid
 const theme = {
   text: "var(--fp-ink)",
   sub: "var(--fp-sub)",
-  faint: "var(--fp-faint)",
+  faint: "var(--fp-meta)",
   purple: "var(--fp-primary)",
   fillStrong: "rgba(var(--fp-primary-rgb), 0.10)",
   hairline: "rgba(var(--fp-primary-rgb), 0.12)",
@@ -195,9 +195,9 @@ export function HelpSheet({ onClose }: { onClose: () => void }) {
   const header = HEADER_TEXT[lang];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" style={{ background: "var(--fp-scrim)", backdropFilter: "blur(4px)" }} onClick={onClose}>
       <div
-        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-[28px] bg-white p-6 sm:rounded-[28px]"
+        className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-[28px] bg-[var(--fp-sheet)] p-6 sm:rounded-[28px]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">

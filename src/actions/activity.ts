@@ -1,6 +1,8 @@
 "use server";
 
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { TAG, TTL } from "@/lib/cache-tags";
 
 export type ActivityType = "published" | "completed" | "started";
 
@@ -28,6 +30,17 @@ const TYPE_BY_STATUS: Record<string, ActivityType | null> = {
 // reads whatever most recently transitioned comp_status, using the
 // updated_at trigger (supabase/migrations/001_schema.sql).
 export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
+  return cachedRecentActivity(limit);
+}
+
+// Every open landing page polls this; one shared read per 30s window.
+const cachedRecentActivity = unstable_cache(
+  async (limit: number) => readRecentActivity(limit),
+  ["fp-recent-activity"],
+  { tags: [TAG.results], revalidate: TTL.live },
+);
+
+async function readRecentActivity(limit: number): Promise<ActivityItem[]> {
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("feast_competitions")

@@ -240,7 +240,7 @@ export interface ShakhaFeastStanding {
   shakha?: Shakha;
 }
 
-export type PortalTheme = "violet" | "ocean" | "sunset" | "aurora" | "carnival" | "amethyst" | "golden" | "plum" | "midnight" | "emerald";
+export type PortalTheme = "violet" | "ocean" | "sunset" | "aurora" | "carnival" | "amethyst" | "golden" | "plum" | "midnight" | "emerald" | "championship" | "burgundy";
 
 export interface OrgSettings {
   id: true;

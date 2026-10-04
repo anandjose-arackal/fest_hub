@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Building2, Pencil, Trash2, Plus, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { getOrgSettings } from "@/lib/org-settings";
+import { loadOrgSettingsCached as getOrgSettings, invalidateOrgHierarchy } from "@/hooks/use-feast";
 import { createMeghala, updateMeghala, deleteMeghala } from "@/actions/meghala";
 import type { Diocese, HierarchyLevel, Meghala } from "@/types";
 
@@ -23,6 +23,7 @@ export default function MeghalasPage() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
+    invalidateOrgHierarchy();
     setLoading(true);
     const [{ data: m }, { data: d }, org] = await Promise.all([
       supabase.from("meghalas").select("*").order("name"),

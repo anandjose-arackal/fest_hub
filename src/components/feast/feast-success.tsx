@@ -4,7 +4,7 @@ import { useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { Check, UserPlus, ArrowRight } from "lucide-react";
-import { GlassPanel, GlowBtn, theme, CATEGORY_COLORS, CATEGORY_LABELS } from "./feast-shared";
+import { GlassPanel, GlowBtn, theme, CATEGORY_LABELS, catStyle } from "./feast-shared";
 
 interface ConfettiPiece {
   left: number; delay: number; duration: number; color: string; size: number; rotation: number; round: boolean;
@@ -77,8 +77,17 @@ export function FeastSuccess({ slug }: { slug: string }) {
         >
           <Check className="h-[42px] w-[42px] text-white" strokeWidth={3} />
         </div>
-        <h1 className="mt-4 text-2xl font-bold" style={{ color: theme.text }}>You&apos;re registered!</h1>
-        <p className="mt-1 text-sm" style={{ color: theme.sub }}>Registration number <strong>{r.regNo}</strong></p>
+        <h1 className="fp-disp m-0 mt-5 text-[40px] sm:text-[48px]" style={{ color: theme.text }}>
+          You&apos;re <span className="fp-hl-text">registered!</span>
+        </h1>
+        <p className="fp-cap m-0 mt-5 text-[10.5px]" style={{ color: theme.sub }}>Registration number</p>
+        <span
+          className="fp-num mt-2 inline-flex items-center rounded-2xl px-6 py-3 text-[40px]"
+          style={{ border: "2px dashed var(--fp-note-line)", background: "var(--fp-note-bg)", color: "var(--fp-gold-ink)" }}
+        >
+          {r.regNo}
+        </span>
+        <p className="m-0 mt-2.5 text-[12.5px] font-semibold" style={{ color: theme.faint }}>Keep this number to look up results later.</p>
       </div>
 
       <GlassPanel strong className="mt-6 p-[18px]">
@@ -88,16 +97,16 @@ export function FeastSuccess({ slug }: { slug: string }) {
           ["Category", CATEGORY_LABELS[r.category] || "—"],
           ...(r.phone ? [["Phone", r.phone]] : []),
         ].map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${theme.hairline}` }}>
-            <span className="text-[12.5px]" style={{ color: theme.faint }}>{k}</span>
-            <span className="text-[13.5px] font-semibold" style={{ color: k === "Category" ? CATEGORY_COLORS[r.category] || theme.text : theme.text }}>{v}</span>
+          <div key={k} className="flex items-center justify-between gap-3 py-2.5" style={{ borderBottom: `1px solid ${theme.line}` }}>
+            <span className="text-[12.5px] font-semibold" style={{ color: theme.faint }}>{k}</span>
+            <span className="fp-ml text-[14px] font-bold" style={{ color: k === "Category" ? catStyle(r.category).ink : theme.text }}>{v}</span>
           </div>
         ))}
         <div className="mt-3">
-          <p className="mb-2 text-[12.5px]" style={{ color: theme.faint }}>Your competitions ({r.comps.length})</p>
+          <p className="fp-cap mb-2.5 text-[10.5px]" style={{ color: theme.goldInk }}>Your competitions ({r.comps.length})</p>
           <div className="flex flex-wrap gap-[7px]">
             {r.comps.map((name) => (
-              <span key={name} className="rounded-full px-[11px] py-1.5 text-[11.5px] font-semibold" style={{ color: theme.text, background: "rgba(var(--fp-primary-rgb),0.18)", border: "1px solid rgba(var(--fp-primary-rgb),0.33)" }}>{name}</span>
+              <span key={name} className="fp-ml rounded-full px-3 py-1.5 text-[13px] font-bold" style={{ color: theme.text, background: theme.surface3, border: `1px solid ${theme.line2}` }}>{name}</span>
             ))}
           </div>
         </div>

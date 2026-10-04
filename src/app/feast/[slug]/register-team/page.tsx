@@ -1,11 +1,8 @@
-import { FeastShell } from "@/components/feast/feast-shared";
-import { FeastRegisterTeam } from "@/components/feast/feast-register-team";
+import { redirect } from "next/navigation";
 
+// Team events are picked on the normal registration form now (one person at
+// a time, joining their scope's team). Old links land there.
 export default async function RegisterTeamPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  return (
-    <FeastShell>
-      <FeastRegisterTeam slug={slug} />
-    </FeastShell>
-  );
+  redirect(`/feast/${slug}/register`);
 }

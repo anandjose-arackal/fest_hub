@@ -1,8 +1,11 @@
 "use server";
 
+import { unstable_cache } from "next/cache";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { fetchAllIn } from "@/lib/fetch-all";
+import { TAG, TTL, expireTags } from "@/lib/cache-tags";
 import { calcGrade, calcPositions, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
-import { isExternalFeast, rebuildStandings, type ScoreEntry, type DraftScore } from "@/actions/results";
+import { rebuildStandings, type ScoreEntry, type DraftScore } from "@/actions/results";
 import { TEAM_CATEGORY_SLUG } from "@/lib/feast-data";
 
 export async function getTeamCompetitionScores(feastCompetitionId: string): Promise<ScoreEntry[]> {
@@ -21,12 +24,17 @@ export async function getTeamCompetitionScores(feastCompetitionId: string): Prom
 
 export async function getScoresForTeamCompetitions(feastCompetitionIds: string[]): Promise<Record<string, ScoreEntry[]>> {
   if (feastCompetitionIds.length === 0) return {};
-  const { data } = await getSupabaseAdmin()
-    .from("team_results")
-    .select("feast_competition_id, team_registration_id, score, grade, position, total_points")
-    .in("feast_competition_id", feastCompetitionIds);
+  const admin = getSupabaseAdmin();
+  const { data } = await fetchAllIn(feastCompetitionIds, (ids, from, to) =>
+    admin
+      .from("team_results")
+      .select("feast_competition_id, team_registration_id, score, grade, position, total_points")
+      .in("feast_competition_id", ids)
+      .order("id")
+      .range(from, to)
+  );
   const out: Record<string, ScoreEntry[]> = {};
-  for (const r of data ?? []) {
+  for (const r of data) {
     (out[r.feast_competition_id] ??= []).push({
       registrationId: r.team_registration_id,
       score: Number(r.score),
@@ -62,24 +70,26 @@ export async function saveDraftTeamScores(input: {
 export async function publishTeamResults(feastCompetitionId: string): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
 
-  const { data: fc } = await admin
-    .from("feast_competitions")
-    .select("id, feast_id, max_score, competition:competitions(type)")
-    .eq("id", feastCompetitionId)
-    .single();
+  const [{ data: fc }, { data: draftRows }] = await Promise.all([
+    admin
+      .from("feast_competitions")
+      .select("id, feast_id, max_score, feast:feasts(is_external), competition:competitions(type)")
+      .eq("id", feastCompetitionId)
+      .single(),
+    admin
+      .from("team_results")
+      .select("team_registration_id, score, team_registration:team_registrations(id, shakha_id)")
+      .eq("feast_competition_id", feastCompetitionId),
+  ]);
   if (!fc) return { error: "Competition not found." };
   const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
   if (competition?.type !== "group") return { error: "This is not a team competition" };
   if (!fc.max_score) return { error: "Set max score before publishing" };
-
-  const { data: draftRows } = await admin
-    .from("team_results")
-    .select("team_registration_id, score, team_registration:team_registrations(id, shakha_id)")
-    .eq("feast_competition_id", feastCompetitionId);
   if (!draftRows || draftRows.length === 0) return { error: "No scores entered yet" };
 
   // External feast: grade/position still published (winners), points stay 0.
-  const external = await isExternalFeast(fc.feast_id, admin);
+  const fcFeast = Array.isArray(fc.feast) ? fc.feast[0] : fc.feast;
+  const external = !!fcFeast?.is_external;
   const entries = draftRows.map((r) => ({ id: r.team_registration_id, score: Number(r.score) }));
   const posMap = calcPositions(entries, external ? NO_POSITION_POINTS : GROUP_POSITION_POINTS);
 
@@ -130,36 +140,48 @@ export async function publishTeamResults(feastCompetitionId: string): Promise<{ 
     if (ledgerErr) return { error: ledgerErr.message };
   }
 
-  const rebuildErr = await rebuildStandings(fc.feast_id, admin);
+  const [rebuildErr] = await Promise.all([
+    rebuildStandings(fc.feast_id, admin, external),
+    admin.from("feast_competitions").update({ result_status: "published", comp_status: "published" }).eq("id", feastCompetitionId),
+  ]);
+  expireTags(TAG.results);
   if (rebuildErr) return { error: rebuildErr };
-
-  await admin.from("feast_competitions").update({ result_status: "published", comp_status: "published" }).eq("id", feastCompetitionId);
   return {};
 }
 
 export async function unpublishTeamResults(feastCompetitionId: string, feastId: string): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
-  await admin
-    .from("team_results")
-    .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
-    .eq("feast_competition_id", feastCompetitionId);
-  await admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId);
-  await rebuildStandings(feastId, admin);
-  const { error } = await admin
-    .from("feast_competitions")
-    .update({ result_status: "draft", comp_status: "completed" })
-    .eq("id", feastCompetitionId);
+  await Promise.all([
+    admin
+      .from("team_results")
+      .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
+      .eq("feast_competition_id", feastCompetitionId),
+    admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId),
+  ]);
+  const [, { error }] = await Promise.all([
+    rebuildStandings(feastId, admin),
+    admin.from("feast_competitions").update({ result_status: "draft", comp_status: "completed" }).eq("id", feastCompetitionId),
+  ]);
+  expireTags(TAG.results);
   if (error) return { error: error.message };
   return {};
 }
 
+const cachedPublishedTeamResults = unstable_cache(
+  async (feastCompetitionId: string) => {
+    const { data } = await getSupabaseAdmin()
+      .from("team_results")
+      .select(
+        "id, score, grade, position, total_points, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name)))"
+      )
+      .eq("feast_competition_id", feastCompetitionId)
+      .not("published_at", "is", null);
+    return data ?? [];
+  },
+  ["fp-published-team-results"],
+  { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.standard },
+);
+
 export async function getPublishedTeamResults(feastCompetitionId: string) {
-  const { data } = await getSupabaseAdmin()
-    .from("team_results")
-    .select(
-      "id, score, grade, position, total_points, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name)))"
-    )
-    .eq("feast_competition_id", feastCompetitionId)
-    .not("published_at", "is", null);
-  return data ?? [];
+  return cachedPublishedTeamResults(feastCompetitionId);
 }

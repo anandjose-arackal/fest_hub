@@ -10,7 +10,7 @@ import {
   type StandingsRow, type GroupStandingsRow,
 } from "@/actions/results";
 import { useOrgHierarchy } from "@/hooks/use-feast";
-import { getOrgSettings } from "@/lib/org-settings";
+import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import type { Diocese, Feast, HierarchyLevel, Meghala, OrgSettings, Shakha } from "@/types";
 

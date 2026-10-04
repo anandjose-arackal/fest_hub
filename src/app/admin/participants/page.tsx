@@ -3,12 +3,14 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { UserCheck, Pencil, X, Download, Printer, IdCard } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { fetchAll } from "@/lib/fetch-all";
+import { loadScopeTeams, resolveCapScope } from "@/lib/reg-cap-scope";
 import { createParticipantAdmin, updateParticipant, deleteParticipant } from "@/actions/feast";
 import { registerTeam, updateTeam, deleteTeam } from "@/actions/team";
 import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
-import { getOrgSettings } from "@/lib/org-settings";
+import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { useOrgHierarchy } from "@/hooks/use-feast";
 import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
@@ -225,6 +227,12 @@ export default function ParticipantsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ shakhaId: "", name: "", houseName: "", dob: "", gender: "", phone: "" });
   const [selectedComps, setSelectedComps] = useState<string[]>([]);
+  // Team events picked in this panel; on edit, the ones they were already
+  // on (null until loaded, so an early save leaves their teams alone).
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [panelOnTeams, setPanelOnTeams] = useState<string[] | null>([]);
+  const [panelTeamCounts, setPanelTeamCounts] = useState<Record<string, number>>({});
+  const [panelTeamScope, setPanelTeamScope] = useState("");
   const [panelError, setPanelError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -252,27 +260,44 @@ export default function ParticipantsPage() {
   const load = useCallback(async () => {
     if (!feastId) return;
     setLoading(true);
-    const [{ data: fcs }, { data: parts }, { data: regs }, { data: teamRows }] = await Promise.all([
+    // Registrations come embedded per participant — scoped to this fest (the
+    // old standalone read pulled every fest's registrations) — and both the
+    // roster and the team list are paged past PostgREST's 1000-row cap.
+    const [{ data: fcs }, { data: parts }, { data: teamRows }] = await Promise.all([
       supabase.from("feast_competitions").select("*, competition:competitions(*, competition_category:competition_categories(*))").eq("feast_id", feastId).order("display_order"),
-      supabase.from("participants").select("*, shakha:shakhas(*)").eq("feast_id", feastId).order("created_at"),
-      supabase.from("participant_registrations").select("participant_id, feast_competition_id"),
-      supabase.from("team_registrations").select("id, team_name, shakha:shakhas(id,name), feast_competition:feast_competitions(id, competition:competitions(name)), team_registration_members(participant:participants(name))").eq("feast_id", feastId),
+      fetchAll((from, to) =>
+        supabase
+          .from("participants")
+          .select("*, shakha:shakhas(*), participant_registrations(feast_competition_id)")
+          .eq("feast_id", feastId)
+          .order("created_at")
+          .order("id")
+          .range(from, to)
+      ),
+      fetchAll((from, to) =>
+        supabase
+          .from("team_registrations")
+          .select("id, team_name, shakha:shakhas(id,name), feast_competition:feast_competitions(id, competition:competitions(name)), team_registration_members(participant:participants(name))")
+          .eq("feast_id", feastId)
+          .order("id")
+          .range(from, to)
+      ),
     ]);
     const fcRows = (fcs ?? []) as unknown as FCRow[];
     setFeastComps(fcRows);
 
     const regByParticipant: Record<string, string[]> = {};
-    for (const r of regs ?? []) {
-      (regByParticipant[r.participant_id] ??= []).push(r.feast_competition_id);
+    for (const p of parts) {
+      regByParticipant[p.id] = ((p.participant_registrations ?? []) as { feast_competition_id: string }[]).map((r) => r.feast_competition_id);
     }
     setParticipantRegs(regByParticipant);
 
     setParticipants(
-      (parts ?? []).map((p) => ({ ...p, events: regByParticipant[p.id]?.length ?? 0 }))
+      parts.map((p) => ({ ...p, events: regByParticipant[p.id]?.length ?? 0 }))
     );
 
     setTeams(
-      (teamRows ?? []).map((t) => {
+      teamRows.map((t) => {
         const shakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
         const fc = Array.isArray(t.feast_competition) ? t.feast_competition[0] : t.feast_competition;
         const comp = Array.isArray(fc?.competition) ? fc?.competition[0] : fc?.competition;
@@ -339,6 +364,8 @@ export default function ParticipantsPage() {
     setEditId(null);
     setForm({ shakhaId: "", name: "", houseName: "", dob: "", gender: "", phone: "" });
     setSelectedComps([]);
+    setSelectedTeams([]);
+    setPanelOnTeams([]);
     setPanelError(null);
     setConfirmingDelete(false);
     setPanelOpen(true);
@@ -355,19 +382,52 @@ export default function ParticipantsPage() {
       phone: p.phone ?? "",
     });
     setSelectedComps(participantRegs[p.id] ?? []);
+    setSelectedTeams([]);
+    setPanelOnTeams(null);
+    supabase
+      .from("team_registration_members")
+      .select("feast_competition_id")
+      .eq("participant_id", p.id)
+      .then(({ data }) => {
+        const ids = (data ?? []).map((m) => m.feast_competition_id);
+        setSelectedTeams(ids);
+        setPanelOnTeams(ids);
+      });
     setPanelError(null);
     setConfirmingDelete(false);
     setPanelOpen(true);
   }
 
   const catSlug = getCategorySlug(form.dob, categories);
-  const eligibleComps = individualFeastComps.filter((c) => {
+  const fitsForm = (c: FCRow) => {
     const compCatSlug = c.competition.competition_category?.slug;
     const compGender = normGender(c.competition.gender);
     const genderOk = !compGender || compGender === normGender(form.gender);
     const catOk = !compCatSlug || compCatSlug === catSlug;
     return genderOk && catOk;
-  });
+  };
+  const eligibleComps = individualFeastComps.filter(fitsForm);
+  const eligibleTeamComps = teamFeastComps.filter(fitsForm);
+  const teamMax = (c: FCRow) => c.competition.max_team_size ?? DEFAULT_MAX_TEAM_MEMBERS;
+
+  // Members already on the picked shakha's scope team for each team event
+  // (one team per shakha/meghala/diocese — see lib/scope-teams), leaving
+  // out the participant being edited.
+  const teamCompKey = teamFeastComps.map((c) => c.id).join(",");
+  const onTeamsKey = panelOnTeams?.join(",") ?? null;
+  useEffect(() => {
+    if (!panelOpen || !form.shakhaId || !teamCompKey || onTeamsKey === null) return;
+    let cancelled = false;
+    (async () => {
+      const scope = await resolveCapScope(supabase, form.shakhaId);
+      const teams = await loadScopeTeams(supabase, teamCompKey.split(","), scope.shakhaIds);
+      if (cancelled) return;
+      const mine = new Set(onTeamsKey ? onTeamsKey.split(",") : []);
+      setPanelTeamCounts(Object.fromEntries(Object.entries(teams).map(([id, t]) => [id, Math.max(0, t.members - (mine.has(id) ? 1 : 0))])));
+      setPanelTeamScope(scope.name);
+    })();
+    return () => { cancelled = true; };
+  }, [panelOpen, form.shakhaId, teamCompKey, onTeamsKey]);
 
   function toggleComp(id: string) {
     setSelectedComps((prev) => {
@@ -377,9 +437,19 @@ export default function ParticipantsPage() {
     });
   }
 
+  function toggleTeamComp(c: FCRow) {
+    setSelectedTeams((prev) => {
+      if (prev.includes(c.id)) return prev.filter((x) => x !== c.id);
+      if ((panelTeamCounts[c.id] ?? 0) >= teamMax(c)) return prev;
+      return [...prev, c.id];
+    });
+  }
+
   function handleDobOrGenderChange(patch: Partial<typeof form>) {
     setForm((f) => ({ ...f, ...patch }));
     setSelectedComps([]);
+    // Team picks stay (they're mostly open to everyone); any that stop
+    // fitting are dropped at save.
   }
 
   async function handleSaveParticipant() {
@@ -387,8 +457,10 @@ export default function ParticipantsPage() {
       setPanelError("Name, DOB, gender and shakha are required.");
       return;
     }
+    if (saving) return;
     setSaving(true);
     setPanelError(null);
+    const teamIds = selectedTeams.filter((id) => eligibleTeamComps.some((c) => c.id === id));
     const result = editId
       ? await updateParticipant({
           participantId: editId,
@@ -398,6 +470,8 @@ export default function ParticipantsPage() {
           gender: form.gender,
           phone: form.phone,
           feastCompetitionIds: selectedComps,
+          // Until their current teams have loaded, leave them as they are.
+          teamCompetitionIds: panelOnTeams === null ? undefined : teamIds,
         })
       : await createParticipantAdmin({
           feastId,
@@ -408,6 +482,7 @@ export default function ParticipantsPage() {
           gender: form.gender,
           phone: form.phone,
           feastCompetitionIds: selectedComps,
+          teamCompetitionIds: teamIds,
         });
     setSaving(false);
     if (result.error) {
@@ -1016,6 +1091,41 @@ export default function ParticipantsPage() {
                   {eligibleComps.length === 0 && <p className="text-xs text-neutral-400">No eligible competitions for this category/gender.</p>}
                 </div>
               </div>
+
+              {eligibleTeamComps.length > 0 && (
+                <div>
+                  <div className="mb-1.5 flex items-center gap-2" role="separator" aria-label="Team events">
+                    <span className="h-px flex-1 bg-neutral-200" />
+                    <span className="text-xs font-medium text-neutral-600">Team events</span>
+                    <span className="h-px flex-1 bg-neutral-200" />
+                  </div>
+                  <p className="mb-1.5 text-[11px] text-neutral-500">
+                    {form.shakhaId
+                      ? <>Adds this person to the <strong className="text-neutral-700">{panelTeamScope || "…"}</strong> team. The first registration starts the team.</>
+                      : "Pick a shakha to see its team counts."}
+                  </p>
+                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 p-2">
+                    {eligibleTeamComps.map((c) => {
+                      const max = teamMax(c);
+                      const on = selectedTeams.includes(c.id);
+                      const count = panelTeamCounts[c.id] ?? 0;
+                      const full = !on && count >= max;
+                      return (
+                        <label key={c.id} className={`flex items-center gap-2 text-sm ${full ? "cursor-not-allowed text-neutral-400" : ""}`}>
+                          <input type="checkbox" checked={on} disabled={full || !form.shakhaId} onChange={() => toggleTeamComp(c)} />
+                          <span className="min-w-0 flex-1">{c.competition.name}</span>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${full ? "bg-amber-50 text-amber-600" : "bg-neutral-100 text-neutral-500"}`}
+                            aria-label={`${count + (on ? 1 : 0)} of ${max} members`}
+                          >
+                            {full ? "Full · " : ""}{count + (on ? 1 : 0)}/{max}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {panelError && <p className="text-sm text-red-600">{panelError}</p>}
 

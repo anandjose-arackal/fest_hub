@@ -6,6 +6,7 @@ import { ChevronDown, Loader2, UserX, Lock, Pencil, Download } from "lucide-reac
 import { useFeast, useOrgHierarchy } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
+import { fetchAllIn } from "@/lib/fetch-all";
 import { getDescendantShakhaIds } from "@/lib/org-hierarchy";
 import { CATEGORY_LABELS, CATEGORY_COLORS, FeastTopBar, theme } from "./feast-shared";
 
@@ -85,7 +86,7 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {p.registration_number && <span className="rounded-[5px] border border-dashed px-2.5 py-1 text-[13px] font-extrabold tracking-wide" style={{ background: "#FCD34D", color: "#451A03", fontFamily: "var(--font-anek), sans-serif", borderColor: "rgba(120,53,15,0.4)" }}>{p.registration_number}</span>}
+                    {p.registration_number && <span className="fp-num rounded-lg px-[9px] py-1.5 text-[14px]" style={{ border: "1.5px dashed var(--fp-note-line)", background: "var(--fp-note-bg)", color: "var(--fp-gold-ink)" }} aria-label={`Registration number ${p.registration_number}`}>{p.registration_number}</span>}
                     {!editLocked && (
                       <button onClick={(e) => { e.stopPropagation(); onEdit(p.id); }} className="flex h-7 w-7 items-center justify-center rounded-full" style={{ background: theme.fillStrong }}>
                         <Pencil className="h-[13px] w-[13px]" style={{ color: theme.purple }} />
@@ -182,7 +183,17 @@ export function FeastRegistrations({ slug }: { slug: string }) {
     Promise.all([
       individualIds.length === 0
         ? Promise.resolve({ data: [] })
-        : supabase.from("participant_registrations").select("id, feast_competition_id, participant:participants(id, name, house_name, shakha_id, registration_number, gender, shakha:shakhas(name))").in("feast_competition_id", individualIds),
+        : fetchAllIn(
+            individualIds,
+            (ids, from, to) => {
+              const q = supabase
+                .from("participant_registrations")
+                .select("id, feast_competition_id, participant:participants!inner(id, name, house_name, shakha_id, registration_number, gender, shakha:shakhas(name))")
+                .in("feast_competition_id", ids);
+              return (scopeShakhaIds?.length ? q.in("participant.shakha_id", scopeShakhaIds) : q).order("id").range(from, to);
+            },
+            60,
+          ),
       !scopeShakhaIds?.length || teamIds.length === 0
         ? Promise.resolve({ data: [] })
         : supabase.from("team_registrations").select("id, feast_competition_id, team_name, members:team_registration_members(participant:participants(name))").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamIds),
