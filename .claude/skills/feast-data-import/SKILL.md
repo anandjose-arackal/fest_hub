@@ -123,6 +123,7 @@ Save to `<scratchpad>/normalized.json`:
 - `row`: a stable pointer back to the source (`Sheet!row`, `p3:row7`), unique per row. It's used in the report and in `merges`.
 - `results`: `true` for a result sheet. Every non-absent row then gets a score. Use `false` for a registration-only list (then `participated` defaults to false unless you set it per row).
 - `grade`: `A`/`B`/`C`, or omit/`null` if not supplied. `position`: `1`/`2`/`3`, or omit.
+- `score` *(optional)*: the sheet's own mark, out of `score_max` (default 100). It works on entries and teams. Set it only when the sheet has marks **and** the user wants them kept. When every entry of a competition has one, the marks are written as-is instead of the grade buckets, and the report flags any row where Publish's grade or placing would differ from the sheet. If a mark contradicts the printed grade, or a raised mark ties a winner, adjust the `score` in the normalized input as the user decides (e.g. raise it to the grade's floor) before building.
 - One entry per (person, competition). The same person in three competitions is three entries with identical person fields. The script merges them.
 - Individual competitions go in `entries`, group competitions (`type: group`) in `teams`. A team member needs a `category` (or the team does); a member without one is skipped with a warning. Members without their own `shakha` get the team's.
 - `meghala` / `diocese` are optional on entries, teams and members. Omit them or use `null` when the sheet has none.
@@ -194,6 +195,10 @@ in `src/lib/result-calculator.ts`:
 Placed entries always score above unplaced ones, so the app's dense ranking
 reproduces the sheet's positions. When the grades make that impossible, the
 grade wins (it decides points) and the conflict shows up in the report.
+
+A competition whose entries all carry a `score` skips the buckets. Those
+marks are written as `score × max_score / score_max`, and checked against
+`calcGrade()` and the dense ranking (no positions below 3 entries).
 
 **Registration numbers** follow `createParticipantAdmin()`: `'F' || next_reg_number(feast)` (e.g. `F1405`, `formatRegNumber()`), from one counter shared by every feast in the database.
 `participated` is true for every non-absent row of a result sheet. Entry caps

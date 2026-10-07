@@ -48,21 +48,30 @@ AND NOT EXISTS (
 -- Literature
 -- ════════════════════════════════════════════════════════════════════════
 
--- Attaches the literature competition catalog (002_competitions.sql)
--- to the Literature feast, ordered by age category then name/gender.
--- Assumes a fresh DB where these 29 rows are the only category='literature'
--- competitions — if that stops being true, switch the WHERE clause to match
--- the same (name, gender, category_slug) tuples as 002_competitions.sql
--- instead.
--- Idempotent: the feast_competitions(feast_id, competition_id) unique
--- constraint + ON CONFLICT DO NOTHING makes re-running a no-op.
+-- Attach every competition seeded by 002_competitions.sql's Literature
+-- section (29 rows) to the Literature feast created above, ordered by age
+-- category then name/gender.
+-- feast_id: 396e97cd-a92f-4b0f-bc77-20daf789e5a3
+-- Idempotent: safe to re-run — skips competitions already attached. Uses
+-- NOT EXISTS rather than ON CONFLICT so it also runs on databases created
+-- before feast_competitions had its (feast_id, competition_id) unique
+-- constraint.
 
-insert into feast_competitions (feast_id, competition_id, display_order)
-select
+INSERT INTO feast_competitions (feast_id, competition_id, display_order)
+SELECT
   '396e97cd-a92f-4b0f-bc77-20daf789e5a3'::uuid,
   c.id,
-  row_number() over (order by cat.sort_order, c.name, c.gender)
-from competitions c
-join competition_categories cat on cat.id = c.competition_category_id
-where c.category = 'literature'
-on conflict (feast_id, competition_id) do nothing;
+  base.max_order + ROW_NUMBER() OVER (ORDER BY cat.sort_order, c.name, c.gender)
+FROM competitions c
+JOIN competition_categories cat ON cat.id = c.competition_category_id
+CROSS JOIN (
+  SELECT COALESCE(MAX(display_order), -1) AS max_order
+  FROM feast_competitions
+  WHERE feast_id = '396e97cd-a92f-4b0f-bc77-20daf789e5a3'
+) base
+WHERE c.name IN ('ജലഛായം', 'ചിത്രരചന', 'ഉപന്യാസം', 'കവിത', 'ചെറു കഥ')
+AND NOT EXISTS (
+  SELECT 1 FROM feast_competitions fc
+  WHERE fc.feast_id = '396e97cd-a92f-4b0f-bc77-20daf789e5a3'
+    AND fc.competition_id = c.id
+);

@@ -227,6 +227,16 @@ function parseGrade(raw) {
   const m = String(raw).trim().toUpperCase().match(/^([ABC])(\s*GRADE)?$/);
   return m ? m[1] : null;
 }
+// Explicit score as a % of max_score: `score` out of `score_max` (default 100).
+function parseScore(src, row) {
+  if (src.score == null || src.score === "") return null;
+  const s = Number(src.score), max = src.score_max == null ? 100 : Number(src.score_max);
+  if (!Number.isFinite(s) || !Number.isFinite(max) || max <= 0 || s < 0 || s > max) {
+    add(errors, `Score "${src.score}"${src.score_max != null ? ` / ${src.score_max}` : ""} is not a number between 0 and the max`, row);
+    return null;
+  }
+  return Math.round((s / max) * 10000) / 100;
+}
 function parsePosition(raw) {
   if (raw == null || raw === "") return null;
   const m = String(raw).match(/\d+/);
@@ -290,7 +300,7 @@ entries.forEach((e, i) => {
   const absent = !!e.absent;
   const grade = parseGrade(e.grade);
   if (e.grade != null && e.grade !== "" && !grade) add(warnings, `Unrecognised grade "${e.grade}" treated as no grade`, row);
-  indiv.push({ person: p, fc, row, participated: isResults ? !absent : !!e.participated, scored: isResults && !absent, grade, position: parsePosition(e.position) });
+  indiv.push({ person: p, fc, row, participated: isResults ? !absent : !!e.participated, scored: isResults && !absent, grade, position: parsePosition(e.position), score: parseScore(e, row) });
 });
 
 const teams = []; // {fc, shakha, team_name, participated, grade, position, row, members: person[]}
@@ -325,6 +335,7 @@ teamsIn.forEach((t, i) => {
     scored: isResults && !absent,
     grade: parseGrade(t.grade),
     position: parsePosition(t.position),
+    score: parseScore(t, row),
   });
 });
 
@@ -438,6 +449,7 @@ for (const r of indiv) {
   }
   prev.grade ??= r.grade;
   prev.position ??= r.position;
+  prev.score ??= r.score;
 }
 const teamMap = new Map(); // `${fcId}|${shakhaId}` -> team (one team per shakha per competition)
 for (const t of teams) {
@@ -451,6 +463,7 @@ for (const t of teams) {
   prev.scored ||= t.scored;
   prev.grade ??= t.grade;
   prev.position ??= t.position;
+  prev.score ??= t.score;
 }
 for (const t of teamMap.values()) {
   const seen = new Set();
@@ -490,9 +503,39 @@ const BUCKET = {
 const GRADE_RANK = { A: 0, B: 1, C: 2, none: 3 };
 const scoreNotes = [];
 
+const gradeOf = (pct) => (pct >= 60 ? "A" : pct >= 50 ? "B" : pct >= 40 ? "C" : null);
+let explicitFcCount = 0;
+
+// Every entry carries its own score: use it as-is, and check that Publish's
+// calcGrade() / dense ranking (calcPositions) give back the sheet's grade and
+// position.
+function checkExplicitScores(units, notes) {
+  const nameOf = (u) => u.person?.name ?? u.team_name;
+  for (const u of units) u.pct = u.score;
+  const distinct = [...new Set(units.map((u) => u.pct))].sort((a, b) => b - a);
+  const rank = new Map(distinct.map((s, i) => [s, i + 1]));
+  const sheetHasPositions = units.some((u) => u.position);
+  for (const u of units) {
+    const g = gradeOf(u.pct);
+    if (u.grade && u.grade !== g) notes.push(`"${nameOf(u)}" scores ${u.pct}% → Publish grades it ${g ?? "no grade"}, sheet says ${u.grade}`);
+    const appPos = units.length >= 3 && rank.get(u.pct) <= 3 ? rank.get(u.pct) : null;
+    if (sheetHasPositions && (u.position ?? null) !== appPos) {
+      notes.push(`"${nameOf(u)}" scores ${u.pct}% → Publish places it ${appPos ?? "unplaced"}, sheet says ${u.position ?? "unplaced"}`);
+    }
+  }
+}
+
 function assignScores(units, fc) {
   const label = fcLabel(fc);
   const notes = [];
+  const explicit = units.filter((u) => u.score != null).length;
+  if (explicit && explicit === units.length) {
+    explicitFcCount++;
+    checkExplicitScores(units, notes);
+    if (notes.length) scoreNotes.push({ label, notes: [...new Set(notes)] });
+    return;
+  }
+  if (explicit) notes.push(`only ${explicit} of ${units.length} entries have a score — the whole competition uses grade buckets instead`);
   const groups = new Map();
   for (const u of units) {
     const g = u.grade ?? "none";
@@ -618,6 +661,7 @@ if (scoreNotes.length) {
 }
 md.push("## Scoring rule applied", "");
 md.push("Scores are a % of each competition's `max_score` (set to 100 where unset). Grade given → a score inside that grade's bucket; no grade → below the C cut-off (40%). Placed entries score above every unplaced entry so Publish reproduces the positions.", "");
+if (explicitFcCount) md.push(`**${explicitFcCount} of ${unitsByFc.size} competitions use the sheet's own scores** (every entry has a \`score\`), written as-is. The buckets below apply only to the rest.`, "");
 md.push("| | 1st / 2nd / 3rd | unplaced |", "|---|---|---|");
 for (const g of ["A", "B", "C", "none"]) {
   const b = BUCKET[g];
@@ -660,7 +704,7 @@ const F = q(feast.id);
 
 const ord = new Map(plistFinal.map((p, i) => [p.key, i + 1]));
 const valuesBlock = (rows) => rows.map((r, i) => `  ${r.sql}${i === rows.length - 1 ? ";" : ","}${r.comment ? ` -- ${cmt(r.comment)}` : ""}`).join("\n");
-const describe = (u) => [u.position ? `pos ${u.position}` : null, u.grade ? `grade ${u.grade}` : u.scored ? "no grade" : null, u.scored ? null : u.participated ? "participated" : "registration only"].filter(Boolean).join(", ");
+const describe = (u) => [u.position ? `pos ${u.position}` : null, u.grade ? `grade ${u.grade}` : u.scored ? "no grade" : null, u.score != null && u.scored ? `score ${u.score}%` : null, u.scored ? null : u.participated ? "participated" : "registration only"].filter(Boolean).join(", ");
 
 const personRows = plistFinal.map((p) => ({
   sql: `(${ord.get(p.key)}, ${q(p.name)}, ${q(p.house_name)}, ${q(p.shakha.id)}, ${q(p.category)}, ${q(p.gender)}, ${q(p.phone)}, ${q(p.dob)}, ${p.existing ? q(p.existing.id) : "null"})`,

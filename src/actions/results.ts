@@ -1024,22 +1024,22 @@ async function readGroupResults(feastSlug: string, level: GroupLevel, groupId: s
 }
 
 // ── /screen big-display data ──────────────────────────────────────────────
+// For a team entry `name` is the team name and `houseName` its members.
 export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; }
-export interface ScreenPosition { place: 1 | 2 | 3; name: string; houseName: string | null; shakha: string; meghalaName: string | null; photoUrl: string | null; }
+export interface ScreenPosition extends ScreenAchiever { place: 1 | 2 | 3; }
 export interface ScreenCompetitionResult {
   competitionId: string;
   competitionName: string;
   categoryName: string;
   categorySlug: string;
+  gender: string | null;
+  isTeam: boolean;
   positions: ScreenPosition[];
   grades: { A: ScreenAchiever[]; B: ScreenAchiever[]; C: ScreenAchiever[] };
 }
 export interface ScreenData { competitions: ScreenCompetitionResult[] }
 
-// Decision #2: no per-participant photo pipeline exists yet, so unlike the
-// source app (which hardcoded one specific prod Supabase storage file as a
-// 100%-of-the-time fallback), positions[].photoUrl is always null here —
-// the UI shows its generic placeholder silhouette instead.
+// Individual and team results alike, in running order.
 // Every /screen display polls this; cached so a hall full of screens (and
 // the public results it mirrors) costs one read per publish.
 export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenData; error?: string }> {
@@ -1048,7 +1048,9 @@ export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenD
 
 const cachedScreenData = unstable_cache(
   async (feastSlug: string) => readScreenData(feastSlug),
-  ["fp-screen-data"],
+  // v3: entries carry `gender` and `isTeam`, and team results are included;
+  // the bump keeps older cached shapes out.
+  ["fp-screen-data-v3"],
   { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.live },
 );
 
@@ -1056,56 +1058,78 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
   const admin = getSupabaseAdmin();
   const { data: fcs, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, feast:feasts!inner(slug), competition:competitions(name, competition_category:competition_categories(name, slug))")
+    .select("id, feast:feasts!inner(slug), competition:competitions(name, gender, type, competition_category:competition_categories(name, slug))")
     .eq("feast.slug", feastSlug)
     .eq("result_status", "published")
     .order("display_order");
   if (fcErr) return { error: fcErr.message };
   if (!fcs || fcs.length === 0) return { data: { competitions: [] } };
 
-  const { data: results, error: resErr } = await fetchAllIn(fcs.map((f) => f.id), (ids, from, to) =>
-    admin
-      .from("competition_results")
-      .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))")
-      .in("feast_competition_id", ids)
-      .not("published_at", "is", null)
-      .order("id")
-      .range(from, to)
-  );
-  if (resErr) return { error: resErr };
+  const one = <T,>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : x ?? undefined);
+  const ids = fcs.map((f) => f.id);
+  const [individual, team] = await Promise.all([
+    fetchAllIn(ids, (chunk, from, to) =>
+      admin
+        .from("competition_results")
+        .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))")
+        .in("feast_competition_id", chunk)
+        .not("published_at", "is", null)
+        .order("id")
+        .range(from, to)
+    ),
+    fetchAllIn(ids, (chunk, from, to) =>
+      admin
+        .from("team_results")
+        .select("id, feast_competition_id, grade, position, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name)))")
+        .in("feast_competition_id", chunk)
+        .not("published_at", "is", null)
+        .order("id")
+        .range(from, to)
+    ),
+  ]);
+  if (individual.error) return { error: individual.error };
+  if (team.error) return { error: team.error };
 
-  const byFc = new Map<string, typeof results>();
-  for (const r of results) {
-    (byFc.get(r.feast_competition_id) ?? byFc.set(r.feast_competition_id, []).get(r.feast_competition_id)!).push(r);
+  // Both tables reduce to the same row shape; a team's members stand in for
+  // the house name.
+  type Row = { fcId: string; grade: string | null; position: number | null; entry: ScreenAchiever };
+  const rows: Row[] = [];
+  for (const r of individual.data) {
+    const participant = one(one(r.participant_registration)?.participant);
+    if (!participant) continue;
+    const shakha = one(participant.shakha);
+    rows.push({
+      fcId: r.feast_competition_id, grade: r.grade, position: r.position,
+      entry: { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null },
+    });
   }
+  for (const r of team.data) {
+    const reg = one(r.team_registration);
+    if (!reg) continue;
+    const shakha = one(reg.shakha);
+    const members = (reg.team_registration_members ?? []).map((m) => one(m.participant)?.name).filter(Boolean).join(", ");
+    rows.push({
+      fcId: r.feast_competition_id, grade: r.grade, position: r.position,
+      entry: { name: reg.team_name, houseName: members || null, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null },
+    });
+  }
+
+  const byFc = new Map<string, Row[]>();
+  for (const r of rows) (byFc.get(r.fcId) ?? byFc.set(r.fcId, []).get(r.fcId)!).push(r);
 
   const competitions: ScreenCompetitionResult[] = [];
   for (const fc of fcs) {
-    const rows = byFc.get(fc.id) ?? [];
-    if (rows.length === 0) continue;
-    const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
-    const category = Array.isArray(competition?.competition_category) ? competition?.competition_category[0] : competition?.competition_category;
+    const fcRows = byFc.get(fc.id) ?? [];
+    if (fcRows.length === 0) continue;
+    const competition = one(fc.competition);
+    const category = one(competition?.competition_category);
 
     const positions: ScreenPosition[] = [];
     const grades: { A: ScreenAchiever[]; B: ScreenAchiever[]; C: ScreenAchiever[] } = { A: [], B: [], C: [] };
-
-    for (const r of rows) {
-      const partReg = Array.isArray(r.participant_registration) ? r.participant_registration[0] : r.participant_registration;
-      const participant = Array.isArray(partReg?.participant) ? partReg?.participant[0] : partReg?.participant;
-      const shakha = Array.isArray(participant?.shakha) ? participant?.shakha[0] : participant?.shakha;
-      const shakhaMeghala = Array.isArray(shakha?.meghala) ? shakha?.meghala[0] : shakha?.meghala;
-      if (!participant) continue;
-      const entry = { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: shakhaMeghala?.name ?? null };
-
-      if (r.position != null && r.position >= 1 && r.position <= 3) {
-        positions.push({ place: r.position as 1 | 2 | 3, ...entry, photoUrl: null });
-      }
-      const grade = r.grade as "A" | "B" | "C" | null;
-      if (grade === "A" || grade === "B" || grade === "C") {
-        grades[grade].push(entry);
-      }
+    for (const r of fcRows) {
+      if (r.position != null && r.position >= 1 && r.position <= 3) positions.push({ place: r.position as 1 | 2 | 3, ...r.entry });
+      if (r.grade === "A" || r.grade === "B" || r.grade === "C") grades[r.grade].push(r.entry);
     }
-
     if (positions.length === 0 && grades.A.length === 0 && grades.B.length === 0 && grades.C.length === 0) continue;
 
     competitions.push({
@@ -1113,6 +1137,8 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
       competitionName: competition?.name ?? "Competition",
       categoryName: category?.name ?? "",
       categorySlug: category?.slug ?? "",
+      gender: competition?.gender ?? null,
+      isTeam: competition?.type === "group",
       positions: positions.sort((a, b) => a.place - b.place),
       grades,
     });

@@ -8,14 +8,17 @@ const SUB_COUNT = 3; // 1st/2nd/3rd or Grade A/B/C
 /**
  * Drives the big-screen's slide rotation across a two-level index:
  *   sectionIdx — which DashboardSection (Overall, Feast A, Feast B, ...)
- *   screenIdx  — within a feast section: 0 = point table, 1..N = competition N
+ *   screenIdx  — 0..rankingScreens-1 = rankings (Meghala then Shakha when the
+ *                org has a meghala tier, otherwise just Shakha); in a feast
+ *                section, rankingScreens..rankingScreens+N-1 = competition N
  *   subIdx     — sub-position cycle (1st/2nd/3rd or Grade A/B/C)
  */
 export function useDashboardRotation(
   sections: DashboardSection[],
   activeCompetitionCount: number,
   paused = false,
-  enabledSectionKeys: Set<string> | null = null
+  enabledSectionKeys: Set<string> | null = null,
+  rankingScreens = 1
 ) {
   const [sectionIdx, setSectionIdxRaw] = useState(0);
   const [screenIdx, setScreenIdxRaw] = useState(0);
@@ -25,8 +28,10 @@ export function useDashboardRotation(
 
   const safeSectionIdx = sections.length ? Math.min(sectionIdx, sections.length - 1) : 0;
   const activeSection: DashboardSection = sections[safeSectionIdx] ?? { kind: "overall" };
-  const safeScreenIdx = Math.min(screenIdx, activeCompetitionCount);
-  const isRankingsScreen = safeScreenIdx === 0;
+  const competitionCount = activeSection.kind === "feast" ? activeCompetitionCount : 0;
+  const lastScreenIdx = rankingScreens - 1 + competitionCount;
+  const safeScreenIdx = Math.min(screenIdx, lastScreenIdx);
+  const isRankingsScreen = safeScreenIdx < rankingScreens;
 
   const goToSection = (i: number) => {
     setSectionIdxRaw(i);
@@ -39,7 +44,9 @@ export function useDashboardRotation(
   };
 
   const nextRotationSectionIdx = (from: number): number => {
-    if (!enabledSectionKeys || enabledSectionKeys.size === 0) return (from + 1) % sections.length;
+    if (!enabledSectionKeys) return (from + 1) % sections.length;
+    // Everything unchecked: hold on the first section (Overall).
+    if (enabledSectionKeys.size === 0) return 0;
     for (let step = 1; step <= sections.length; step++) {
       const i = (from + step) % sections.length;
       if (enabledSectionKeys.has(sectionKey(sections[i]))) return i;
@@ -52,8 +59,9 @@ export function useDashboardRotation(
     const delay = isRankingsScreen ? ROTATE_MS : SUB_MS;
     const id = setTimeout(() => {
       if (isRankingsScreen) {
-        if (activeSection.kind === "feast" && activeCompetitionCount > 0) {
-          setScreenIdxRaw(1);
+        if (safeScreenIdx < lastScreenIdx) {
+          // Next ranking tier, or the first competition after the last tier.
+          setScreenIdxRaw(safeScreenIdx + 1);
           setSubIdx(0);
         } else {
           goToSection(nextRotationSectionIdx(safeSectionIdx));
@@ -62,7 +70,7 @@ export function useDashboardRotation(
         const nextSub = subIdx + 1;
         if (nextSub < SUB_COUNT) {
           setSubIdx(nextSub);
-        } else if (safeScreenIdx < activeCompetitionCount) {
+        } else if (safeScreenIdx < lastScreenIdx) {
           setScreenIdxRaw(safeScreenIdx + 1);
           setSubIdx(0);
         } else {
@@ -72,7 +80,7 @@ export function useDashboardRotation(
     }, delay);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionsKey, safeSectionIdx, safeScreenIdx, subIdx, isRankingsScreen, activeSection.kind, activeCompetitionCount, paused, enabledSectionKeys]);
+  }, [sectionsKey, safeSectionIdx, safeScreenIdx, subIdx, isRankingsScreen, lastScreenIdx, paused, enabledSectionKeys]);
 
   return { sectionIdx: safeSectionIdx, screenIdx: safeScreenIdx, subIdx, activeSection, isRankingsScreen, goToSection, goToScreen };
 }

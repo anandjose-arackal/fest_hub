@@ -1,305 +1,448 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Award, Check, ChevronLeft, ChevronRight, Church, Pause, Play, Settings, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { useFeasts, useShakhas } from "@/hooks/use-feast";
-import { useCompetitionStages, type CompetitionStage, type RunState } from "@/hooks/use-competition-stages";
-import { getLeaderboard, getOverallLeaderboard, getScreenData, type LeaderboardRow, type ScreenData, type ScreenCompetitionResult } from "@/actions/results";
-import { CATEGORY_COLORS } from "@/components/feast/feast-shared";
-import { useDashboardRotation, SUB_MS } from "./use-dashboard-rotation";
+import { useFeasts, useOrgHierarchy } from "@/hooks/use-feast";
+import { useCompetitionStages, type CompetitionStage } from "@/hooks/use-competition-stages";
+import {
+  getLeaderboard, getMeghalaLeaderboard, getOverallLeaderboard, getOverallMeghalaLeaderboard, getScreenData,
+  type LeaderboardRow, type ScreenAchiever, type ScreenCompetitionResult, type ScreenData,
+} from "@/actions/results";
+import { getRecentActivity, type ActivityItem } from "@/actions/activity";
+import { catStyle } from "@/components/feast/feast-shared";
+import { AWARD } from "@/components/feast/feast-shared-results";
+import { GradeBadge, Medal, MedalCounts, toneStyle, type MedalPos } from "@/components/feast/feast-ui";
+import { SUB_MS, useDashboardRotation } from "./use-dashboard-rotation";
 import { sectionKey, sectionLabel, type DashboardSection } from "./dashboard-types";
 
+// Everything on this page paints from the portal's --fp-* tokens (set by the
+// root layout's data-fp-theme), so the big screen follows whichever theme
+// the org picked instead of carrying its own palette.
 const DESIGN_W = 1920;
-const C_CYAN = "#3fe7ff";
-const C_VIOLET = "#7c5cff";
-const GOLD_GRAD = "linear-gradient(135deg, #6ef2ff, #36b6ff 30%, #7a6cff 55%, #e84ad6 80%, #ff8a3c)";
-const HUD_CLIP = (notch = 16) =>
-  `polygon(0 ${notch}px, ${notch}px 0, calc(100% - ${notch}px) 0, 100% ${notch}px, 100% calc(100% - ${notch}px), calc(100% - ${notch}px) 100%, ${notch}px 100%, 0 calc(100% - ${notch}px))`;
-const HUD_CLIP_STR = HUD_CLIP(16);
-const MEDAL_COLOR = ["#FFD24A", "#C8D6E0", "#E8934A"];
-const MEDAL_EMO = ["🥇", "🥈", "🥉"];
-const PLACE_LBL = ["Champion Shakha", "Second Place", "Third Place"];
-const PLACE_WORDS = ["First", "Second", "Third"];
-const PLACE_LABELS_SHORT = ["1st Place", "2nd Place", "3rd Place"];
-const GRADE_KEYS = ["A", "B", "C"] as const;
-const GRADE_COLORS: Record<string, string> = { A: "#16a34a", B: "#d97706", C: "#7c5cff" };
-const GRADE_LABELS: Record<string, string> = { A: "DISTINCTION", B: "MERIT", C: "PASS" };
-const STAGE_STATUS_COLOR: Record<RunState, string> = { upcoming: C_VIOLET, running: "#ffd24a", completed: "#4ade80" };
-
 const REFRESH_MS = 20_000;
 const FEASTS_POLL_MS = 5 * 60 * 1000;
 const FLIP_MS = 7000;
-const TICKER_H = 44;
+const TICKER_H = 64;
 const ROTATION_KEY = "feast-screen-rotation-sections";
+const UNASSIGNED_ID = "__unassigned__";
+
+const TONE = ["gold", "silver", "bronze"] as const;
+const PLACE_WORDS = ["First", "Second", "Third"];
+const GRADE_KEYS = ["A", "B", "C"] as const;
+const CATS = [
+  { key: "subJunior", slug: "sub_junior", label: "Sub Jr" },
+  { key: "junior", slug: "junior", label: "Junior" },
+  { key: "senior", slug: "senior", label: "Senior" },
+  { key: "superSenior", slug: "super_senior", label: "Sup Sr" },
+  { key: "elder", slug: "elder", label: "Elder" },
+] as const;
+
+const GOLD_BAR = "linear-gradient(90deg, color-mix(in srgb, var(--fp-gold) 62%, #7A4F00), var(--fp-gold) 60%, color-mix(in srgb, var(--fp-gold) 55%, #FFFFFF))";
+const PANEL: React.CSSProperties = { borderRadius: 28, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" };
+const PILL: React.CSSProperties = { height: 40, padding: "0 18px", display: "inline-flex", alignItems: "center", borderRadius: 9999, fontSize: 15, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
+const PILL_ON: React.CSSProperties = { ...PILL, fontWeight: 800, border: "1px solid transparent", background: "var(--fp-chip-on)", color: "var(--fp-chip-on-fg)" };
+const PILL_OFF: React.CSSProperties = { ...PILL, border: "1px solid var(--fp-line-2)", background: "var(--fp-surface)", color: "var(--fp-sub)" };
+const CHIP: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 10, padding: "7px 16px", borderRadius: 9999, fontSize: 14 };
+const LIVE_CHIP: React.CSSProperties = { ...CHIP, color: "var(--fp-live)", background: "var(--fp-live-bg)", border: "1px solid var(--fp-live-line)" };
+const BADGE: React.CSSProperties = { flex: "none", height: 66, padding: "0 26px", display: "inline-flex", alignItems: "center", borderRadius: 18, fontSize: 40, lineHeight: 1 };
+// Members of a team (or a long house name) wrap to two lines at most.
+const CLAMP2: React.CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" };
+const MINI_BADGE: React.CSSProperties = { height: 26, padding: "0 10px", display: "inline-flex", alignItems: "center", borderRadius: 8, fontSize: 12, letterSpacing: ".08em", color: "var(--fp-on-cat)" };
+const GOLD_CHIP: React.CSSProperties ={ ...CHIP, color: "var(--fp-gold-ink)", background: "var(--fp-note-bg)", border: "1px solid var(--fp-note-line)" };
+
+type Tier = "meghala" | "shakha";
+
+interface RankRow {
+  id: string;
+  name: string;
+  sub: string | null;
+  dot: string | null;
+  rank: number;
+  points: number;
+  cats: number[];
+  first: number;
+  second: number;
+  third: number;
+  a: number;
+  b: number;
+  c: number;
+  topShakha: { name: string; points: number } | null;
+  unassigned: boolean;
+}
 
 function fmtClock(d: Date) {
   const p = (n: number) => String(n).padStart(2, "0");
   return { hm: `${p(d.getHours())}:${p(d.getMinutes())}`, s: p(d.getSeconds()) };
 }
 
-function EmptyState({ message }: { message: string }) {
+function medalPos(rank: number): MedalPos | null {
+  return rank === 1 || rank === 2 || rank === 3 ? rank : null;
+}
+
+function Spinner() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
-      <div style={{ width: 120, height: 120, borderRadius: "50%", background: "rgba(124,92,255,0.10)", border: "2px solid rgba(124,92,255,0.35)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 52 }}>🏆</div>
-      <div style={{ fontFamily: "var(--font-oswald)", fontSize: 48, fontWeight: 700, background: GOLD_GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>No Results Yet</div>
-      <div style={{ fontSize: 20, color: "rgba(157,176,216,0.8)", maxWidth: 600, textAlign: "center" }}>{message}</div>
+    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 }}>
+      <div role="status" aria-label="Loading" style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid var(--fp-line-2)", borderTopColor: "var(--fp-gold)", animation: "scSpin .9s linear infinite" }} />
     </div>
   );
 }
 
-function PhotoFrame({ url, medalColor, size = 280 }: { url: string | null; medalColor: string; size?: number }) {
-  const hex = "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)";
+function EmptyState({ message, lead = "No results" }: { message: string; lead?: string }) {
   return (
-    <div
-      style={{
-        width: size, height: size, position: "relative", margin: "0 auto",
-        clipPath: hex,
-        background: `conic-gradient(from 0deg, ${medalColor}, #fff8c0 18%, #ffd700 36%, ${medalColor} 54%, #fff4a0 72%, ${medalColor} 90%, #fff8c0 100%)`,
-        filter: `drop-shadow(0 0 18px ${medalColor}bb) drop-shadow(0 0 40px ${medalColor}55)`,
-      }}
-    >
-      <div style={{ position: "absolute", inset: 8, clipPath: hex, background: "#1a1430", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-        {url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        ) : (
-          <svg viewBox="0 0 100 100" width="55%" height="55%" fill={medalColor} opacity={0.55}>
-            <circle cx="50" cy="35" r="20" />
-            <path d="M15 95 Q15 60 50 60 Q85 60 85 95 Z" />
-          </svg>
-        )}
+    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, textAlign: "center" }}>
+      <div style={{ width: 128, height: 128, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--fp-note-bg)", border: "2px solid var(--fp-note-line)", color: "var(--fp-gold-ink)" }}>
+        <Trophy size={56} strokeWidth={1.6} aria-hidden="true" />
       </div>
+      <div className="fp-disp" style={{ fontSize: 72 }}>{lead} <span className="fp-hl-text">yet</span></div>
+      <div style={{ fontSize: 24, fontWeight: 600, color: "var(--fp-sub)", maxWidth: 720 }}>{message}</div>
     </div>
   );
 }
 
-function MedalTag({ emoji, count }: { emoji: string; count: number }) {
+function GradeCount({ grade, n }: { grade: "A" | "B" | "C"; n: number }) {
+  const style: React.CSSProperties =
+    grade === "A" ? { background: "var(--fp-ga-bg)", color: "var(--fp-ga-fg)" }
+      : grade === "B" ? { background: "var(--fp-gb-bg)", color: "var(--fp-gb-fg)" }
+        : { border: "1.5px solid var(--fp-gc-line)", color: "var(--fp-gc-fg)" };
   return (
-    <span style={{ opacity: count > 0 ? 1 : 0.35, filter: count > 0 ? "none" : "grayscale(1)", fontSize: 20, display: "inline-flex", alignItems: "center", gap: 4 }}>
-      {emoji}<span style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 16 }}>{count}</span>
+    <span className="fp-num" aria-label={`${n} grade ${grade}`} style={{ minWidth: 40, height: 28, padding: "0 6px", boxSizing: "border-box", borderRadius: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 16, ...style }}>
+      {n}
     </span>
   );
 }
 
-// ── Screen 1: Rankings ─────────────────────────────────────────────────
-function Screen1Rankings({ rows, shakhaColor }: { rows: LeaderboardRow[]; shakhaColor: (name: string) => string }) {
-  const hasLb = rows.length > 0;
-  if (!hasLb) return <EmptyState message="No standings yet — rankings appear as results are published." />;
-  const top3 = rows.slice(0, 3);
-  const podiumOrder = [top3[1], top3[0], top3[2]];
-
+// ── Rankings (Meghala or Shakha tier) ──────────────────────────────────
+function Podium({ rows, tier, caption }: { rows: RankRow[]; tier: Tier; caption: string }) {
+  const top = rows.filter((r) => !r.unassigned).slice(0, 3);
+  const order = [top[1], top[0], top[2]];
+  const ped = [
+    { h: 290, medal: 76, pts: 72 },
+    { h: 210, medal: 60, pts: 56 },
+    { h: 160, medal: 60, pts: 56 },
+  ];
   return (
-    <div style={{ position: "absolute", top: 120, left: 40, right: 40, bottom: 20, display: "flex", flexDirection: "column", gap: 15 }}>
-      <div style={{ height: 270, display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 22 }}>
-        {podiumOrder.map((row, slot) => {
-          if (!row) return <div key={slot} style={{ width: 280 }} />;
-          const medalIdx = row.rank - 1;
-          const raise = medalIdx === 0 ? -24 : medalIdx === 1 ? -8 : 0;
-          const mc = MEDAL_COLOR[medalIdx] ?? C_VIOLET;
+    <section aria-label={tier === "meghala" ? "Top three meghalas" : "Top three shakhas"} style={{ ...PANEL, background: "var(--fp-surface-3)", position: "relative", overflow: "hidden", padding: "28px 24px", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+      <div className="fp-rays" aria-hidden="true" style={{ position: "absolute", left: "50%", top: 250, width: 900, height: 900, marginLeft: -450, marginTop: -450, borderRadius: "50%" }} />
+      <div style={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <p className="fp-cap" style={{ margin: 0, fontSize: 14, color: "var(--fp-gold-ink)" }}>{tier === "meghala" ? "Meghala podium" : "Shakha podium"}</p>
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--fp-meta)" }}>{caption}</p>
+      </div>
+      <div style={{ position: "relative", flex: 1, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, alignItems: "end" }}>
+        {order.map((row, slot) => {
+          if (!row) return <div key={slot} />;
+          const i = slot === 1 ? 0 : slot === 0 ? 1 : 2;
+          const pos = (i + 1) as MedalPos;
+          const t = TONE[i];
           return (
-            <div
-              key={row.shakhaId}
-              style={{
-                width: 280, borderRadius: 20, padding: 20, textAlign: "center", position: "relative",
-                background: "rgba(15,12,35,.55)", border: `1px solid ${mc}55`, transform: `translateY(${raise}px)`,
-                boxShadow: medalIdx === 0 ? `0 0 50px ${mc}44` : `0 0 20px ${mc}22`,
-              }}
-            >
-              <div style={{ width: 56, height: 56, borderRadius: "50%", margin: "0 auto 8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, background: `linear-gradient(135deg, ${mc}, ${mc}88)` }}>{MEDAL_EMO[medalIdx]}</div>
-              <div style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 15, color: mc, textTransform: "uppercase", letterSpacing: 1 }}>{PLACE_LBL[medalIdx]}</div>
-              <div style={{ fontFamily: "var(--font-oswald)", fontSize: 24, color: "#fff", marginTop: 4 }}>{row.name}</div>
-              <div style={{ fontFamily: "var(--font-oswald)", fontSize: 40, fontWeight: 700, color: mc, marginTop: 4 }}>{row.points}<span style={{ fontSize: 16, marginLeft: 4 }}>PTS</span></div>
-              <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 8 }}>
-                <MedalTag emoji="🥇" count={row.firstCount} />
-                <MedalTag emoji="🥈" count={row.secondCount} />
-                <MedalTag emoji="🥉" count={row.thirdCount} />
+            <div key={row.id} className="fp-rise" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", minWidth: 0, animationDelay: `${0.15 * slot}s` }}>
+              <Medal pos={pos} size={ped[i].medal} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: "100%" }}>
+                <div className="fp-ml" style={{ fontSize: 25, fontWeight: 800, lineHeight: 1.1, overflowWrap: "anywhere" }}>{row.name}</div>
+                {row.sub && <div className="fp-ml" style={{ fontSize: 16, fontWeight: 600, color: "var(--fp-sub)" }}>{row.sub}</div>}
               </div>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: shakhaColor(row.name), margin: "10px auto 0" }} />
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span className={`fp-num fp-t-${t}`} style={{ fontSize: ped[i].pts }}>{row.points}</span>
+                <span className="fp-cap" style={{ fontSize: 12, color: "var(--fp-meta)" }}>pts</span>
+              </div>
+              <MedalCounts g={row.first} s={row.second} b={row.third} size={18} className="text-[15px]" />
+              <div style={{ width: "100%", height: ped[i].h, borderRadius: "20px 20px 6px 6px", background: `var(--fp-ped-${t})`, borderTop: `2px solid var(--fp-ped-${t}-line)`, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, paddingTop: 18, boxSizing: "border-box" }}>
+                <span className={`fp-disp fp-t-${t}`} style={{ fontSize: 104 }}>{pos}</span>
+                {row.topShakha && (
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--fp-sub)", padding: "0 8px" }}>
+                    Top: <span className="fp-ml" style={{ fontWeight: 800, color: "var(--fp-ink)" }}>{row.topShakha.name}</span>
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
-
-      <div style={{ flex: 1, background: "rgba(15,12,35,.55)", border: "1px solid rgba(124,92,255,.25)", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-          <div style={{ fontFamily: "var(--font-oswald)", fontSize: 26, fontWeight: 700, color: "#fff" }}>FULL <b style={{ background: GOLD_GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>LEADERBOARD</b></div>
-          <div style={{ fontFamily: "var(--font-rajdhani)", color: "#9db4ff", fontSize: 16 }}>{rows.length} Shakhas · Live</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "52px 1fr 64px 64px 64px 64px 64px 92px 104px 130px", gap: 8, padding: "8px 12px", fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 13, color: "#9db4ff", textTransform: "uppercase", letterSpacing: 1 }}>
-          <span>Rank</span><span>Shakha</span><span>Sub Jr</span><span>Junior</span><span>Senior</span><span>Sup Sr</span><span>Elder</span><span>Total</span><span>🥇🥈🥉</span><span>A/B/C</span>
-        </div>
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-          <div style={{ animation: `tableScroll ${Math.max(20, rows.length * 3)}s linear infinite` }}>
-            {[...rows, ...rows].map((row, i) => {
-              const medalIdx = row.rank - 1;
-              const top = medalIdx >= 0 && medalIdx < 3;
-              return (
-                <div
-                  key={`${row.shakhaId}-${i}`}
-                  style={{
-                    display: "grid", gridTemplateColumns: "52px 1fr 64px 64px 64px 64px 64px 92px 104px 130px", gap: 8, padding: "10px 12px", alignItems: "center",
-                    fontFamily: "var(--font-barlow)", fontSize: 16, color: "#fff", borderBottom: "1px solid rgba(255,255,255,.06)",
-                    background: top ? `${MEDAL_COLOR[medalIdx]}14` : undefined, borderLeft: top ? `3px solid ${MEDAL_COLOR[medalIdx]}` : "3px solid transparent",
-                  }}
-                >
-                  <span style={{ fontFamily: "var(--font-oswald)", color: top ? MEDAL_COLOR[medalIdx] : "rgba(200,210,240,.5)" }}>{String(row.rank).padStart(2, "0")}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: shakhaColor(row.name) }} />{row.name}</span>
-                  <span style={{ color: row.subJunior ? "#fff" : "rgba(150,170,220,.25)" }}>{row.subJunior || "—"}</span>
-                  <span style={{ color: row.junior ? "#fff" : "rgba(150,170,220,.25)" }}>{row.junior || "—"}</span>
-                  <span style={{ color: row.senior ? "#fff" : "rgba(150,170,220,.25)" }}>{row.senior || "—"}</span>
-                  <span style={{ color: row.superSenior ? "#fff" : "rgba(150,170,220,.25)" }}>{row.superSenior || "—"}</span>
-                  <span style={{ color: row.elder ? "#fff" : "rgba(150,170,220,.25)" }}>{row.elder || "—"}</span>
-                  <span style={{ fontWeight: 700, color: "#FFD24A", textShadow: "0 0 12px rgba(255,210,74,.5)" }}>{row.points}</span>
-                  <span style={{ display: "flex", gap: 6 }}><MedalTag emoji="🥇" count={row.firstCount} /><MedalTag emoji="🥈" count={row.secondCount} /><MedalTag emoji="🥉" count={row.thirdCount} /></span>
-                  <span style={{ display: "flex", gap: 6, fontFamily: "var(--font-rajdhani)", fontWeight: 700 }}>
-                    <span style={{ color: row.aGrade ? "#4ade80" : "rgba(150,170,220,.25)" }}>{row.aGrade || "—"}</span>
-                    <span style={{ color: row.bGrade ? "#fbbf24" : "rgba(150,170,220,.25)" }}>{row.bGrade || "—"}</span>
-                    <span style={{ color: row.cGrade ? "#a78bfa" : "rgba(150,170,220,.25)" }}>{row.cGrade || "—"}</span>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
+    </section>
   );
 }
 
-// ── Screen 2: Competition results ─────────────────────────────────────
-function Screen2Competition({ comp, subIdx, shakhaColor }: { comp: ScreenCompetitionResult; subIdx: number; shakhaColor: (n: string) => string }) {
-  const catColor = CATEGORY_COLORS[comp.categorySlug] ?? C_VIOLET;
-  const activeGrade = GRADE_KEYS[subIdx];
-  const gradeColor = GRADE_COLORS[activeGrade];
-  const achievers = comp.grades[activeGrade];
-  const place = subIdx + 1;
-  const winner = comp.positions.find((p) => p.place === place) ?? null;
-  const mc = MEDAL_COLOR[subIdx];
-
-  const listRef = useRef<HTMLDivElement>(null);
+function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier: Tier; tiers: Tier[]; onTier: (t: Tier) => void; meta: string }) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [scrollY, setScrollY] = useState(0);
+  const listRef = useRef<HTMLOListElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  const cols = tier === "meghala"
+    ? "56px minmax(0, 1fr) repeat(5, 70px) 150px 200px 104px"
+    : "56px minmax(0, 1fr) repeat(5, 70px) 150px 150px 96px";
 
+  // Only loop-scroll when the list really is taller than its box — a short
+  // table sits still. Measured in a ResizeObserver callback (not
+  // synchronously in the effect) so a resize re-checks it too.
   useEffect(() => {
-    setScrollY(0);
-    const t = setTimeout(() => {
-      if (!listRef.current || !viewportRef.current) return;
-      const overflow = listRef.current.scrollHeight - viewportRef.current.clientHeight;
-      if (overflow > 0) setScrollY(-overflow);
-    }, 900);
-    return () => clearTimeout(t);
-  }, [achievers.map((a) => `${a.name}|${a.shakha}`).join(",")]);
+    const vp = viewportRef.current;
+    const list = listRef.current;
+    if (!vp || !list) return;
+    const ro = new ResizeObserver(() => {
+      const single = list.scrollHeight / (list.dataset.looped === "true" ? 2 : 1);
+      setOverflow(single > vp.clientHeight + 1);
+    });
+    ro.observe(vp);
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [rows.length]);
+
+  const shown = overflow ? [...rows, ...rows] : rows;
+  const label = tier === "meghala" ? "Meghala" : "Shakha";
 
   return (
-    <div style={{ position: "absolute", top: 120, left: 40, right: 40, bottom: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div>
-        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-          {[0, 1, 2].map((i) => (
-            <span key={i} style={i === subIdx ? { width: 20, height: 7, borderRadius: 4, background: `linear-gradient(90deg,#ffd24a,${C_VIOLET})` } : { width: 7, height: 7, borderRadius: "50%", background: "rgba(255,255,255,.18)" }} />
-          ))}
-          <span style={{ fontFamily: "var(--font-rajdhani)", color: mc, fontSize: 14, fontWeight: 700, marginLeft: 8 }}>{PLACE_LABELS_SHORT[subIdx]}</span>
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-anek), var(--font-oswald), sans-serif", fontSize: 46, fontWeight: 800, lineHeight: 1.1, maxHeight: "2.15em", overflow: "hidden",
-            background: GOLD_GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-          }}
-        >
-          {comp.categoryName ? `${comp.categoryName} — ${comp.competitionName}` : comp.competitionName}
-        </div>
-        <div style={{ height: 2, marginTop: 6, background: `linear-gradient(90deg, ${catColor}, ${C_VIOLET} 40%, transparent)` }} />
-      </div>
-
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "310px 1fr 560px", gap: 20, minHeight: 0 }}>
-        {/* Left: position winners */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <h3 style={{ fontFamily: "var(--font-oswald)", fontSize: 17, letterSpacing: 2.5, textTransform: "uppercase", color: "#fff", margin: 0 }}>
-            POSITION <b style={{ background: GOLD_GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>WINNERS</b>
-          </h3>
-          <div style={{ height: 2, background: "linear-gradient(90deg,#3fe7ff,#7c5cff,transparent)" }} />
-          {[0, 1, 2].map((i) => {
-            const w = comp.positions.find((p) => p.place === i + 1);
-            const active = i === subIdx;
-            const c = MEDAL_COLOR[i];
-            return (
-              <div key={i} style={{ borderRadius: 14, padding: 14, background: "rgba(15,12,35,.5)", opacity: active ? 1 : 0.55, boxShadow: active ? `0 0 28px ${c}44, inset 0 0 0 2px ${c}88` : `0 0 10px ${c}22` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, background: `${c}22` }}>{MEDAL_EMO[i]}</span>
-                  <span style={{ fontFamily: "var(--font-rajdhani)", fontSize: 13, letterSpacing: 3, textTransform: "uppercase", color: c }}>{["1st", "2nd", "3rd"][i]}</span>
-                </div>
-                <div style={{ marginTop: 8, fontFamily: "var(--font-anek), var(--font-oswald), sans-serif", fontSize: 20, fontWeight: 800, color: w ? "#fff" : "rgba(150,180,240,.35)" }}>{w?.name ?? "—"}</div>
-                {w?.houseName && <div style={{ fontSize: 14, color: "#c9d3f5" }}>{w.houseName}</div>}
-                {w && <div style={{ fontSize: 15, color: shakhaColor(w.shakha) }}>⛪ {w.shakha}{w.meghalaName ? ` · ${w.meghalaName}` : ""}</div>}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Center: featured spotlight */}
-        <div key={subIdx} style={{ borderRadius: 20, background: "rgba(15,12,35,.55)", border: `1px solid ${mc}44`, padding: 24, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-          <div style={{ fontFamily: "var(--font-rajdhani)", color: mc, fontSize: 16, letterSpacing: 3, textTransform: "uppercase", marginBottom: 10 }}>✝ {PLACE_LBL[subIdx]} ✝</div>
-          {winner ? (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                <span style={{ fontSize: 44 }}>{MEDAL_EMO[subIdx]}</span>
-                <span style={{ fontFamily: "var(--font-oswald)", fontSize: 44, fontWeight: 700, color: mc, textShadow: `0 0 24px ${mc}88` }}>{PLACE_WORDS[subIdx]}</span>
-              </div>
-              <PhotoFrame url={winner.photoUrl} medalColor={mc} size={220} />
-              <div style={{ marginTop: 16, fontFamily: "var(--font-anek), var(--font-oswald), sans-serif", fontSize: 38, fontWeight: 800, color: "#fff" }}>{winner.name}</div>
-              {winner.houseName && <div style={{ marginTop: 4, fontSize: 22 }}>🏠 {winner.houseName}</div>}
-              <div style={{ marginTop: 6, fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 26, color: shakhaColor(winner.shakha) }}>⛪ {winner.shakha}{winner.meghalaName ? ` · ${winner.meghalaName}` : ""}</div>
-            </>
-          ) : (
-            <div style={{ opacity: 0.4 }}>
-              <div style={{ fontSize: 44 }}>{MEDAL_EMO[subIdx]}</div>
-              <div style={{ fontFamily: "var(--font-oswald)", fontSize: 22, color: "#fff", marginTop: 8 }}>No winner yet</div>
+    <section aria-label={`${label} leaderboard`} style={{ ...PANEL, padding: 28, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 14, minWidth: 0, minHeight: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20 }}>
+        <h2 className="fp-disp" style={{ margin: 0, fontSize: 44 }}>{label} <span className="fp-hl-text">leaderboard</span></h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--fp-meta)" }}>{meta}{overflow ? " · scrolls automatically" : ""}</p>
+          {tiers.length > 1 && (
+            <div role="group" aria-label="Ranking level" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 9999, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" }}>
+              {tiers.map((t) => (
+                <button key={t} type="button" aria-pressed={t === tier} onClick={() => onTier(t)} style={t === tier ? PILL_ON : { ...PILL, border: 0, background: "transparent", color: "var(--fp-sub)" }}>
+                  {t === "meghala" ? "Meghala" : "Shakha"}
+                </button>
+              ))}
             </div>
           )}
         </div>
-
-        {/* Right: grade achievers */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-          <h3 style={{ fontFamily: "var(--font-oswald)", fontSize: 17, letterSpacing: 2.5, textTransform: "uppercase", color: "#fff", margin: 0 }}>
-            GRADE <b style={{ background: GOLD_GRAD, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>ACHIEVERS</b>
-          </h3>
-          <div style={{ height: 2, background: "linear-gradient(90deg,#3fe7ff,#7c5cff,transparent)" }} />
-          <div style={{ borderRadius: 14, background: "rgba(15,12,35,.5)", padding: 16, flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 20, color: "#fff", background: gradeColor, clipPath: "polygon(15% 0,85% 0,100% 15%,100% 85%,85% 100%,15% 100%,0 85%,0 15%)" }}>{activeGrade}</span>
-                <div>
-                  <div style={{ fontFamily: "var(--font-oswald)", fontSize: 16, color: "#fff" }}>Grade {activeGrade}</div>
-                  <div style={{ fontFamily: "var(--font-rajdhani)", fontSize: 11, color: "rgba(150,190,240,.7)" }}>{GRADE_LABELS[activeGrade]}</div>
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: "var(--font-oswald)", fontSize: 22, color: C_CYAN }}>{achievers.length}</div>
-                <div style={{ fontSize: 10, color: "rgba(150,190,240,.7)" }}>ACHIEVERS</div>
-              </div>
-            </div>
-            <div ref={viewportRef} style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
-              {achievers.length === 0 ? (
-                <p style={{ color: "rgba(150,180,240,.4)", fontSize: 16 }}>No achievers yet</p>
-              ) : (
-                <div ref={listRef} style={{ transform: `translateY(${scrollY}px)`, transition: "transform 6s linear" }}>
-                  {achievers.map((a, i) => (
-                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,.06)", animation: "scFadeIn .4s ease both", animationDelay: `${i * 0.07}s` }}>
-                      <span style={{ fontFamily: "var(--font-anek), var(--font-barlow), sans-serif", fontWeight: 800, color: "#fff", fontSize: 13 }}>{a.name}{a.houseName && <span style={{ display: "block", fontSize: 11, color: "rgba(200,210,240,.6)", fontWeight: 400 }}>{a.houseName}</span>}</span>
-                      <span style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 12, color: shakhaColor(a.shakha) }}>{a.shakha}{a.meghalaName ? ` · ${a.meghalaName}` : ""}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
+      <div className="fp-cap" style={{ display: "grid", gridTemplateColumns: cols, gap: 8, alignItems: "center", padding: "0 16px", fontSize: 12, color: "var(--fp-meta)" }}>
+        <span>Rank</span>
+        <span>{tier === "meghala" ? "Meghala" : tiers.length > 1 ? "Shakha · Meghala" : "Shakha"}</span>
+        {CATS.map((c) => (
+          <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: catStyle(c.slug).color }} />{c.label}
+          </span>
+        ))}
+        <span>Medals</span>
+        <span>{tier === "meghala" ? "Top shakha" : "Grades A·B·C"}</span>
+        <span style={{ textAlign: "right" }}>Total</span>
+      </div>
+      <div ref={viewportRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <ol
+          ref={listRef}
+          data-looped={overflow}
+          style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8, animation: overflow ? `tableScroll ${Math.max(20, rows.length * 3)}s linear infinite` : undefined }}
+        >
+          {shown.map((row, i) => {
+            const pos = row.unassigned ? null : medalPos(row.rank);
+            const rowStyle: React.CSSProperties = row.unassigned
+              ? { border: "1.5px dashed var(--fp-line-2)" }
+              : pos ? toneStyle(pos) : { background: "var(--fp-row-bg)", border: "1px solid var(--fp-line)" };
+            return (
+              <li key={`${row.id}-${i}`} aria-hidden={i >= rows.length || undefined} style={{ display: "grid", gridTemplateColumns: cols, gap: 8, alignItems: "center", height: 60, flexShrink: 0, padding: "0 16px", borderRadius: 16, ...rowStyle }}>
+                {pos ? (
+                  <Medal pos={pos} size={38} />
+                ) : (
+                  <span className="fp-num" style={{ fontSize: 24, color: "var(--fp-meta)", paddingLeft: 6 }}>{row.unassigned ? "—" : String(row.rank).padStart(2, "0")}</span>
+                )}
+                <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                  {row.dot && <span style={{ width: 10, height: 10, borderRadius: "50%", flex: "none", background: row.dot }} />}
+                  <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                    <span className="fp-ml" style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: row.unassigned ? "var(--fp-sub)" : undefined }}>
+                      {row.unassigned ? "Not in a meghala" : row.name}
+                    </span>
+                    {row.sub && <span className="fp-ml" style={{ fontSize: 14, fontWeight: 600, color: "var(--fp-meta)", lineHeight: 1.1 }}>{row.sub}</span>}
+                  </span>
+                </span>
+                {row.unassigned ? (
+                  <span style={{ gridColumn: "span 7" }} />
+                ) : (
+                  <>
+                    {row.cats.map((v, ci) => (
+                      <span key={ci} className="fp-num" style={{ fontSize: 22, color: v ? "var(--fp-ink)" : "var(--fp-faint)" }}>{v || "—"}</span>
+                    ))}
+                    <MedalCounts g={row.first} s={row.second} b={row.third} size={16} className="gap-2.5 text-[16px]" />
+                    {tier === "meghala" ? (
+                      <span style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                        <span className="fp-ml" style={{ fontSize: 17, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.topShakha?.name ?? "—"}</span>
+                        {row.topShakha && <span className="fp-num" style={{ fontSize: 17, color: "var(--fp-gold-ink)" }}>{row.topShakha.points}</span>}
+                      </span>
+                    ) : (
+                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <GradeCount grade="A" n={row.a} />
+                        <GradeCount grade="B" n={row.b} />
+                        <GradeCount grade="C" n={row.c} />
+                      </span>
+                    )}
+                  </>
+                )}
+                <span className={`fp-num ${pos ? `fp-t-${TONE[pos - 1]}` : ""}`} style={{ fontSize: row.unassigned ? 28 : 32, textAlign: "right", color: row.unassigned ? "var(--fp-sub)" : undefined }}>{row.points}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function RankingsScreen({ rows, tier, tiers, onTier, caption, meta }: { rows: RankRow[]; tier: Tier; tiers: Tier[]; onTier: (t: Tier) => void; caption: string; meta: string }) {
+  if (rows.filter((r) => !r.unassigned).length === 0) return <EmptyState lead="No standings" message="Rankings appear here as results are published." />;
+  return (
+    <main style={{ position: "absolute", top: 152, left: 56, right: 56, bottom: TICKER_H + 28, display: "grid", gridTemplateColumns: "580px minmax(0, 1fr)", gap: 32 }}>
+      <Podium rows={rows} tier={tier} caption={caption} />
+      <RankTable rows={rows} tier={tier} tiers={tiers} onTier={onTier} meta={meta} />
+    </main>
+  );
+}
+
+// ── Competition result ─────────────────────────────────────────────────
+function findGrade(comp: ScreenCompetitionResult, p: { name: string; shakha: string }): "A" | "B" | "C" | null {
+  return GRADE_KEYS.find((g) => comp.grades[g].some((a) => a.name === p.name && a.shakha === p.shakha)) ?? null;
+}
+
+function GradeList({ achievers }: { achievers: ScreenAchiever[] }) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [scrollY, setScrollY] = useState(0);
+
+  // Mounted fresh per competition + grade (keyed by the caller), so it
+  // always starts at the top; a long list then glides to its end.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!listRef.current || !viewportRef.current) return;
+      const over = listRef.current.scrollHeight - viewportRef.current.clientHeight;
+      if (over > 0) setScrollY(-over);
+    }, 900);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (achievers.length === 0) {
+    return <p style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "var(--fp-meta)" }}>No one in this grade.</p>;
+  }
+  return (
+    <div ref={viewportRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+      <ul ref={listRef} style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8, transform: `translateY(${scrollY}px)`, transition: "transform 6s linear" }}>
+        {achievers.map((a, i) => (
+          <li key={`${a.name}-${a.shakha}-${i}`} className="fp-fade-up" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderRadius: 14, background: "var(--fp-row-bg)", border: "1px solid var(--fp-line)", animationDelay: `${Math.min(i, 10) * 0.06}s` }}>
+            <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
+              <span className="fp-ml" style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15 }}>{a.name}</span>
+              {a.houseName && <span className="fp-ml" style={{ fontSize: 15, fontWeight: 600, color: "var(--fp-meta)", ...CLAMP2 }}>{a.houseName}</span>}
+            </span>
+            <span className="fp-ml" style={{ fontSize: 16, fontWeight: 800, color: "var(--fp-link)", textAlign: "right" }}>{a.shakha}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-// ── Screen 3: Stage board ────────────────────────────────────────────
+function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; subIdx: number }) {
+  const cs = catStyle(comp.categorySlug || null);
+  const place = (subIdx + 1) as MedalPos;
+  const winner = comp.positions.find((p) => p.place === place) ?? null;
+  const winnerGrade = winner ? findGrade(comp, winner) : null;
+  const activeGrade = GRADE_KEYS[subIdx];
+  const graded = comp.grades.A.length + comp.grades.B.length + comp.grades.C.length;
+  const gender = comp.gender === "girl" ? "Girls" : comp.gender === "boy" ? "Boys" : null;
+  const gc = gender === "Girls" ? "var(--fp-girls)" : "var(--fp-boys)";
+
+  return (
+    <>
+      <section aria-label="Competition" style={{ position: "absolute", top: 148, left: 56, right: 56, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 32 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-meta)" }}>{comp.positions.length} placed · {graded} graded</span>
+          {/* Age category and boys/girls lead the title as solid badges —
+              from the back of the hall they're what tells two same-named
+              items apart. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+            {comp.categoryName && <span className="fp-disp" style={{ ...BADGE, background: cs.hi, color: "var(--fp-on-cat)", boxShadow: `0 10px 26px color-mix(in srgb, ${cs.color} 35%, transparent)` }}>{comp.categoryName}</span>}
+            {gender && <span className="fp-disp" style={{ ...BADGE, background: gc, color: "var(--fp-on-cat)", boxShadow: `0 10px 26px color-mix(in srgb, ${gc} 35%, transparent)` }}>{gender}</span>}
+            {comp.isTeam && <span className="fp-disp" style={{ ...BADGE, background: "var(--fp-cat-team-hi)", color: "var(--fp-on-cat)" }}>Team</span>}
+            <h2 className="fp-ml" style={{ margin: "0 0 0 8px", fontSize: 72, fontWeight: 800, lineHeight: 1.05, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{comp.competitionName}</h2>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flex: "none" }}>
+          <span className="fp-cap" style={{ fontSize: 12, color: "var(--fp-meta)" }}>Spotlight</span>
+          <div style={{ display: "flex", gap: 8 }} aria-label={`${PLACE_WORDS[subIdx]} place of 3`}>
+            {[0, 1, 2].map((i) => (
+              <span key={i} style={{ width: i === subIdx ? 54 : 22, height: 8, borderRadius: 9999, background: i === subIdx ? GOLD_BAR : "var(--fp-track)", transition: "width .4s" }} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <main style={{ position: "absolute", top: 312, left: 56, right: 56, bottom: TICKER_H + 28, display: "grid", gridTemplateColumns: "560px minmax(0, 1fr) 520px", gap: 28 }}>
+        <article aria-label="Final results" style={{ borderRadius: 28, overflow: "hidden", background: "var(--fp-award-bg)", color: AWARD.ink, boxShadow: "var(--fp-award-shadow)", display: "flex", flexDirection: "column" }}>
+          <div aria-hidden="true" style={{ height: 6, background: `linear-gradient(90deg, ${cs.color}, #F5C542)` }} />
+          <div className="fp-cap" style={{ display: "flex", alignItems: "center", gap: 8, padding: "22px 26px 8px", fontSize: 14, color: AWARD.link }}>
+            <Award size={18} strokeWidth={2.2} aria-hidden="true" />Final results
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              {comp.categoryName && <span style={{ ...MINI_BADGE, background: cs.hi }}>{comp.categoryName}</span>}
+              {gender && <span style={{ ...MINI_BADGE, background: gc }}>{gender}</span>}
+              {comp.isTeam && <span style={{ ...MINI_BADGE, background: "var(--fp-cat-team-hi)" }}>Team</span>}
+            </span>
+          </div>
+          {comp.positions.length === 0 ? (
+            <p style={{ margin: 0, padding: "12px 26px", fontSize: 18, fontWeight: 600, color: AWARD.sub }}>No placed winners for this item — grades only.</p>
+          ) : (
+            <ol style={{ margin: 0, padding: "10px 16px 16px", listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+              {comp.positions.map((p, i) => {
+                const active = p.place === place;
+                return (
+                  <li key={`${p.place}-${p.name}-${i}`} style={{
+                    display: "flex", alignItems: "center", gap: 18, padding: 18, borderRadius: 20, transition: "background .4s, border-color .4s",
+                    background: active ? "linear-gradient(100deg, rgba(245,197,66,.34) 0%, rgba(255,255,255,.8) 62%)" : AWARD.soft,
+                    border: `1.5px solid ${active ? "rgba(217,144,26,.45)" : AWARD.line}`,
+                  }}>
+                    <Medal pos={p.place} size={62} />
+                    <span style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: 1 }}>
+                      <span className="fp-ml" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>{p.name}</span>
+                      {p.houseName && <span className="fp-ml" style={{ fontSize: 18, fontWeight: 600, color: AWARD.sub, ...CLAMP2 }}>{p.houseName}</span>}
+                      <span className="fp-ml" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 17, fontWeight: 800, color: AWARD.link }}>
+                        <Church size={15} strokeWidth={2.2} aria-hidden="true" />{p.shakha}{p.meghalaName ? ` · ${p.meghalaName}` : ""}
+                      </span>
+                    </span>
+                    <GradeBadge grade={findGrade(comp, p)} size={46} variant="award" />
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </article>
+
+        <section key={subIdx} aria-label={`Spotlight — ${PLACE_WORDS[subIdx].toLowerCase()} place`} style={{ ...PANEL, background: "var(--fp-surface-3)", border: "1px solid var(--fp-tone-gold-line)", boxShadow: "0 0 60px var(--fp-glow)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", padding: 28 }}>
+          <div className="fp-rays" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "42%", width: 1100, height: 1100, marginLeft: -550, marginTop: -550, borderRadius: "50%" }} />
+          <span className="fp-rise" style={{ position: "relative", opacity: winner ? 1 : 0.35 }}><Medal pos={place} size={168} /></span>
+          <span className={`fp-disp fp-t-${TONE[subIdx]}`} style={{ position: "relative", fontSize: 84, marginTop: 8 }}>{PLACE_WORDS[subIdx]} place</span>
+          {winner ? (
+            <div className="fp-fade-up" style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, animationDelay: ".2s" }}>
+              <div className="fp-ml" style={{ fontSize: 68, fontWeight: 800, lineHeight: 1.05, marginTop: 10 }}>{winner.name}</div>
+              {winner.houseName && <div className="fp-ml" style={{ fontSize: 26, fontWeight: 600, color: "var(--fp-sub)", maxWidth: 820, ...CLAMP2 }}>{winner.houseName}</div>}
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <span className="fp-ml" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 26, fontWeight: 800, color: "var(--fp-link)" }}>
+                  <Church size={22} strokeWidth={2.2} aria-hidden="true" />{winner.shakha}{winner.meghalaName ? ` · ${winner.meghalaName}` : ""}
+                </span>
+                {winnerGrade && <span className="fp-num" style={{ height: 40, padding: "0 14px", borderRadius: 10, display: "inline-flex", alignItems: "center", fontSize: 22, background: "var(--fp-ga-bg)", color: "var(--fp-ga-fg)" }}>Grade {winnerGrade}</span>}
+              </div>
+            </div>
+          ) : (
+            <div style={{ position: "relative", fontSize: 26, fontWeight: 700, color: "var(--fp-meta)", marginTop: 10 }}>No {PLACE_WORDS[subIdx].toLowerCase()} place for this item</div>
+          )}
+        </section>
+
+        <section aria-label="Grade achievers" style={{ ...PANEL, padding: "26px 28px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 16, minHeight: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <h3 className="fp-disp" style={{ margin: 0, fontSize: 40 }}>Grade <span className="fp-hl-text">achievers</span></h3>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "var(--fp-meta)" }}>{graded} graded</span>
+          </div>
+          <div aria-label="Grade shown" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, padding: 5, borderRadius: 18, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" }}>
+            {GRADE_KEYS.map((g) => (
+              <span key={g} aria-current={g === activeGrade || undefined} style={{ height: 52, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 800, transition: "background .4s", ...(g === activeGrade ? { background: "var(--fp-chip-on)", color: "var(--fp-chip-on-fg)" } : { color: "var(--fp-sub)" }) }}>
+                {g} · {comp.grades[g].length}
+              </span>
+            ))}
+          </div>
+          <GradeList key={`${comp.competitionId}-${activeGrade}`} achievers={comp.grades[activeGrade]} />
+        </section>
+      </main>
+    </>
+  );
+}
+
+// ── Stage board ────────────────────────────────────────────────────────
 function StageBoardScreen({ feastSlug }: { feastSlug: string }) {
   const { stages, loading, totalCount, completedCount } = useCompetitionStages(feastSlug, { alwaysPoll: true, intervalMs: REFRESH_MS });
   const [flipped, setFlipped] = useState(false);
@@ -311,301 +454,378 @@ function StageBoardScreen({ feastSlug }: { feastSlug: string }) {
     return () => clearInterval(id);
   }, [flipPaused]);
 
-  if (loading && stages.length === 0) {
-    return <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid rgba(255,255,255,.15)", borderTopColor: C_CYAN, animation: "scSpin .9s linear infinite" }} /></div>;
-  }
-  if (stages.length === 0) return <EmptyState message="Stage schedule hasn't been published yet." />;
+  if (loading && stages.length === 0) return <Spinner />;
+  if (stages.length === 0) return <EmptyState lead="No schedule" message="The stage schedule hasn't been published yet." />;
 
   const liveCount = stages.filter((s) => s.status === "running").length;
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
-    <div style={{ position: "absolute", top: 120, left: 40, right: 40, bottom: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px", fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 16, letterSpacing: 3, color: "#fff",
-            background: liveCount > 0 ? "linear-gradient(135deg, #ff3b6b, #b3122e)" : "linear-gradient(135deg,#4b5570,#333c52)",
-            clipPath: "polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)",
-          }}
-        >
-          {liveCount > 0 && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", animation: "scBlink 1.1s steps(1) infinite" }} />}
-          {liveCount > 0 ? `${liveCount} STAGE${liveCount > 1 ? "S" : ""} LIVE` : "NO STAGE LIVE"}
+    <>
+      <section aria-label="Overall progress" style={{ position: "absolute", top: 152, left: 56, right: 56, height: 72, boxSizing: "border-box", padding: "0 12px 0 24px", borderRadius: 22, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)", display: "flex", alignItems: "center", gap: 28 }}>
+        {liveCount > 0 ? (
+          <span className="fp-cap" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 15, color: "var(--fp-live)" }}>
+            <span className="fp-livedot" style={{ width: 10, height: 10 }} />{liveCount} stage{liveCount > 1 ? "s" : ""} live
+          </span>
+        ) : (
+          <span className="fp-cap" style={{ fontSize: 15, color: "var(--fp-meta)" }}>No stage live</span>
+        )}
+        <span style={{ width: 1, height: 32, background: "var(--fp-line-2)" }} />
+        <span style={{ fontSize: 19, fontWeight: 700, color: "var(--fp-sub)", whiteSpace: "nowrap" }}>
+          <span className="fp-num" style={{ fontSize: 28, color: "var(--fp-ink)" }}>{completedCount}</span> of <span className="fp-num" style={{ fontSize: 28, color: "var(--fp-ink)" }}>{totalCount}</span> competitions completed
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span style={{ fontFamily: "var(--font-rajdhani)", fontSize: 20, color: "#9db4ff" }}>OVERALL <b style={{ color: "#fff" }}>{completedCount} / {totalCount}</b> COMPETITIONS COMPLETED</span>
-          <button onClick={() => setFlipPaused((p) => !p)} style={{ padding: "6px 14px", borderRadius: 20, background: "rgba(124,92,255,.18)", border: "1px solid rgba(124,92,255,.4)", color: "#fff", fontFamily: "var(--font-rajdhani)", fontWeight: 700, cursor: "pointer" }}>
-            {flipPaused ? "Flip Paused" : "Flip Live"}
-          </button>
+        <div style={{ flex: 1, height: 12, borderRadius: 9999, background: "var(--fp-track)", overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", borderRadius: 9999, background: GOLD_BAR, transition: "width .8s cubic-bezier(.22,1,.36,1)" }} />
         </div>
-      </div>
+        <span className="fp-num fp-t-gold" style={{ fontSize: 32 }}>{pct}%</span>
+        <button type="button" aria-pressed={flipPaused} onClick={() => setFlipPaused((p) => !p)} style={{ ...PILL_OFF, height: 48, gap: 10, color: "var(--fp-ink)", fontFamily: "inherit", fontWeight: 800 }}>
+          {flipPaused ? <Play size={18} strokeWidth={2.2} aria-hidden="true" /> : <Pause size={18} strokeWidth={2.2} aria-hidden="true" />}
+          {flipPaused ? "Resume card flip" : "Pause card flip"}
+        </button>
+      </section>
 
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "repeat(4, 1fr)", gap: 12, minHeight: 0 }}>
-        {stages.slice(0, 8).map((stage) => (
-          <StageCard key={stage.key} stage={stage} flipped={flipped} />
-        ))}
-      </div>
-    </div>
+      <main style={{ position: "absolute", top: 244, left: 56, right: 56, bottom: TICKER_H + 28, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridTemplateRows: "repeat(4, minmax(0, 1fr))", gap: 16 }}>
+        {stages.slice(0, 8).map((stage) => <StageCard key={stage.key} stage={stage} flipped={flipped} />)}
+      </main>
+    </>
   );
 }
 
 function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boolean }) {
-  const color = STAGE_STATUS_COLOR[stage.status];
   const isLive = stage.status === "running";
   const isDone = stage.status === "completed";
   const upcoming = stage.competitions.filter((c) => c.status === "upcoming");
+  const next = stage.nextCompetition ?? upcoming[0] ?? null;
+  const title = stage.venue ? `${stage.title} · ${stage.venue}` : stage.title;
   // Bar reflects the current item's own progress, not how many of the
   // stage's competitions have been checked off.
-  const itemFillPct = isLive ? stage.runningCompetition?.itemProgressPct ?? 0 : isDone ? 100 : 0;
+  const fill = isLive ? stage.runningCompetition?.itemProgressPct ?? 0 : isDone ? 100 : 0;
+  const label = isLive ? stage.runningCompetition?.label ?? "—" : isDone ? `All ${stage.totalCount} competitions completed` : next?.label ?? "Nothing scheduled";
+  const meta = isLive
+    ? `${stage.completedCount} / ${stage.totalCount} done${stage.runningCompetition?.itemProgressPct != null ? ` · item ${stage.runningCompetition.itemProgressPct}%` : ""}`
+    : isDone ? `${stage.completedCount} / ${stage.totalCount} done` : `First up · ${stage.totalCount} items`;
+
+  const face: React.CSSProperties = { position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden", display: "flex", alignItems: "center", gap: 24, padding: "0 28px 0 24px" };
 
   return (
-    <div
-      className="sc-hud"
+    <article
+      aria-label={title}
       style={{
-        minWidth: 0,
-        minHeight: 0,
-        position: "relative",
-        borderLeft: `4px solid ${color}`,
-        boxShadow: isLive ? `0 0 40px ${color}44, inset 0 0 0 1px ${color}33` : undefined,
-        opacity: isDone ? 0.68 : 1,
-        transition: "opacity .5s, box-shadow .5s",
+        position: "relative", minWidth: 0, minHeight: 0, borderRadius: 24, overflow: "hidden", perspective: 1400,
+        ...(isLive ? { background: "var(--fp-tone-gold-bg)", border: "1.5px solid var(--fp-tone-gold-line)", boxShadow: "0 0 40px var(--fp-glow)" } : { background: "var(--fp-surface)", border: "1.5px solid var(--fp-line-2)" }),
+        opacity: isDone ? 0.7 : 1, transition: "opacity .5s, box-shadow .5s",
       }}
     >
-      {isLive && <span className="sc-tick tl" style={{ borderColor: color }} />}
-      {isLive && <span className="sc-tick br" style={{ borderColor: color }} />}
-
-      {/* Stage number — persistent corner badge, visible on both faces */}
-      <div style={{
-        position: "absolute", top: 12, left: 12, zIndex: 3,
-        width: 52, height: 52, borderRadius: "50%", flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: isDone ? "linear-gradient(135deg,#4ade80,#22c55e)" : `linear-gradient(135deg, ${color}, ${color}cc)`,
-        border: "2px solid rgba(5,4,16,.6)",
-        boxShadow: "0 4px 14px rgba(0,0,0,.45)",
-      }}>
-        <span className="sc-font-disp" style={{ fontSize: 24, fontWeight: 900, color: "#05040f", lineHeight: 1 }}>
-          {isDone ? "✓" : stage.stageNumber}
-        </span>
-      </div>
-
-      <div style={{ position: "relative", width: "100%", height: "100%", perspective: 1400 }}>
-        <div
-          style={{
-            position: "relative", width: "100%", height: "100%",
-            transformStyle: "preserve-3d",
-            transition: "transform .9s cubic-bezier(.4,.15,.2,1)",
-            transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
-          }}
-        >
-          {/* Front — live progress lane */}
-          <div style={{
-            position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
-            display: "flex", flexDirection: "column", justifyContent: "center", gap: 4, padding: "14px 24px 14px 78px",
-          }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
-              <span className="sc-font-disp" style={{
-                fontSize: 22, fontWeight: 600, color: "rgba(230,235,255,.85)", textTransform: "uppercase", letterSpacing: 0.5,
-                lineHeight: 1.1, flexShrink: 0,
-              }}>
-                {stage.title}{isLive ? "," : ""}
-              </span>
-              {isLive && (
-                <span style={{
-                  fontFamily: "var(--font-anek), var(--font-oswald), sans-serif",
-                  fontWeight: 900, fontSize: 46, lineHeight: 1.05,
-                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flex: 1,
-                  background: GOLD_GRAD, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
-                }}>
-                  {stage.runningCompetition?.label ?? "—"}
-                </span>
+      <div style={{ position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d", transition: "transform .9s cubic-bezier(.4,.15,.2,1)", transform: flipped ? "rotateY(180deg)" : "none" }}>
+        {/* Front — what's on stage now */}
+        <div style={face}>
+          {isLive ? (
+            <span className="fp-medal fp-m-gold" style={{ width: 76, height: 76, fontSize: 38 }}>{stage.stageNumber}</span>
+          ) : isDone ? (
+            <span className="fp-medal" style={{ width: 76, height: 76, background: "var(--fp-ok-bg)", border: "2px solid var(--fp-ok)", color: "var(--fp-ok)" }}><Check size={34} strokeWidth={2.6} aria-label="Completed" /></span>
+          ) : (
+            <span className="fp-medal" style={{ width: 76, height: 76, fontSize: 38, color: "var(--fp-sub)", border: "2px solid var(--fp-line-2)" }}>{stage.stageNumber}</span>
+          )}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+              <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+              {isLive ? (
+                <span className="fp-cap" style={{ ...LIVE_CHIP, gap: 8, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}><span className="fp-livedot" style={{ width: 8, height: 8 }} />On stage now</span>
+              ) : isDone ? (
+                <span className="fp-cap" style={{ ...CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none", color: "var(--fp-ok)", background: "var(--fp-ok-bg)" }}>Completed</span>
+              ) : (
+                <span className="fp-cap" style={{ ...GOLD_CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}>{stage.scheduledTime ? `Starts ${stage.scheduledTime}` : "Up next"}</span>
               )}
             </div>
-
-            <div className="sc-font-hud" style={{ fontSize: 13, color: "rgba(157,180,216,.75)", marginTop: 2, display: "flex", justifyContent: "space-between" }}>
-              <span>{stage.completedCount}/{stage.totalCount}{stage.scheduledTime && !isLive ? ` · ${stage.scheduledTime}` : ""}</span>
-              {isLive && stage.runningCompetition?.itemProgressPct != null && (
-                <span><b style={{ color }}>{stage.runningCompetition.itemProgressPct}%</b> done</span>
-              )}
-            </div>
-
-            <div style={{ position: "relative", height: isLive ? 12 : 8, minWidth: 0, flexShrink: 0 }}>
-              <div style={{ position: "absolute", inset: 0, borderRadius: 6, background: "rgba(255,255,255,.07)" }} />
-              <div style={{
-                position: "absolute", top: 0, bottom: 0, left: 0, width: `${itemFillPct}%`,
-                borderRadius: 6, overflow: "hidden",
-                background: `linear-gradient(90deg, ${color}99, ${color})`,
-                transition: "width .8s cubic-bezier(.22,1,.36,1)",
-              }}>
-                <div className="sc-lane-shimmer" style={{ position: "absolute", inset: 0, width: "55%", background: "linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent)", animation: "scLaneShimmer 2.1s linear infinite", mixBlendMode: "overlay" }} />
+            <div className="fp-ml" style={{ fontSize: isLive ? 40 : 30, fontWeight: 800, lineHeight: 1.08, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: isLive ? "var(--fp-ink)" : isDone ? "var(--fp-meta)" : "var(--fp-sub)" }}>{label}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ flex: 1, height: 10, borderRadius: 9999, background: "var(--fp-track)", overflow: "hidden" }}>
+                <div style={{ position: "relative", overflow: "hidden", width: `${fill}%`, height: "100%", borderRadius: 9999, background: isDone ? "var(--fp-ok)" : GOLD_BAR, transition: "width .8s cubic-bezier(.22,1,.36,1)" }}>
+                  {isLive && <span className="sc-sheen" />}
+                </div>
               </div>
-              {isLive && (
-                <div style={{
-                  position: "absolute", left: `${itemFillPct}%`, top: "50%",
-                  transform: "translate(-50%,-50%)", width: 20, height: 20, borderRadius: "50%",
-                  background: color, boxShadow: `0 0 22px ${color}`, animation: "scPulseDot 1.3s ease-in-out infinite",
-                }} />
-              )}
+              <span style={{ fontSize: 16, fontWeight: 700, color: "var(--fp-meta)", whiteSpace: "nowrap" }}>{meta}</span>
             </div>
-          </div>
-
-          {/* Back — every competition in this stage still upcoming */}
-          <div style={{
-            position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
-            transform: "rotateY(180deg)",
-            display: "flex", flexDirection: "column", gap: 6, padding: "14px 22px 14px 78px", overflow: "hidden",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginBottom: 2 }}>
-              <span className="sc-font-disp" style={{ fontSize: 24, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                {stage.title}
-              </span>
-              <span className="sc-font-hud" style={{ fontSize: 19, color: "rgba(157,180,216,.6)", marginLeft: "auto" }}>
-                UPCOMING · {upcoming.length}
-              </span>
-            </div>
-            {upcoming.length === 0 ? (
-              <div className="sc-font-hud" style={{ fontSize: 24, color: "rgba(157,180,216,.55)" }}>
-                {isDone ? "All competitions completed" : "Nothing left upcoming"}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: 14, rowGap: 6, overflow: "hidden" }}>
-                {upcoming.map((c) => {
-                  const runningOrder = stage.competitions.findIndex((x) => x.id === c.id) + 1;
-                  return (
-                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                      <span style={{
-                        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        background: color, boxShadow: `0 0 10px ${color}88`,
-                      }}>
-                        <span className="sc-font-disp" style={{ fontSize: 16, fontWeight: 900, color: "#05040f" }}>
-                          {runningOrder}
-                        </span>
-                      </span>
-                      <span style={{
-                        fontFamily: "var(--font-anek), var(--font-rajdhani), sans-serif",
-                        fontSize: 26, color: "rgba(230,235,255,.9)", fontWeight: 600,
-                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                      }}>
-                        {c.label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Back — every competition still upcoming on this stage */}
+        <div style={{ ...face, transform: "rotateY(180deg)", flexDirection: "column", alignItems: "stretch", justifyContent: "center", gap: 10, padding: "16px 28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+            <span className="fp-cap" style={{ marginLeft: "auto", fontSize: 13, color: "var(--fp-gold-ink)", flex: "none" }}>Up next · {upcoming.length}</span>
+          </div>
+          {upcoming.length === 0 ? (
+            <div className="fp-ml" style={{ fontSize: 26, fontWeight: 700, color: "var(--fp-meta)" }}>{isDone ? "All competitions completed" : "Nothing left upcoming"}</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", columnGap: 16, rowGap: 8, overflow: "hidden" }}>
+              {upcoming.slice(0, 6).map((c) => (
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <span className="fp-num" style={{ width: 30, height: 30, borderRadius: "50%", flex: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 16, background: "var(--fp-note-bg)", border: "1px solid var(--fp-note-line)", color: "var(--fp-gold-ink)" }}>
+                    {stage.competitions.findIndex((x) => x.id === c.id) + 1}
+                  </span>
+                  <span className="fp-ml" style={{ fontSize: 22, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+    </article>
+  );
+}
+
+// ── New result published takeover ──────────────────────────────────────
+// Plays over everything when a result is published while the screen is
+// open: a burst announcing it, then the item's category and name slide in,
+// then it fades away onto that item's normal result screen.
+interface PublishEvent {
+  id: string;
+  fcId: string;
+  feastSlug: string;
+  feastName: string;
+  competitionName: string;
+  categoryName: string;
+  categorySlug: string | null;
+  gender: string | null;
+  isTeam: boolean;
+}
+type TakeoverPhase = "announce" | "slide" | "exit";
+
+const PUBLISH_POLL_MS = 10_000;
+const ANNOUNCE_MS = 2800;
+const SLIDE_MS = 2800;
+const EXIT_MS = 450;
+// A queued takeover waits until the previous result has shown 1st/2nd/3rd.
+const RESULT_HOLD_MS = 3 * SUB_MS;
+const CONFETTI_COLORS = ["var(--fp-gold)", "var(--fp-primary-light)", "var(--fp-accent)", "var(--fp-cyan)", "var(--fp-ink)"];
+const CONFETTI = Array.from({ length: 28 }, (_, i) => ({
+  left: (i * 37 + 11) % 100,
+  w: 8 + (i % 3) * 4,
+  h: 14 + (i % 4) * 5,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  delay: ((i * 13) % 17) / 10,
+  dur: 2.4 + (i % 5) * 0.35,
+}));
+
+function toPublishEvent(a: ActivityItem): PublishEvent {
+  return {
+    id: `${a.id}@${a.at}`,
+    fcId: a.id,
+    feastSlug: a.feastSlug,
+    feastName: a.feastName,
+    competitionName: a.competitionName,
+    categoryName: a.categoryName ?? "",
+    categorySlug: a.categorySlug,
+    gender: a.gender,
+    isTeam: a.isTeam,
+  };
+}
+
+function PublishTakeover({ ev, phase }: { ev: PublishEvent; phase: TakeoverPhase }) {
+  const cs = catStyle(ev.categorySlug);
+  const gender = ev.gender === "girl" ? "Girls" : ev.gender === "boy" ? "Boys" : null;
+  const gc = gender === "Girls" ? "var(--fp-girls)" : "var(--fp-boys)";
+  const badges = (
+    <>
+      {ev.categoryName && <span className="fp-disp" style={{ ...BADGE, height: 84, fontSize: 52, padding: "0 32px", background: cs.hi, color: "var(--fp-on-cat)" }}>{ev.categoryName}</span>}
+      {gender && <span className="fp-disp" style={{ ...BADGE, height: 84, fontSize: 52, padding: "0 32px", background: gc, color: "var(--fp-on-cat)" }}>{gender}</span>}
+      {ev.isTeam && <span className="fp-disp" style={{ ...BADGE, height: 84, fontSize: 52, padding: "0 32px", background: "var(--fp-cat-team-hi)", color: "var(--fp-on-cat)" }}>Team</span>}
+    </>
+  );
+
+  return (
+    <div role="alert" aria-label={`New result published: ${[ev.categoryName, gender, ev.competitionName].filter(Boolean).join(" ")}`} className={phase === "exit" ? "pt-exit" : undefined} style={{ position: "absolute", inset: 0, zIndex: 50, overflow: "hidden" }}>
+      <div className="pt-fade" style={{ position: "absolute", inset: 0, background: "radial-gradient(60% 60% at 50% 45%, color-mix(in srgb, var(--fp-primary-dark) 45%, var(--fp-base)) 0%, var(--fp-base) 100%)" }} />
+
+      {phase === "announce" ? (
+        <>
+          <div aria-hidden="true" className="pt-rays-in" style={{ position: "absolute", left: "50%", top: "46%", width: 2000, height: 2000, marginLeft: -1000, marginTop: -1000 }}>
+            <div className="fp-rays" style={{ width: "100%", height: "100%", borderRadius: "50%" }} />
+          </div>
+          {[0.2, 0.55, 0.9].map((d) => (
+            <div key={d} aria-hidden="true" className="pt-ring" style={{ animationDelay: `${d}s`, position: "absolute", left: "50%", top: "46%", width: 420, height: 420, marginLeft: -210, marginTop: -210, borderRadius: "50%", border: "3px solid var(--fp-tone-gold-line)", boxShadow: "0 0 40px var(--fp-glow)" }} />
+          ))}
+          {CONFETTI.map((c, i) => (
+            <span key={i} aria-hidden="true" className="pt-confetti" style={{ left: `${c.left}%`, width: c.w, height: c.h, background: c.color, animationDelay: `${c.delay}s`, animationDuration: `${c.dur}s` }} />
+          ))}
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 26, textAlign: "center" }}>
+            <div className="fp-cap pt-up" style={{ ...LIVE_CHIP, gap: 12, fontSize: 20, padding: "10px 22px", animationDelay: ".15s" }}>
+              <span className="fp-livedot" style={{ width: 12, height: 12 }} />New result · just now
+            </div>
+            <div className="pt-slam" style={{ animationDelay: ".25s" }}>
+              <span className="fp-disp" style={{ display: "block", fontSize: 150, lineHeight: 0.9 }}>New result</span>
+              <span className="fp-disp fp-t-gold pt-sheen" style={{ fontSize: 250, lineHeight: 0.86, filter: "drop-shadow(0 12px 40px var(--fp-glow))" }}>Published</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        // Category, boys/girls and the item's name slide in before the result.
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 34, textAlign: "center", padding: "0 120px" }}>
+          <div aria-hidden="true" className="pt-sweep" style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 6, marginTop: -3, background: GOLD_BAR }} />
+          <span className="fp-cap pt-slide" style={{ fontSize: 22, color: "var(--fp-gold-ink)" }}>{ev.feastName} · Result published</span>
+          <div className="pt-slide" style={{ display: "flex", gap: 18, animationDelay: ".12s" }}>{badges}</div>
+          <div className="fp-ml pt-slide" style={{ fontSize: 132, fontWeight: 800, lineHeight: 1.05, animationDelay: ".28s", maxWidth: "100%", ...CLAMP2 }}>{ev.competitionName}</div>
+          <span className="fp-cap pt-up" style={{ fontSize: 18, color: "var(--fp-meta)", animationDelay: "1.1s", display: "inline-flex", alignItems: "center", gap: 10 }}>
+            The winners <ChevronRight size={20} aria-hidden="true" />
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Header ───────────────────────────────────────────────────────────
+// ── Header ─────────────────────────────────────────────────────────────
+// index/count drive the arrows and dots across every screen in the section;
+// label/shown/of are what the counter reads ("Result 3 / 29").
+interface ScreenNav { index: number; count: number; label: string; shown: number; of: number; onPrev: () => void; onNext: () => void; onGo: (i: number) => void }
+
 function ScreenHeader({
-  logoUrl, subtitle, feastName, section, sections, activeSectionKey, screenCount, screenIdx, onNavSection, onNavScreen,
+  logoUrl, subtitle, feastName, eyebrow, eyebrowTone, titleLead, titleGold, sections, activeSectionKey, onNavSection, screenNav, paused, onTogglePause, settings,
 }: {
-  logoUrl: string; subtitle: string; feastName: string; section: DashboardSection; sections: DashboardSection[]; activeSectionKey: string;
-  screenCount: number; screenIdx: number; onNavSection: (i: number) => void; onNavScreen: (i: number) => void;
+  logoUrl: string; subtitle: string; feastName: string; eyebrow: string; eyebrowTone: "live" | "gold"; titleLead: string; titleGold: string;
+  sections: DashboardSection[]; activeSectionKey: string; onNavSection: (i: number) => void;
+  screenNav: ScreenNav | null; paused: boolean; onTogglePause: () => void; settings: React.ReactNode;
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   // Initialized null (not fmtClock(new Date()) at first render) to avoid a
   // server/client hydration mismatch — the server-rendered timestamp would
   // never match the client's by the time it hydrates.
   const [clock, setClock] = useState<{ hm: string; s: string } | null>(null);
   useEffect(() => {
-    setClock(fmtClock(new Date()));
-    const id = setInterval(() => setClock(fmtClock(new Date())), 1000);
-    return () => clearInterval(id);
+    const tick = () => setClock(fmtClock(new Date()));
+    const first = setTimeout(tick, 0);
+    const id = setInterval(tick, 1000);
+    return () => { clearTimeout(first); clearInterval(id); };
   }, []);
 
-  let title = "SHAKHA <b>RANKINGS</b>";
-  let eyebrow = "Overall Standings — All Fests";
-  if (section.kind === "stages") { title = "STAGE <b>BOARD</b>"; eyebrow = "Live Competition Board"; }
-  else if (section.kind === "feast") {
-    if (screenIdx === 0) eyebrow = "Live Standings";
-    else { title = "COMPETITION <b>RESULTS</b>"; eyebrow = "Results Declared"; }
-  }
-
   return (
-    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 104, display: "flex", alignItems: "center", gap: 24, padding: "0 40px", background: "linear-gradient(180deg, rgba(3,2,11,.7) 0%, transparent 100%)", zIndex: 5 }}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={logoUrl} alt="" style={{ width: 78, height: 78, objectFit: "contain" }} />
-      <div>
-        <div style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 700, fontSize: 32, color: "#fff", lineHeight: 1 }}>{feastName}</div>
-        <div style={{ fontFamily: "var(--font-anek), sans-serif", fontWeight: 600, fontSize: 20, color: C_CYAN }}>{subtitle}</div>
+    <header style={{ position: "absolute", top: 0, left: 0, right: 0, height: 132, boxSizing: "border-box", padding: "0 56px", display: "grid", gridTemplateColumns: "560px 1fr 560px", alignItems: "center", gap: 24, zIndex: 5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20, minWidth: 0 }}>
+        <div style={{ width: 84, height: 84, borderRadius: "50%", flex: "none", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "var(--fp-logo-bg)", border: "2px solid var(--fp-logo-line)" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logoUrl} alt="" style={{ width: "78%", height: "78%", objectFit: "contain" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <div className="fp-ml" style={{ fontSize: 34, fontWeight: 800, lineHeight: 1.05, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{feastName}</div>
+          {subtitle && <div className="fp-ml" style={{ fontSize: 20, fontWeight: 600, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{subtitle}</div>}
+        </div>
       </div>
-      <div style={{ flex: 1, textAlign: "center" }}>
-        <div style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 600, fontSize: 15, letterSpacing: 8, textTransform: "uppercase", color: "#9db4ff" }}>✛ {eyebrow} ✛</div>
-        <div style={{ fontFamily: "var(--font-oswald)", fontWeight: 700, fontSize: 46, letterSpacing: 2, textTransform: "uppercase", color: "#fff" }} dangerouslySetInnerHTML={{ __html: title.replace("<b>", `<b style="background:${GOLD_GRAD};-webkit-background-clip:text;-webkit-text-fill-color:transparent">`) }} />
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <div className="fp-cap" style={eyebrowTone === "live" ? LIVE_CHIP : GOLD_CHIP}>
+          {eyebrowTone === "live" ? <span className="fp-livedot" style={{ width: 9, height: 9 }} /> : <Trophy size={16} strokeWidth={2.2} aria-hidden="true" />}
+          {eyebrow}
+        </div>
+        <h1 className="fp-disp" style={{ margin: 0, fontSize: 76, whiteSpace: "nowrap" }}>{titleLead} <span className="fp-hl-text">{titleGold}</span></h1>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, minWidth: 230 }}>
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12, minWidth: 0 }}>
         {sections.length > 1 && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <nav aria-label="Screen sections" style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {sections.map((s, i) => {
-              const active = sectionKey(s) === activeSectionKey;
+              const on = sectionKey(s) === activeSectionKey;
               return (
-                <button
-                  key={sectionKey(s)}
-                  onClick={() => onNavSection(i)}
-                  style={{
-                    padding: "5px 12px", borderRadius: 20, fontFamily: "var(--font-rajdhani)", fontWeight: 600, fontSize: 13, cursor: "pointer",
-                    border: active ? "1px solid #3fe7ff" : "1px solid rgba(255,255,255,.2)",
-                    background: active ? "linear-gradient(135deg,rgba(63,231,255,.18),rgba(124,92,255,.18))" : "transparent",
-                    color: active ? "#fff" : "#cdd7f5",
-                  }}
-                >
+                <button key={sectionKey(s)} type="button" aria-current={on || undefined} onClick={() => onNavSection(i)} style={{ ...(on ? PILL_ON : PILL_OFF), fontFamily: "inherit" }}>
                   {sectionLabel(s)}
                 </button>
               );
             })}
-          </div>
+          </nav>
         )}
-        {screenCount > 1 && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button onClick={() => onNavScreen(Math.max(0, screenIdx - 1))} style={navBtnStyle}>‹</button>
-            {Array.from({ length: screenCount }, (_, i) => (
-              <span key={i} style={i === screenIdx ? { width: 20, height: 7, borderRadius: 4, background: "linear-gradient(90deg,#ffd24a,#7c5cff)" } : { width: 7, height: 7, borderRadius: "50%", background: "rgba(255,255,255,.25)" }} />
-            ))}
-            <button onClick={() => onNavScreen(Math.min(screenCount - 1, screenIdx + 1))} style={navBtnStyle}>›</button>
+        {/* Screen controller: step through this section's screens, pause the
+            rotation, choose which sections rotate. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div role="group" aria-label="Screen controls" style={{ display: "flex", alignItems: "center", gap: 6, height: 48, padding: "0 6px", borderRadius: 9999, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" }}>
+            {screenNav && (
+              <>
+                <button type="button" onClick={screenNav.onPrev} disabled={screenNav.index === 0} aria-label="Previous screen" style={NAV_BTN}><ChevronLeft size={20} aria-hidden="true" /></button>
+                {screenNav.count <= 8 ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 4px" }}>
+                    {Array.from({ length: screenNav.count }, (_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => screenNav.onGo(i)}
+                        aria-label={`Screen ${i + 1} of ${screenNav.count}`}
+                        aria-current={i === screenNav.index || undefined}
+                        style={{ width: i === screenNav.index ? 26 : 9, height: 9, padding: 0, border: 0, borderRadius: 9999, cursor: "pointer", background: i === screenNav.index ? GOLD_BAR : "var(--fp-line-2)", transition: "width .3s" }}
+                      />
+                    ))}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 15, fontWeight: 800, color: "var(--fp-sub)", padding: "0 6px", whiteSpace: "nowrap" }}>
+                    {screenNav.label} <span className="fp-num" style={{ fontSize: 18, color: "var(--fp-ink)" }}>{screenNav.shown}</span> / {screenNav.of}
+                  </span>
+                )}
+                <button type="button" onClick={screenNav.onNext} disabled={screenNav.index === screenNav.count - 1} aria-label="Next screen" style={NAV_BTN}><ChevronRight size={20} aria-hidden="true" /></button>
+                <span aria-hidden="true" style={{ width: 1, height: 24, background: "var(--fp-line-2)", margin: "0 2px" }} />
+              </>
+            )}
+            <button
+              type="button"
+              onClick={onTogglePause}
+              aria-pressed={paused}
+              aria-label={paused ? "Resume rotation" : "Pause rotation"}
+              style={paused ? { ...NAV_BTN, width: "auto", padding: "0 14px", gap: 6, background: "var(--fp-chip-on)", color: "var(--fp-chip-on-fg)", border: 0, fontSize: 14, fontWeight: 800, fontFamily: "inherit" } : NAV_BTN}
+            >
+              {paused ? <><Play size={16} aria-hidden="true" />Paused</> : <Pause size={18} aria-hidden="true" />}
+            </button>
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              <button type="button" onClick={() => setSettingsOpen((o) => !o)} aria-label="Rotation settings" aria-expanded={settingsOpen} style={settingsOpen ? { ...NAV_BTN, background: "var(--fp-chip-on)", color: "var(--fp-chip-on-fg)", border: 0 } : NAV_BTN}>
+                <Settings size={18} aria-hidden="true" />
+              </button>
+              {settingsOpen && (
+                <div style={{ position: "absolute", top: 50, right: 0, minWidth: 300, padding: 16, borderRadius: 16, background: "var(--fp-sheet)", border: "1px solid var(--fp-line-2)", boxShadow: "var(--fp-shadow)", zIndex: 30 }}>
+                  {settings}
+                </div>
+              )}
+            </span>
           </div>
-        )}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", background: "linear-gradient(135deg, #ff3b6b, #b3122e)", clipPath: "polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)", fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 14, letterSpacing: 3, color: "#fff" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fff", animation: "scBlink 1.1s steps(1) infinite" }} />LIVE
-        </span>
-        <div style={{ fontFamily: "var(--font-oswald)", fontSize: 22, color: "#fff" }}>{clock?.hm ?? "--:--"}<small style={{ fontSize: 13, color: "#9db0d8", marginLeft: 4 }}>{clock?.s ?? "--"}</small></div>
+          <div className="fp-num" style={{ fontSize: 40, marginLeft: 4 }}>
+            {clock?.hm ?? "--:--"}<span style={{ fontSize: 18, color: "var(--fp-meta)", marginLeft: 6 }}>{clock?.s ?? "--"}</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </header>
   );
 }
 
-const navBtnStyle: React.CSSProperties = { width: 24, height: 24, borderRadius: "50%", border: "1px solid rgba(255,255,255,.25)", color: "#fff", background: "rgba(255,255,255,.06)", cursor: "pointer", fontSize: 13, lineHeight: 1 };
+const NAV_BTN: React.CSSProperties = { width: 36, height: 36, borderRadius: 9999, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--fp-line-2)", background: "var(--fp-surface-2)", color: "var(--fp-ink)", cursor: "pointer" };
 
-// ── Ticker ───────────────────────────────────────────────────────────
+// ── Ticker ─────────────────────────────────────────────────────────────
 function Ticker({ rows }: { rows: LeaderboardRow[] }) {
   if (rows.length === 0) return null;
   return (
-    <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: TICKER_H, background: "linear-gradient(90deg,rgba(8,8,22,.94),rgba(18,12,38,.94))", borderTop: "1px solid rgba(100,160,255,.35)", zIndex: 1000, display: "flex", alignItems: "center" }}>
-      <span style={{ flexShrink: 0, height: "100%", display: "flex", alignItems: "center", padding: "0 20px", background: "linear-gradient(135deg,#6ef2ff,#5b8cff 55%,#9d6eff)", clipPath: "polygon(0 0, 100% 0, 88% 100%, 0 100%)", fontFamily: "var(--font-rajdhani)", fontWeight: 800, fontSize: 16, letterSpacing: 2, color: "#060e18" }}>
-        LIVE STANDINGS
+    <footer aria-label="Live standings ticker" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: TICKER_H, display: "flex", alignItems: "center", overflow: "hidden", background: "var(--fp-bar)", borderTop: "1px solid var(--fp-note-line)", zIndex: 6 }}>
+      <span className="fp-cap" style={{ flex: "none", height: "100%", display: "flex", alignItems: "center", padding: "0 34px 0 56px", fontSize: 15, background: "var(--fp-cta-gold)", color: "var(--fp-cta-gold-fg)", clipPath: "polygon(0 0, 100% 0, calc(100% - 22px) 100%, 0 100%)", position: "relative", zIndex: 1 }}>
+        Live standings
       </span>
       <div style={{ flex: 1, overflow: "hidden" }}>
-        <div style={{ display: "flex", whiteSpace: "nowrap", animation: `tickerScroll ${Math.max(24, rows.length * 4)}s linear infinite` }}>
+        <div style={{ display: "flex", whiteSpace: "nowrap", width: "max-content", animation: `tickerScroll ${Math.max(24, rows.length * 4)}s linear infinite` }}>
           {[...rows, ...rows].map((r, i) => (
-            <span key={i} style={{ fontFamily: "var(--font-rajdhani)", fontWeight: 700, fontSize: 20, color: "#fff", padding: "0 20px" }}>
-              {r.name} <b style={{ color: C_CYAN }}>{r.points}</b> PTS <span style={{ color: "rgba(200,180,255,.6)" }}>✝</span>
+            <span key={i} aria-hidden={i >= rows.length || undefined} style={{ display: "inline-flex", alignItems: "center", gap: 12, padding: "0 22px 0 32px", fontSize: 22, fontWeight: 800 }}>
+              <span className="fp-num" style={{ color: "var(--fp-meta)" }}>{String(r.rank).padStart(2, "0")}</span>
+              <span className="fp-ml">{r.name}</span>
+              <span className="fp-num" style={{ color: "var(--fp-gold-ink)" }}>{r.points}</span>
+              <span aria-hidden="true" style={{ width: 7, height: 7, transform: "rotate(45deg)", background: "var(--fp-note-line)", marginLeft: 12 }} />
             </span>
           ))}
         </div>
       </div>
-    </div>
+    </footer>
   );
 }
 
-// ── Main ─────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────
 function ScreenPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { feasts, loading: feastsLoading } = useFeasts({ pollIntervalMs: FEASTS_POLL_MS });
-  const { shakhas } = useShakhas();
-  const shakhaColor = useCallback((name: string) => shakhas.find((s) => s.name === name)?.color ?? C_VIOLET, [shakhas]);
+  const { meghalas, shakhas, hierarchyLevel } = useOrgHierarchy();
+  const hasMeghala = hierarchyLevel !== "shakha";
+  const tiers: Tier[] = useMemo(() => (hasMeghala ? ["meghala", "shakha"] : ["shakha"]), [hasMeghala]);
 
   const [orgLogo, setOrgLogo] = useState("/logo.png");
   const [orgTagline, setOrgTagline] = useState("");
@@ -627,55 +847,115 @@ function ScreenPageInner() {
       // which React then rejects as an invalid CSS height value.
       if (window.innerWidth <= 0 || window.innerHeight <= 0) return;
       const s = window.innerWidth / DESIGN_W;
-      const dh = Math.max(1080, Math.round(window.innerHeight / s));
       setScale(s);
-      setDesignH(dh);
+      setDesignH(Math.max(1080, Math.round(window.innerHeight / s)));
     };
     fit();
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);
 
+  const liveFeast = feasts.find((f) => f.status !== "Completed");
   const sections: DashboardSection[] = [
     { kind: "overall" },
     ...feasts.map((f) => ({ kind: "feast" as const, feastSlug: f.slug, feastName: f.name })),
-    ...(feasts.find((f) => f.status !== "Completed") ? [{ kind: "stages" as const, feastSlug: feasts.find((f) => f.status !== "Completed")!.slug, feastName: feasts.find((f) => f.status !== "Completed")!.name }] : []),
+    ...(liveFeast ? [{ kind: "stages" as const, feastSlug: liveFeast.slug, feastName: liveFeast.name }] : []),
   ];
 
   const [paused, setPaused] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [enabledSectionKeys, setEnabledSectionKeys] = useState<Set<string> | null>(null);
-  useEffect(() => {
+
+  // Read once on mount. Only the auto-rotation and the (closed by default)
+  // settings popover depend on it, so the server render's null can't cause
+  // a visible hydration mismatch.
+  const [enabledSectionKeys, setEnabledSectionKeys] = useState<Set<string> | null>(() => {
     try {
-      const raw = localStorage.getItem(ROTATION_KEY);
-      if (raw) setEnabledSectionKeys(new Set(JSON.parse(raw)));
-    } catch {}
-  }, []);
+      const raw = typeof window !== "undefined" ? localStorage.getItem(ROTATION_KEY) : null;
+      return raw ? new Set<string>(JSON.parse(raw)) : null;
+    } catch {
+      return null;
+    }
+  });
   function toggleSection(key: string) {
-    setEnabledSectionKeys((prev) => {
-      const base = prev ?? new Set(sections.map(sectionKey));
-      const next = new Set(base);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      try { localStorage.setItem(ROTATION_KEY, JSON.stringify([...next])); } catch {}
-      return next;
-    });
+    const next = new Set(enabledSectionKeys ?? sections.map(sectionKey));
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setEnabledSectionKeys(next);
+    try { localStorage.setItem(ROTATION_KEY, JSON.stringify([...next])); } catch {}
+
+    // Apply the change right away instead of at the end of the current
+    // cycle: nothing checked → back to the first section (Overall); the
+    // section on screen just got unchecked → jump to the next checked one.
+    if (next.size === 0) {
+      if (rotation.sectionIdx !== 0) goToSection(0);
+      return;
+    }
+    if (!next.has(activeKey)) {
+      for (let step = 1; step <= sections.length; step++) {
+        const i = (rotation.sectionIdx + step) % sections.length;
+        if (next.has(sectionKey(sections[i]))) {
+          goToSection(i);
+          break;
+        }
+      }
+    }
   }
 
   const [overallRows, setOverallRows] = useState<LeaderboardRow[]>([]);
+  const [overallMeghalaRows, setOverallMeghalaRows] = useState<LeaderboardRow[]>([]);
   const [overallLoading, setOverallLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
-    const load = () => getOverallLeaderboard().then(({ data }) => { if (!cancelled) { setOverallRows(data ?? []); setOverallLoading(false); } });
+    const load = () =>
+      Promise.all([getOverallLeaderboard(), hasMeghala ? getOverallMeghalaLeaderboard() : Promise.resolve({ data: [] as LeaderboardRow[] })]).then(([lb, mg]) => {
+        if (cancelled) return;
+        setOverallRows(lb.data ?? []);
+        setOverallMeghalaRows(mg.data ?? []);
+        setOverallLoading(false);
+      });
     load();
     const id = setInterval(load, REFRESH_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, []);
+  }, [hasMeghala]);
 
   const [feastRows, setFeastRows] = useState<LeaderboardRow[]>([]);
+  const [feastMeghalaRows, setFeastMeghalaRows] = useState<LeaderboardRow[]>([]);
   const [screenData, setScreenData] = useState<ScreenData>({ competitions: [] });
-  const [feastDataLoading, setFeastDataLoading] = useState(false);
+  // Which fest's data the feast states currently hold — the active fest is
+  // still loading until this catches up with it.
+  const [loadedFeastSlug, setLoadedFeastSlug] = useState<string | null>(null);
 
-  const rotation = useDashboardRotation(sections, screenData.competitions.length, paused, enabledSectionKeys);
+  // ── New result published ──
+  // Watches the same live-activity feed the portal's "Live updates" widget
+  // shows (getRecentActivity — feast_competitions turning published). Only
+  // items newer than the newest one when this screen opened announce, so
+  // reopening the screen never replays old results.
+  const [publishQueue, setPublishQueue] = useState<PublishEvent[]>([]);
+  const [takeover, setTakeover] = useState<{ ev: PublishEvent; phase: TakeoverPhase } | null>(null);
+  const lastTakeoverEndRef = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    let baseline: string | null = null; // newest activity timestamp seen (DB time)
+    const poll = () =>
+      getRecentActivity(8).then((items) => {
+        if (cancelled) return;
+        const newest = items.reduce((m, i) => (i.at > m ? i.at : m), baseline ?? "");
+        if (baseline === null) { baseline = newest; return; }
+        const since = baseline;
+        baseline = newest;
+        const events = items
+          .filter((i) => i.type === "published" && i.at > since)
+          .sort((a, b) => a.at.localeCompare(b.at))
+          .map(toPublishEvent);
+        // A re-publish of an item already waiting doesn't queue it twice.
+        if (events.length) setPublishQueue((q) => [...q, ...events.filter((e) => !q.some((x) => x.fcId === e.fcId))]);
+      });
+    poll();
+    const id = setInterval(poll, PUBLISH_POLL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  // A publish overrides pause: rotation holds while the takeover plays and
+  // resumes from the new result afterwards.
+  const rotation = useDashboardRotation(sections, screenData.competitions.length, paused || takeover !== null, enabledSectionKeys, tiers.length);
   const { activeSection, screenIdx, subIdx, isRankingsScreen, goToSection, goToScreen } = rotation;
 
   // Keyed on the plain slug string (or null), not the activeSection object —
@@ -683,22 +963,90 @@ function ScreenPageInner() {
   // comment below), which would otherwise tear down and never restart this
   // polling interval on the very next unrelated re-render.
   const activeFeastSlug = activeSection.kind === "feast" ? activeSection.feastSlug : null;
+
+  // After a takeover, the result it announced: set when the takeover moves
+  // to its slide, resolved by the fest data load below (which knows where
+  // that item sits in the fest's running order).
+  const pendingFocusRef = useRef<{ feastSlug: string; fcId: string } | null>(null);
+  const goToScreenRef = useRef(goToScreen);
+  const tiersLenRef = useRef(tiers.length);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  useEffect(() => {
+    goToScreenRef.current = goToScreen;
+    tiersLenRef.current = tiers.length;
+  });
+
   useEffect(() => {
     if (!activeFeastSlug) return;
     const slug = activeFeastSlug;
     let cancelled = false;
-    setFeastDataLoading(true);
     const load = () =>
-      Promise.all([getLeaderboard(slug), getScreenData(slug)]).then(([lb, sd]) => {
+      Promise.all([
+        getLeaderboard(slug),
+        getScreenData(slug),
+        hasMeghala ? getMeghalaLeaderboard(slug) : Promise.resolve({ data: [] as LeaderboardRow[] }),
+      ]).then(([lb, sd, mg]) => {
         if (cancelled) return;
+        const comps = sd.data?.competitions ?? [];
         setFeastRows(lb.data ?? []);
         setScreenData(sd.data ?? { competitions: [] });
-        setFeastDataLoading(false);
+        setFeastMeghalaRows(mg.data ?? []);
+        setLoadedFeastSlug(slug);
+        const pending = pendingFocusRef.current;
+        if (pending && pending.feastSlug === slug) {
+          pendingFocusRef.current = null;
+          const i = comps.findIndex((c) => c.competitionId === pending.fcId);
+          if (i >= 0) goToScreenRef.current(tiersLenRef.current + i);
+        }
       });
     load();
     const id = setInterval(load, REFRESH_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [activeFeastSlug]);
+  }, [activeFeastSlug, hasMeghala, refreshNonce]);
+
+  // Moves the screen (under the takeover) to the announced result's fest;
+  // the load above then lands on the item itself.
+  const focusResultRef = useRef<(ev: PublishEvent) => void>(() => {});
+  useEffect(() => {
+    focusResultRef.current = (ev: PublishEvent) => {
+      const idx = sections.findIndex((s) => s.kind === "feast" && s.feastSlug === ev.feastSlug);
+      if (idx < 0) return;
+      pendingFocusRef.current = { feastSlug: ev.feastSlug, fcId: ev.fcId };
+      if (activeFeastSlug === ev.feastSlug) setRefreshNonce((n) => n + 1);
+      else goToSection(idx);
+    };
+  });
+
+  // Next queued takeover, once the previous result has had its turn.
+  useEffect(() => {
+    if (takeover || publishQueue.length === 0) return;
+    const wait = Math.max(0, lastTakeoverEndRef.current + RESULT_HOLD_MS - Date.now());
+    const t = setTimeout(() => {
+      const [ev, ...rest] = publishQueue;
+      setPublishQueue(rest);
+      setPaused(false);
+      setTakeover({ ev, phase: "announce" });
+    }, wait);
+    return () => clearTimeout(t);
+  }, [takeover, publishQueue]);
+
+  // announce → slide (screen moves to the result underneath) → exit → done.
+  useEffect(() => {
+    if (!takeover) return;
+    const { ev, phase } = takeover;
+    const t = setTimeout(() => {
+      if (phase === "announce") {
+        setTakeover({ ev, phase: "slide" });
+        focusResultRef.current(ev);
+      } else if (phase === "slide") {
+        setTakeover({ ev, phase: "exit" });
+      } else {
+        lastTakeoverEndRef.current = Date.now();
+        setTakeover(null);
+      }
+    }, phase === "announce" ? ANNOUNCE_MS : phase === "slide" ? SLIDE_MS : EXIT_MS);
+    return () => clearTimeout(t);
+  }, [takeover]);
 
   // URL deep-link (initial)
   const initialAppliedRef = useRef(false);
@@ -734,152 +1082,169 @@ function ScreenPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, screenIdx]);
 
-  const busy = feastsLoading || (activeSection.kind === "overall" ? overallLoading : feastDataLoading);
-  const feastName = activeSection.kind === "overall" ? "Overall Standings" : activeSection.kind === "stages" ? activeSection.feastName : activeSection.feastName || "Fest";
-  const activeComp = activeSection.kind === "feast" && screenIdx > 0 ? screenData.competitions[screenIdx - 1] : null;
+  // ── Ranking rows for the active section, both tiers ──
+  const shakhaById = useMemo(() => new Map(shakhas.map((s) => [s.id, s])), [shakhas]);
+  const meghalaById = useMemo(() => new Map(meghalas.map((m) => [m.id, m])), [meghalas]);
+  const isOverall = activeSection.kind === "overall";
+  const shakhaLb = isOverall ? overallRows : feastRows;
+  const meghalaLb = isOverall ? overallMeghalaRows : feastMeghalaRows;
+
+  const shakhaRankRows: RankRow[] = useMemo(() => shakhaLb.map((r) => {
+    const s = shakhaById.get(r.shakhaId);
+    const meghala = s?.meghala_id ? meghalaById.get(s.meghala_id) : null;
+    return {
+      id: r.shakhaId, name: r.name, sub: hasMeghala ? meghala?.name ?? null : null, dot: s?.color ?? null,
+      rank: r.rank, points: r.points, cats: [r.subJunior, r.junior, r.senior, r.superSenior, r.elder],
+      first: r.firstCount, second: r.secondCount, third: r.thirdCount, a: r.aGrade, b: r.bGrade, c: r.cGrade,
+      topShakha: null, unassigned: false,
+    };
+  }), [shakhaLb, shakhaById, meghalaById, hasMeghala]);
+
+  const meghalaRankRows: RankRow[] = useMemo(() => meghalaLb.map((r) => {
+    const unassigned = r.shakhaId === UNASSIGNED_ID;
+    const members = shakhas.filter((s) => (unassigned ? !s.meghala_id : s.meghala_id === r.shakhaId));
+    const memberIds = new Set(members.map((s) => s.id));
+    // Standings rows arrive ranked, so the first member found is the top one.
+    const best = shakhaLb.find((x) => memberIds.has(x.shakhaId) && x.points > 0);
+    return {
+      id: r.shakhaId, name: r.name, sub: `${members.length} shakha${members.length === 1 ? "" : "s"}${unassigned ? " · not ranked" : ""}`,
+      dot: unassigned ? null : meghalaById.get(r.shakhaId)?.color ?? null,
+      rank: r.rank, points: r.points, cats: [r.subJunior, r.junior, r.senior, r.superSenior, r.elder],
+      first: r.firstCount, second: r.secondCount, third: r.thirdCount, a: r.aGrade, b: r.bGrade, c: r.cGrade,
+      topShakha: best ? { name: best.name, points: best.points } : null, unassigned,
+    };
+  }), [meghalaLb, shakhas, shakhaLb, meghalaById]);
+
+  const tier: Tier | null = isRankingsScreen ? tiers[screenIdx] ?? "shakha" : null;
+  const activeComp = activeSection.kind === "feast" && !isRankingsScreen ? screenData.competitions[screenIdx - tiers.length] ?? null : null;
+
+  const busy = feastsLoading || (isOverall ? overallLoading : activeSection.kind === "feast" ? loadedFeastSlug !== activeFeastSlug : false);
+  const feastName = isOverall ? "Overall Standings" : activeSection.feastName || "Fest";
+
+  let eyebrow = isOverall ? "Live standings · All fests" : "Live standings";
+  let eyebrowTone: "live" | "gold" = "live";
+  let titleLead = tier === "meghala" ? "Meghala" : "Shakha";
+  let titleGold = "Rankings";
+  if (activeSection.kind === "stages") { eyebrow = "Live competition board"; titleLead = "Stage"; titleGold = "Board"; }
+  else if (activeComp) { eyebrow = "Results declared"; eyebrowTone = "gold"; titleLead = "Competition"; titleGold = "Results"; }
+
+  // Every screen in the active section: the ranking tiers, then (in a fest)
+  // each published competition. The stage board is a single screen.
+  const compCount = screenData.competitions.length;
+  const screenCount = activeSection.kind === "stages" ? 1 : tiers.length + (activeSection.kind === "feast" ? compCount : 0);
+  const screenNav: ScreenNav | null = screenCount > 1 ? {
+    index: screenIdx,
+    count: screenCount,
+    label: activeComp ? "Result" : "Standings",
+    shown: activeComp ? screenIdx - tiers.length + 1 : screenIdx + 1,
+    of: activeComp ? compCount : tiers.length,
+    onPrev: () => goToScreen(Math.max(0, screenIdx - 1)),
+    onNext: () => goToScreen(Math.min(screenCount - 1, screenIdx + 1)),
+    onGo: goToScreen,
+  } : null;
+
+  const settingsPanel = (
+    <>
+      <p className="fp-cap" style={{ fontSize: 12, color: "var(--fp-meta)", margin: "0 0 10px" }}>Rotate through</p>
+      {sections.map((s) => {
+        const key = sectionKey(s);
+        const checked = !enabledSectionKeys || enabledSectionKeys.has(key);
+        return (
+          <label key={key} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 16, fontWeight: 700, padding: "6px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={checked} onChange={() => toggleSection(key)} style={{ width: 18, height: 18 }} />
+            {sectionLabel(s)}
+          </label>
+        );
+      })}
+      <p style={{ fontSize: 13, color: "var(--fp-meta)", margin: "10px 0 0", lineHeight: 1.4 }}>Unchecked sections stay reachable from the header pills, just skipped by auto-rotation.</p>
+    </>
+  );
+
+  const rankRows = tier === "meghala" ? meghalaRankRows : shakhaRankRows;
+  const rankedMeghalas = meghalaRankRows.filter((r) => !r.unassigned).length;
+  const caption = tier === "meghala" ? "Sum of every shakha's points" : `${shakhaRankRows.length} shakhas ranked`;
+  const meta = tier === "meghala" ? `${rankedMeghalas} meghalas · ${shakhas.length} shakhas` : `${shakhaRankRows.length} shakhas`;
 
   return (
-    <div style={{ position: "fixed", inset: 0, overflow: "hidden", background: "radial-gradient(ellipse at top, #150c2e, #030211 70%)" }}>
+    <div className="fp-shell" style={{ position: "fixed", inset: 0, overflow: "hidden", background: "var(--fp-page-bg)", color: "var(--fp-ink)", fontFamily: "var(--font-manrope), var(--font-anek), sans-serif" }}>
       <style>{CSS}</style>
       <div style={{ position: "absolute", top: 0, left: 0, width: DESIGN_W, height: designH, transform: `scale(${scale})`, transformOrigin: "top left" }}>
-        <div style={{ position: "absolute", inset: 0 }}>
-          <div style={{ position: "absolute", top: -200, right: -200, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,92,255,.18), transparent 70%)", filter: "blur(60px)" }} />
-          <div style={{ position: "absolute", bottom: -200, left: -200, width: 700, height: 700, borderRadius: "50%", background: "radial-gradient(circle, rgba(63,231,255,.14), transparent 70%)", filter: "blur(60px)" }} />
-        </div>
-
         <ScreenHeader
           logoUrl={orgLogo}
           subtitle={orgTagline}
           feastName={feastName}
-          section={activeSection}
+          eyebrow={eyebrow}
+          eyebrowTone={eyebrowTone}
+          titleLead={titleLead}
+          titleGold={titleGold}
           sections={sections}
-          activeSectionKey={sectionKey(activeSection)}
-          screenCount={activeSection.kind === "feast" ? screenData.competitions.length + 1 : 1}
-          screenIdx={screenIdx}
+          activeSectionKey={activeKey}
           onNavSection={goToSection}
-          onNavScreen={goToScreen}
+          screenNav={screenNav}
+          paused={paused}
+          onTogglePause={() => setPaused((p) => !p)}
+          settings={settingsPanel}
         />
 
         {busy ? (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10 }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", border: "4px solid rgba(255,255,255,.15)", borderTopColor: C_CYAN, animation: "scSpin .9s linear infinite" }} />
-          </div>
+          <Spinner />
         ) : activeSection.kind === "stages" ? (
           <StageBoardScreen feastSlug={activeSection.feastSlug} />
-        ) : isRankingsScreen ? (
-          <Screen1Rankings rows={activeSection.kind === "overall" ? overallRows : feastRows} shakhaColor={shakhaColor} />
+        ) : tier ? (
+          <RankingsScreen rows={rankRows} tier={tier} tiers={tiers} onTier={(t) => goToScreen(tiers.indexOf(t))} caption={caption} meta={meta} />
         ) : activeComp ? (
-          <Screen2Competition comp={activeComp} subIdx={subIdx} shakhaColor={shakhaColor} />
-        ) : screenData.competitions.length === 0 ? (
-          <EmptyState message="No results published yet." />
+          <CompetitionScreen comp={activeComp} subIdx={subIdx} />
         ) : (
-          <EmptyState message="Loading competition..." />
+          <EmptyState message="No results published yet." />
         )}
-      </div>
 
-      <Ticker rows={overallRows} />
+        <Ticker rows={overallRows} />
 
-      <div style={{ position: "fixed", top: 14, right: 14, zIndex: 2000, display: "flex", gap: 8 }}>
-        <button onClick={() => setPaused((p) => !p)} style={ctrlBtnStyle}>{paused ? "▶" : "⏸"}</button>
-        <div style={{ position: "relative" }}>
-          <button onClick={() => setSettingsOpen((o) => !o)} style={ctrlBtnStyle}>⚙</button>
-          {settingsOpen && (
-            <div style={{ position: "absolute", top: 44, right: 0, minWidth: 220, background: "rgba(10,8,30,.96)", border: "1px solid rgba(63,231,255,.3)", borderRadius: 12, padding: 12, zIndex: 2001 }}>
-              <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1.5, color: "#9db0d8", margin: "0 0 8px" }}>Rotate through</p>
-              {sections.map((s) => {
-                const key = sectionKey(s);
-                const checked = !enabledSectionKeys || enabledSectionKeys.has(key);
-                return (
-                  <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#fff", padding: "4px 0", cursor: "pointer" }}>
-                    <input type="checkbox" checked={checked} onChange={() => toggleSection(key)} />
-                    {sectionLabel(s)}
-                  </label>
-                );
-              })}
-              <p style={{ fontSize: 10, color: "#7c86a8", marginTop: 8 }}>Unchecked sections stay reachable via the pills above, just skipped by auto-rotation.</p>
-            </div>
-          )}
-        </div>
+        {takeover && <PublishTakeover key={takeover.ev.id} ev={takeover.ev} phase={takeover.phase} />}
       </div>
     </div>
   );
 }
 
-const ctrlBtnStyle: React.CSSProperties = { width: 34, height: 34, borderRadius: "50%", background: "rgba(10,8,30,.8)", border: "1px solid rgba(124,92,255,.4)", color: "#fff", cursor: "pointer", fontSize: 15 };
-
 const CSS = `
-.sc-font-disp { font-family: var(--font-oswald), 'Arial Narrow', sans-serif; }
-.sc-font-hud  { font-family: var(--font-rajdhani), 'Arial', sans-serif; }
-
-/* ── HUD panels (stage board cards) ── */
-.sc-hud {
-  position: relative;
-  background:
-    repeating-linear-gradient(0deg, rgba(150,210,255,.05) 0 1px, transparent 1px 3px),
-    linear-gradient(150deg, rgba(180,205,255,.16), rgba(180,205,255,0) 44%),
-    linear-gradient(160deg, rgba(58,70,135,.15), rgba(10,8,28,.24));
-  backdrop-filter: blur(30px) saturate(1.6) brightness(1.06);
-  -webkit-backdrop-filter: blur(30px) saturate(1.6) brightness(1.06);
-  box-shadow:
-    inset 0 1px 0 rgba(205,225,255,.28),
-    inset 0 0 40px rgba(90,160,255,.10),
-    inset 0 0 0 1px rgba(150,200,255,.07);
-  clip-path: ${HUD_CLIP_STR};
-  overflow: hidden;
-  animation: neonPanelPulse 5.5s ease-in-out infinite;
-}
-.sc-hud::before {
-  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  clip-path: ${HUD_CLIP_STR}; mix-blend-mode: screen;
-  background: linear-gradient(115deg,
-    transparent 32%, rgba(150,210,255,.10) 47%,
-    rgba(205,180,255,.18) 50%, rgba(150,210,255,.10) 53%, transparent 68%);
-  background-size: 260% 100%; background-position: 200% 0;
-  animation: holoSweep 7.5s ease-in-out infinite;
-}
-.sc-hud::after {
-  content: ""; position: absolute; inset: 0; padding: 1.6px;
-  clip-path: ${HUD_CLIP_STR};
-  background: linear-gradient(135deg, #6ef2ff, #5b8cff 22%, #9d6eff 42%, #e84ad6 62%, #ff8a3c 82%, #6ef2ff 100%);
-  background-size: 300% 300%;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor; mask-composite: exclude;
-  pointer-events: none; opacity: .95;
-  animation: neonFlow 9s linear infinite;
-}
-@keyframes neonFlow {
-  0%   { background-position: 0%   50%; }
-  100% { background-position: 300% 50%; }
-}
-@keyframes holoSweep {
-  0%       { background-position: 200% 0; }
-  60%,100% { background-position: -90% 0; }
-}
-@keyframes neonPanelPulse {
-  0%,100% { box-shadow: inset 0 1px 0 rgba(205,225,255,.26), inset 0 0 38px rgba(90,160,255,.10), inset 0 0 0 1px rgba(150,200,255,.07); }
-  50%     { box-shadow: inset 0 1px 0 rgba(216,232,255,.36), inset 0 0 62px rgba(124,150,255,.22), inset 0 0 0 1px rgba(172,210,255,.13); }
-}
-.sc-tick {
-  position: absolute; width: 18px; height: 18px;
-  border: 2px solid var(--gold, #3fe7ff); opacity: .8; z-index: 4;
-}
-.sc-tick.tl { top: 8px; left: 8px; border-right: 0; border-bottom: 0; }
-.sc-tick.tr { top: 8px; right: 8px; border-left: 0; border-bottom: 0; }
-.sc-tick.bl { bottom: 8px; left: 8px; border-right: 0; border-top: 0; }
-.sc-tick.br { bottom: 8px; right: 8px; border-left: 0; border-top: 0; }
-
-@keyframes scBlink { 50% { opacity: .25; } }
+.fp-shell button:disabled { opacity: .35; cursor: default; }
+.sc-sheen { position: absolute; inset: 0; width: 45%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); mix-blend-mode: overlay; animation: scSheen 2.2s linear infinite; }
+@keyframes scSheen { from { transform: translateX(-100%); } to { transform: translateX(240%); } }
 @keyframes scSpin { to { transform: rotate(360deg); } }
-@keyframes scFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes scLaneShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-@keyframes scPulseDot { 0%, 100% { transform: translate(-50%,-50%) scale(1); } 50% { transform: translate(-50%,-50%) scale(1.4); } }
-@keyframes tableScroll { 0% { transform: translateY(0); } 100% { transform: translateY(-50%); } }
+@keyframes tableScroll { 0% { transform: translateY(0); } 100% { transform: translateY(calc(-50% - 4px)); } }
 @keyframes tickerScroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+/* New result published takeover */
+.pt-fade { animation: ptFade .35s ease-out both; }
+.pt-rays-in { animation: ptRaysIn 1.1s cubic-bezier(.2,.8,.2,1) both; }
+.pt-ring { animation: ptRing 1.6s cubic-bezier(.2,.7,.3,1) both; }
+.pt-up { animation: ptUp .6s cubic-bezier(.2,.8,.2,1) both; }
+.pt-slam { animation: ptSlam .7s cubic-bezier(.2,1.4,.4,1) both; }
+.pt-sheen { position: relative; display: inline-block; overflow: hidden; }
+.pt-sheen::after { content: ""; position: absolute; inset: -10% auto -10% 0; width: 30%; background: linear-gradient(100deg, transparent, rgba(255,250,230,.75), transparent); transform: translateX(-160%) skewX(-18deg); mix-blend-mode: overlay; animation: ptSheen 1.2s 1.05s cubic-bezier(.4,0,.2,1) both; }
+.pt-confetti { position: absolute; top: -40px; border-radius: 2px; animation-name: ptFall; animation-timing-function: linear; animation-fill-mode: both; }
+.pt-slide { animation: ptSlide .75s cubic-bezier(.16,1,.3,1) both; }
+.pt-sweep { transform-origin: left center; animation: ptSweep .9s cubic-bezier(.65,0,.35,1) both; opacity: .5; }
+.pt-exit { animation: ptExit .45s ease-in both; }
+@keyframes ptFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ptRaysIn { from { transform: scale(.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes ptRing { 0% { transform: scale(.2); opacity: 0; } 15% { opacity: 1; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes ptUp { from { transform: translateY(36px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ptSlam { 0% { transform: scale(1.9); opacity: 0; filter: blur(14px); } 60% { opacity: 1; filter: blur(0); } 100% { transform: scale(1); opacity: 1; filter: blur(0); } }
+@keyframes ptSheen { to { transform: translateX(520%) skewX(-18deg); } }
+@keyframes ptFall { 0% { transform: translateY(0) rotate(0); opacity: 1; } 100% { transform: translateY(1180px) rotate(620deg); opacity: .2; } }
+@keyframes ptSlide { from { transform: translateX(70%) skewX(-8deg); opacity: 0; filter: blur(10px); } to { transform: none; opacity: 1; filter: blur(0); } }
+@keyframes ptSweep { 0% { transform: scaleX(0); } 55% { transform: scaleX(1); opacity: .6; } 100% { transform: scaleX(1); opacity: 0; } }
+@keyframes ptExit { to { opacity: 0; transform: scale(1.03); } }
+@media (prefers-reduced-motion: reduce) {
+  .sc-sheen, .pt-rays-in, .pt-ring, .pt-confetti, .pt-sweep, .pt-sheen::after { animation: none; }
+  .pt-ring, .pt-confetti, .pt-sweep { display: none; }
+  .pt-up, .pt-slam, .pt-slide { animation: ptFade .3s both; }
+}
 `;
 
 export default function ScreenPage() {
   return (
-    <Suspense fallback={<div style={{ position: "fixed", inset: 0, background: "radial-gradient(ellipse at top, #150c2e, #030211 70%)" }} />}>
+    <Suspense fallback={<div style={{ position: "fixed", inset: 0, background: "var(--fp-page-bg)" }} />}>
       <ScreenPageInner />
     </Suspense>
   );

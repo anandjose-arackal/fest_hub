@@ -2,9 +2,11 @@
 // the real server actions (publishResults / publishTeamResults) — same logic as
 // the admin Results screen's "Publish" button.
 //
-// Run:  node scripts/publish-feast-results.mjs <feast_id> [--dry-run]
+// Run:  node scripts/publish-feast-results.mjs <feast_id> [--dry-run] [--only=<fc_id>,<fc_id>,...]
 //
 // --dry-run   list the competitions that would be published, change nothing.
+// --only=...  publish just these feast_competition ids (e.g. hold back ones
+//             still missing entries); unknown ids are reported.
 // Competitions without a max score or without scores are reported and skipped
 // (the action refuses them). Already-published ones are re-published (idempotent).
 
@@ -34,6 +36,8 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
   const feastId = args.find((a) => !a.startsWith("--"));
+  const onlyArg = args.find((a) => a.startsWith("--only="));
+  const only = onlyArg ? new Set(onlyArg.slice("--only=".length).split(",").map((s) => s.trim()).filter(Boolean)) : null;
 
   if (!feastId) {
     console.error("Usage: node scripts/publish-feast-results.mjs <feast_id> [--dry-run]");
@@ -44,8 +48,12 @@ async function main() {
   loadEnvLocal();
 
   // jiti lets plain Node import the TypeScript actions and resolve the "@/..." alias.
+  // "next/cache" is stubbed: revalidateTag() only works inside a Next request.
   const jiti = createJiti(import.meta.url, {
-    alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) },
+    alias: {
+      "@": fileURLToPath(new URL("../src", import.meta.url)),
+      "next/cache": fileURLToPath(new URL("./next-cache-stub.mjs", import.meta.url)),
+    },
   });
   const { getSupabaseAdmin } = await jiti.import("../src/lib/supabase-admin.ts");
   const { publishResults } = await jiti.import("../src/actions/results.ts");
@@ -81,7 +89,18 @@ async function main() {
   }
 
   const unwrap = (x) => (Array.isArray(x) ? x[0] : x);
+  if (only) {
+    const known = new Set((comps ?? []).map((fc) => fc.id));
+    const unknown = [...only].filter((id) => !known.has(id));
+    if (unknown.length) {
+      console.error(`--only ids not in this feast: ${unknown.join(", ")}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   const rows = (comps ?? [])
+    .filter((fc) => !only || only.has(fc.id))
     .map((fc) => {
       const comp = unwrap(fc.competition) ?? {};
       const cat = unwrap(comp.competition_category);

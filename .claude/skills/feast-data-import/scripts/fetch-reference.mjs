@@ -67,15 +67,20 @@ async function dump(feast) {
   const { data: org } = await db.from("org_settings").select("hierarchy_level").maybeSingle();
   const hierarchy_level = org?.hierarchy_level ?? "shakha";
 
-  const fcRows = await all(() =>
+  // Older databases predate competitions.name_en (added to 001 after they were
+  // created), so retry without it rather than failing the whole dump.
+  const fcQuery = (nameEn) => () =>
     db
       .from("feast_competitions")
       .select(
-        "id, max_score, result_status, competition:competitions(name, name_en, type, gender, max_per_shakha, max_team_size, competition_category:competition_categories(slug))"
+        `id, max_score, result_status, competition:competitions(name, ${nameEn ? "name_en, " : ""}type, gender, max_per_shakha, max_team_size, competition_category:competition_categories(slug))`
       )
       .eq("feast_id", feast.id)
-      .order("display_order")
-  );
+      .order("display_order");
+  const fcRows = await all(fcQuery(true)).catch((e) => {
+    if (!/name_en/.test(e.message)) throw e;
+    return all(fcQuery(false));
+  });
   const feast_competitions = fcRows.map((fc) => {
     const c = one(fc.competition) ?? {};
     return {

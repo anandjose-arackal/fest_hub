@@ -11,7 +11,9 @@ export interface ActivityItem {
   type: ActivityType;
   competitionName: string;
   categoryName: string | null;
+  categorySlug: string | null;
   gender: string | null;
+  isTeam: boolean;
   feastName: string;
   feastSlug: string;
   at: string; // ISO timestamp
@@ -36,7 +38,7 @@ export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
 // Every open landing page polls this; one shared read per 30s window.
 const cachedRecentActivity = unstable_cache(
   async (limit: number) => readRecentActivity(limit),
-  ["fp-recent-activity"],
+  ["fp-recent-activity-v2"],
   { tags: [TAG.results], revalidate: TTL.live },
 );
 
@@ -45,7 +47,7 @@ async function readRecentActivity(limit: number): Promise<ActivityItem[]> {
   const { data, error } = await admin
     .from("feast_competitions")
     .select(
-      "id, comp_status, updated_at, competition:competitions(name, gender, competition_category:competition_categories(name)), feast:feasts(name, slug, status)"
+      "id, comp_status, updated_at, competition:competitions(name, gender, type, competition_category:competition_categories(name, slug)), feast:feasts(name, slug, status)"
     )
     .neq("comp_status", "upcoming")
     .order("updated_at", { ascending: false })
@@ -67,7 +69,9 @@ async function readRecentActivity(limit: number): Promise<ActivityItem[]> {
       type,
       competitionName: competition?.name ?? "Competition",
       categoryName: category?.name ?? null,
+      categorySlug: category?.slug ?? null,
       gender: competition?.gender ?? null,
+      isTeam: competition?.type === "group",
       feastName: feast.name,
       feastSlug: feast.slug,
       at: row.updated_at,
