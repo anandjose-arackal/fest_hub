@@ -43,7 +43,7 @@ export default function AdminLoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[#FAFAFC] p-6">
       <form onSubmit={handleSubmit} className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
         <div className="mb-6 flex flex-col items-center gap-2">
-          <Image src="/logo.png" alt="Logo" width={56} height={56} className="rounded-full" />
+          <Image src="/logo.png" alt="Logo" width={56} height={56} loading="eager" className="rounded-full" />
           <h1 className="text-lg font-semibold text-neutral-800">Admin Sign In</h1>
         </div>
 

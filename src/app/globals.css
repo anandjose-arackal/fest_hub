@@ -827,3 +827,9 @@
    white with the theme's (white, in dark themes) text. Give the options a
    solid sheet colour in every theme. */
 .fp-shell select option, .fp-shell select optgroup { background-color: var(--fp-sheet); color: var(--fp-ink); }
+
+/* Admin: indeterminate progress bar (e.g. the Publish Results dialog while
+   the server action runs). */
+@keyframes admin-progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+.admin-progress { animation: admin-progress 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+@media (prefers-reduced-motion: reduce) { .admin-progress { animation-duration: 3s; } }

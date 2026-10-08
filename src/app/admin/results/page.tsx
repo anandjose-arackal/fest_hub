@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Medal, Check, ImageDown, Download, X, Award } from "lucide-react";
+import { Medal, Check, ImageDown, Download, X, Award, Loader2, RotateCcw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchAllIn, groupBy } from "@/lib/fetch-all";
-import { setMaxScore, saveDraftScores, publishResults, unpublishResults, getCompetitionScores, getScoresForCompetitions } from "@/actions/results";
-import { saveDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores, getScoresForTeamCompetitions } from "@/actions/team-results";
+import { setMaxScore, saveDraftScores, clearDraftScores, publishResults, unpublishResults, getCompetitionScores, getScoresForCompetitions } from "@/actions/results";
+import { saveDraftTeamScores, clearDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores, getScoresForTeamCompetitions } from "@/actions/team-results";
 import {
   calcGrade, calcPositions, positionLabel,
   DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS,
@@ -136,7 +136,11 @@ export default function ResultsPage() {
   const [successPulse, setSuccessPulse] = useState<string | null>(null);
   const [maxScoreInput, setMaxScoreInput] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // Which write is in flight — drives each button's spinner and the page
+  // mask, and blocks double-submits until the server action returns.
+  const [busyAction, setBusyAction] = useState<null | "save" | "publish" | "unpublish" | "reset">(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const busy = busyAction !== null;
   const [org, setOrg] = useState<OrgSettings | null>(null);
   const [posterOpen, setPosterOpen] = useState(false);
   const [printLayoutOpen, setPrintLayoutOpen] = useState(false);
@@ -408,42 +412,83 @@ export default function ResultsPage() {
     const scores = entries
       .filter((e) => typedScores[e.regId] != null && typedScores[e.regId] !== "")
       .map((e) => ({ registrationId: e.regId, score: Number(typedScores[e.regId]) }));
-    if (scores.length === 0) return;
-    setBusy(true);
-    const result = isGroup ? await saveDraftTeamScores({ feastCompetitionId: compId, scores }) : await saveDraftScores({ feastCompetitionId: compId, scores });
-    setBusy(false);
-    if (!result.error) {
-      showSuccess("Result saved successfully");
-      loadEntries(false);
-    } else {
-      showBanner(result.error);
+    if (scores.length === 0 || busy) return;
+    setBusyAction("save");
+    try {
+      const result = isGroup ? await saveDraftTeamScores({ feastCompetitionId: compId, scores }) : await saveDraftScores({ feastCompetitionId: compId, scores });
+      if (!result.error) {
+        showSuccess("Result saved successfully");
+        loadEntries(false);
+      } else {
+        showBanner(result.error);
+      }
+    } catch {
+      showBanner("Couldn't save — check the connection and try again.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  // Clears every entered score in this item back to empty (not entered) —
+  // a clean slate for re-scoring. Draft only: a published item has to be
+  // reverted first (the server refuses too).
+  async function handleResetScores() {
+    if (busy || isPublished || entries.length === 0) return;
+    setBusyAction("reset");
+    try {
+      const result = isGroup ? await clearDraftTeamScores(compId) : await clearDraftScores(compId);
+      setResetOpen(false);
+      if (!result.error) {
+        showSuccess("All scores cleared");
+        loadEntries(false);
+      } else {
+        showBanner(result.error);
+      }
+    } catch {
+      setResetOpen(false);
+      showBanner("Couldn't reset scores — check the connection and try again.");
+    } finally {
+      setBusyAction(null);
     }
   }
 
   async function handlePublish() {
-    setBusy(true);
-    const result = isGroup ? await publishTeamResults(compId) : await publishResults(compId);
-    setBusy(false);
-    setPublishOpen(false);
-    if (!result.error) {
-      showSuccess("Results published and standings updated!");
-      loadEntries(false);
-      setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "published", comp_status: "published" } : c)));
-    } else {
-      showBanner(result.error);
+    if (busy) return;
+    setBusyAction("publish");
+    try {
+      const result = isGroup ? await publishTeamResults(compId) : await publishResults(compId);
+      setPublishOpen(false);
+      if (!result.error) {
+        showSuccess("Results published and standings updated!");
+        loadEntries(false);
+        setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "published", comp_status: "published" } : c)));
+      } else {
+        showBanner(result.error);
+      }
+    } catch {
+      setPublishOpen(false);
+      showBanner("Couldn't publish — check the connection and try again.");
+    } finally {
+      setBusyAction(null);
     }
   }
 
   async function handleUnpublish() {
-    setBusy(true);
-    const result = isGroup ? await unpublishTeamResults(compId, feastId) : await unpublishResults(compId, feastId);
-    setBusy(false);
-    if (!result.error) {
-      showSuccess("Reverted to draft");
-      loadEntries(false);
-      setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "draft", comp_status: "completed" } : c)));
-    } else {
-      showBanner(result.error);
+    if (busy) return;
+    setBusyAction("unpublish");
+    try {
+      const result = isGroup ? await unpublishTeamResults(compId, feastId) : await unpublishResults(compId, feastId);
+      if (!result.error) {
+        showSuccess("Reverted to draft");
+        loadEntries(false);
+        setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "draft", comp_status: "completed" } : c)));
+      } else {
+        showBanner(result.error);
+      }
+    } catch {
+      showBanner("Couldn't revert — check the connection and try again.");
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -788,6 +833,17 @@ export default function ResultsPage() {
             <span className="text-lg font-black" style={{ color: "#4C1D95" }}>{maxScore}</span>
             <input className="w-24 rounded-lg border border-neutral-300 px-3 py-2 text-base font-semibold text-neutral-800" type="number" value={maxScoreInput} onChange={(e) => setMaxScoreInput(e.target.value)} />
             <button onClick={handleSetMaxScore} className="rounded-lg px-4 py-2 text-sm font-bold text-white" style={{ background: "#6B46FF" }}>Update</button>
+            <span aria-hidden="true" className="h-8 w-px bg-neutral-200" />
+            <button
+              type="button"
+              onClick={() => setResetOpen(true)}
+              disabled={busy || isPublished || entries.length === 0}
+              title={isPublished ? "Revert to draft before resetting scores" : undefined}
+              className="flex items-center gap-1.5 rounded-lg border border-red-300 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {busyAction === "reset" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="h-4 w-4" aria-hidden="true" />}
+              Reset all scores
+            </button>
           </div>
         )}
 
@@ -956,21 +1012,25 @@ export default function ResultsPage() {
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={handleSaveDraft} disabled={busy || isPublished} className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold disabled:opacity-50">
-          Save Draft
+        <button onClick={handleSaveDraft} disabled={busy || isPublished} aria-busy={busyAction === "save"} className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold disabled:opacity-50">
+          {busyAction === "save" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+          {busyAction === "save" ? "Saving…" : "Save Draft"}
         </button>
         {!isPublished ? (
           <button
             onClick={() => setPublishOpen(true)}
             disabled={busy}
-            className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white"
+            aria-busy={busyAction === "publish"}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}
           >
-            Publish Results
+            {busyAction === "publish" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {busyAction === "publish" ? "Publishing…" : "Publish Results"}
           </button>
         ) : (
-          <button onClick={handleUnpublish} disabled={busy} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600">
-            Unpublish (revert to draft)
+          <button onClick={handleUnpublish} disabled={busy} aria-busy={busyAction === "unpublish"} className="flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600 disabled:opacity-60">
+            {busyAction === "unpublish" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            {busyAction === "unpublish" ? "Reverting…" : "Unpublish (revert to draft)"}
           </button>
         )}
         <button
@@ -1002,9 +1062,48 @@ export default function ResultsPage() {
         </button>
       </div>
 
+      {/* Revert masks the page until the server is done — the scores below
+          are about to change under the admin. Publish masks via its dialog. */}
+      {busyAction === "unpublish" && (
+        <div role="status" aria-live="polite" className="fixed inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-[2px]">
+          <div className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold shadow-lg">
+            <Loader2 className="h-5 w-5 animate-spin text-red-600" aria-hidden="true" />
+            Reverting to draft and rebuilding standings…
+          </div>
+        </div>
+      )}
+
+      {resetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { if (!busy) setResetOpen(false); }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="reset-title" className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()} aria-busy={busyAction === "reset"}>
+            {busyAction === "reset" && (
+              <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-red-100">
+                <div className="admin-progress h-full w-1/3 rounded-full bg-red-500" />
+              </div>
+            )}
+            <h2 id="reset-title" className="mb-2 text-base font-semibold">Reset all scores?</h2>
+            <p className="mb-4 text-sm text-neutral-600">
+              Every score entered for this item ({entries.length} {isGroup ? "teams" : "participants"}) is cleared and left <strong>empty</strong>, ready to enter again. This can&apos;t be undone.
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setResetOpen(false)} disabled={busy} className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={handleResetScores} disabled={busy} aria-busy={busyAction === "reset"} className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white disabled:opacity-80">
+                {busyAction === "reset" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {busyAction === "reset" ? "Clearing…" : "Clear scores"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {publishOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setPublishOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { if (!busy) setPublishOpen(false); }}>
+          <div className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()} aria-busy={busyAction === "publish"}>
+            {busyAction === "publish" && (
+              <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-violet-100">
+                <div className="admin-progress h-full w-1/3 rounded-full" style={{ background: "linear-gradient(90deg,#6B46FF,#A855F7)" }} />
+              </div>
+            )}
             <h2 className="mb-3 text-base font-semibold">Publish {isGroup ? "Team " : ""}Results?</h2>
             <ul className="mb-4 space-y-1.5 text-sm text-neutral-600">
               {[
@@ -1020,10 +1119,14 @@ export default function ResultsPage() {
                 </li>
               ))}
             </ul>
+            {busyAction === "publish" && (
+              <p role="status" aria-live="polite" className="mb-3 text-xs font-semibold text-violet-700">Publishing — keep this page open until it finishes.</p>
+            )}
             <div className="flex gap-2">
-              <button onClick={() => setPublishOpen(false)} className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm">Cancel</button>
-              <button onClick={handlePublish} className="flex-1 rounded-lg py-2 text-sm font-semibold text-white" style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}>
-                Publish
+              <button onClick={() => setPublishOpen(false)} disabled={busy} className="flex-1 rounded-lg border border-neutral-300 py-2 text-sm disabled:opacity-50">Cancel</button>
+              <button onClick={handlePublish} disabled={busy} aria-busy={busyAction === "publish"} className="flex flex-1 items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold text-white disabled:opacity-80" style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}>
+                {busyAction === "publish" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {busyAction === "publish" ? "Publishing…" : "Publish"}
               </button>
             </div>
           </div>

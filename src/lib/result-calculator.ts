@@ -66,19 +66,20 @@ export function calcGrade(score: number, maxScore: number, points: GradePointSca
 // position = null, positionPoints = 0) — a competition with only 1 or 2
 // participants doesn't have enough of a field to award 2nd/3rd honestly,
 // so it's graded only, not ranked.
+// A score of 0 (or less) never places: it means "no marks" (absent, or an
+// item just reset to 0), so a field of all-zero scores must not hand every
+// entry a shared 1st. Zero-score entries still count toward the field size.
 
 export function calcPositions(
   entries: CalcEntry[],
   points: PositionPointScale = DEFAULT_POSITION_POINTS
 ): Map<string, PositionResult> {
   const result = new Map<string, PositionResult>();
+  for (const e of entries) result.set(e.id, { position: null, positionPoints: 0 });
 
-  if (entries.length < 3) {
-    for (const e of entries) result.set(e.id, { position: null, positionPoints: 0 });
-    return result;
-  }
+  if (entries.length < 3) return result;
 
-  const sorted = [...entries].sort((a, b) => b.score - a.score);
+  const sorted = entries.filter((e) => e.score > 0).sort((a, b) => b.score - a.score);
 
   let currentPos = 1;
   for (let i = 0; i < sorted.length; i++) {
