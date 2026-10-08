@@ -94,6 +94,30 @@ function RegNoBadge({ regNo }: { regNo: string | null }) {
   );
 }
 
+// One row of the team member picker: tick, name, then house · reg no and a
+// category-gender pill so same-name people in a Shakha can be told apart.
+function MemberRow({ m, checked, disabled, categoryName, onToggle }: { m: Participant; checked: boolean; disabled?: boolean; categoryName?: string; onToggle: () => void }) {
+  const pill = categoryPill(categoryName, m.gender);
+  return (
+    <label
+      className={`flex items-center gap-2.5 rounded-md px-2 py-1.5 ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-neutral-50"} ${checked ? "bg-white" : ""}`}
+    >
+      <input type="checkbox" className="h-4 w-4 shrink-0 accent-[#7C3AED]" checked={checked} disabled={disabled} onChange={onToggle} />
+      <span className="min-w-0 flex-1">
+        <span className={`block truncate text-sm ${checked ? "font-semibold text-neutral-900" : "text-neutral-800"}`}>{m.name}</span>
+        <span className="block truncate text-[11px] text-neutral-500">
+          {[m.house_name, m.registration_number].filter(Boolean).join(" · ") || "—"}
+        </span>
+      </span>
+      {(categoryName || normGender(m.gender)) && (
+        <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: pill.color, background: `${pill.color}14` }}>
+          {pill.label}
+        </span>
+      )}
+    </label>
+  );
+}
+
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -569,6 +593,7 @@ export default function ParticipantsPage() {
     setTeamError(null);
     setTeamConfirmingDelete(false);
     setQuickAddOpen(false);
+    setMemberSearch("");
     setTeamPanelOpen(true);
   }
 
@@ -578,6 +603,7 @@ export default function ParticipantsPage() {
     setTeamError(null);
     setTeamConfirmingDelete(false);
     setQuickAddOpen(false);
+    setMemberSearch("");
     // resolve member participant ids
     supabase
       .from("team_registration_members")
@@ -644,6 +670,19 @@ export default function ParticipantsPage() {
 
   const teamComp = feastComps.find((c) => c.id === teamForm.feastCompetitionId);
   const maxTeamSize = teamComp?.competition.max_team_size ?? DEFAULT_MAX_TEAM_MEMBERS;
+
+  // Member picker: selected people pinned on top (in pick order), then a
+  // divider, then everyone else A–Z, narrowed by the member search.
+  const [memberSearch, setMemberSearch] = useState("");
+  const selectedMembers = teamForm.memberIds
+    .map((id) => eligibleMembers.find((m) => m.id === id))
+    .filter((m): m is Participant => !!m);
+  const memberQuery = memberSearch.trim().toLowerCase();
+  const unselectedMembers = eligibleMembers
+    .filter((m) => !teamForm.memberIds.includes(m.id))
+    .filter((m) => !memberQuery || [m.name, m.house_name, m.registration_number].some((v) => v?.toLowerCase().includes(memberQuery)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const teamFull = teamForm.memberIds.length >= maxTeamSize;
 
   function toggleMember(id: string) {
     setTeamForm((f) => {
@@ -1336,14 +1375,44 @@ export default function ParticipantsPage() {
                   <span className="text-xs font-medium text-neutral-600">Members</span>
                   <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-500">{teamForm.memberIds.length} / {maxTeamSize} selected</span>
                 </div>
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 p-2">
-                  {eligibleMembers.map((m) => (
-                    <label key={m.id} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={teamForm.memberIds.includes(m.id)} onChange={() => toggleMember(m.id)} />
-                      {m.name}
-                    </label>
-                  ))}
-                  {eligibleMembers.length === 0 && <p className="text-xs text-neutral-400">{teamForm.shakhaId ? "No participants registered for this Shakha yet." : "Select a Shakha to see eligible participants."}</p>}
+                {eligibleMembers.length > 8 && (
+                  <div className="relative mb-1.5">
+                    <input className="input pr-7" placeholder="Search name, house or reg. no…" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} />
+                    {memberSearch && (
+                      <button onClick={() => setMemberSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className="max-h-[50vh] overflow-y-auto rounded-lg border border-neutral-200">
+                  {eligibleMembers.length === 0 ? (
+                    <p className="p-3 text-xs text-neutral-400">{teamForm.shakhaId ? "No participants registered for this Shakha yet." : "Select a Shakha to see eligible participants."}</p>
+                  ) : (
+                    <>
+                      {selectedMembers.length > 0 && (
+                        <div className="bg-[#faf8ff] p-1">
+                          <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-[#7C3AED]">Selected · {selectedMembers.length}</p>
+                          {selectedMembers.map((m) => (
+                            <MemberRow key={m.id} m={m} checked categoryName={categories.find((c) => c.id === m.competition_category_id)?.name} onToggle={() => toggleMember(m.id)} />
+                          ))}
+                        </div>
+                      )}
+                      {selectedMembers.length > 0 && <div className="border-t-2 border-[#ddd6fe]" />}
+                      <div className="p-1">
+                        <p className="px-2 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                          {selectedMembers.length > 0 ? "Not selected" : "Participants"} · {unselectedMembers.length}
+                          {teamFull && <span className="ml-1 normal-case tracking-normal text-amber-600">— team is full</span>}
+                        </p>
+                        {unselectedMembers.map((m) => (
+                          <MemberRow key={m.id} m={m} checked={false} disabled={teamFull} categoryName={categories.find((c) => c.id === m.competition_category_id)?.name} onToggle={() => toggleMember(m.id)} />
+                        ))}
+                        {unselectedMembers.length === 0 && (
+                          <p className="px-2 py-1.5 text-xs text-neutral-400">{memberQuery ? "No one matches this search." : "Everyone in this Shakha is selected."}</p>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {teamForm.shakhaId && !quickAddOpen && (
