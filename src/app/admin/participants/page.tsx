@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { UserCheck, Pencil, X, Download, Printer, IdCard } from "lucide-react";
+import { UserCheck, UserPlus, Pencil, X, Download, Printer, IdCard, Lock, Check, Loader2, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchAll } from "@/lib/fetch-all";
-import { loadScopeTeams, resolveCapScope } from "@/lib/reg-cap-scope";
+import { countScopeRegistrations, loadScopeTeams, resolveCapScope } from "@/lib/reg-cap-scope";
 import { createParticipantAdmin, updateParticipant, deleteParticipant } from "@/actions/feast";
 import { registerTeam, updateTeam, deleteTeam } from "@/actions/team";
 import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCompetitionOptionLabel } from "@/lib/competition-categories";
-import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
+import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { useOrgHierarchy } from "@/hooks/use-feast";
@@ -42,6 +42,35 @@ function categoryPill(catName: string | undefined, gender: string | null) {
 }
 
 // Ticket-stub reg-no badge — matches cml-mission-hub's admin/participants table.
+// Places used / allowed on one item for the cap scope (registration panel).
+// Colour says it at a glance: green = room, amber = last place, violet =
+// this person's pick, red = full.
+function CapBadge({ taken, cap, on, full, loading, unit }: { taken: number; cap: number; on: boolean; full: boolean; loading?: boolean; unit: string }) {
+  if (loading) {
+    return (
+      <span className="inline-flex h-7 shrink-0 items-center rounded-full bg-neutral-100 px-2.5 text-neutral-500" aria-label="Checking places">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      </span>
+    );
+  }
+  const left = Math.max(0, cap - taken);
+  const tone = full
+    ? "bg-red-600 text-white shadow-sm shadow-red-600/30"
+    : on
+      ? "bg-violet-600 text-white shadow-sm shadow-violet-600/30"
+      : left <= 1
+        ? "bg-amber-100 text-amber-900 ring-1 ring-amber-300"
+        : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300";
+  const note = full ? "Full" : on ? "Selected" : left === 1 ? "1 left" : `${left} left`;
+  return (
+    <span className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 tabular-nums ${tone}`} aria-label={`${taken} of ${cap} ${unit} taken${full ? ", full" : ""}`}>
+      {full && <Lock className="h-3 w-3" aria-hidden="true" />}
+      <span className="text-[13px] font-extrabold leading-none">{taken}/{cap}</span>
+      <span className="text-[10px] font-bold uppercase leading-none tracking-wide opacity-90">{note}</span>
+    </span>
+  );
+}
+
 function RegNoBadge({ regNo }: { regNo: string | null }) {
   if (!regNo) return <span className="text-sm font-bold" style={{ color: "#6B7280" }}>—</span>;
   return (
@@ -233,6 +262,10 @@ export default function ParticipantsPage() {
   const [panelOnTeams, setPanelOnTeams] = useState<string[] | null>([]);
   const [panelTeamCounts, setPanelTeamCounts] = useState<Record<string, number>>({});
   const [panelTeamScope, setPanelTeamScope] = useState("");
+  // Registrations already in each individual item for the picked shakha's
+  // cap scope (shakha / meghala / diocese per org_settings), excluding the
+  // participant being edited; `for` is the shakha the counts belong to.
+  const [panelRegCounts, setPanelRegCounts] = useState<{ for: string; counts: Record<string, number> }>({ for: "", counts: {} });
   const [panelError, setPanelError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -429,11 +462,36 @@ export default function ParticipantsPage() {
     return () => { cancelled = true; };
   }, [panelOpen, form.shakhaId, teamCompKey, onTeamsKey]);
 
-  function toggleComp(id: string) {
+  // Individual items: max_per_shakha is enforced across the whole cap scope
+  // (lib/reg-cap-scope), so an item the scope has filled can't be picked.
+  // The server re-checks on save (createParticipantAdmin/updateParticipant).
+  const regCap = (c: FCRow) => c.competition.max_per_shakha ?? DEFAULT_MAX_PER_SHAKHA;
+  const indivCapKey = individualFeastComps.map((c) => `${c.id}:${regCap(c)}`).join(",");
+  useEffect(() => {
+    if (!panelOpen || !form.shakhaId || !indivCapKey) return;
+    let cancelled = false;
+    const shakhaId = form.shakhaId;
+    (async () => {
+      const caps = new Map(indivCapKey.split(",").map((p) => { const [id, cap] = p.split(":"); return [id, Number(cap)] as const; }));
+      const scope = await resolveCapScope(supabase, shakhaId);
+      const counts = await countScopeRegistrations(supabase, [...caps.keys()], scope.shakhaIds, editId ?? undefined);
+      if (cancelled) return;
+      setPanelRegCounts({ for: shakhaId, counts });
+      setPanelTeamScope(scope.name);
+      // Picks the newly chosen shakha's scope has already filled drop out.
+      setSelectedComps((prev) => prev.filter((id) => (counts[id] ?? 0) < (caps.get(id) ?? DEFAULT_MAX_PER_SHAKHA)));
+    })();
+    return () => { cancelled = true; };
+  }, [panelOpen, form.shakhaId, indivCapKey, editId]);
+  const regCountsReady = !!form.shakhaId && panelRegCounts.for === form.shakhaId;
+  const regTaken = (c: FCRow) => (regCountsReady ? panelRegCounts.counts[c.id] ?? 0 : 0);
+  const regFull = (c: FCRow) => regCountsReady && !selectedComps.includes(c.id) && regTaken(c) >= regCap(c);
+
+  function toggleComp(c: FCRow) {
     setSelectedComps((prev) => {
-      if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= 2) return prev;
-      return [...prev, id];
+      if (prev.includes(c.id)) return prev.filter((x) => x !== c.id);
+      if (prev.length >= 2 || regFull(c)) return prev;
+      return [...prev, c.id];
     });
   }
 
@@ -1035,118 +1093,206 @@ export default function ParticipantsPage() {
 
       {/* Register/Edit slide-over */}
       {panelOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={() => setPanelOpen(false)}>
-          <div className="h-full w-full max-w-md overflow-y-auto bg-white p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold">{editId ? "Edit Participant" : "Register Participant"}</h2>
-              <button onClick={() => setPanelOpen(false)}><X className="h-5 w-5 text-neutral-400" /></button>
+        <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/40 backdrop-blur-[2px]" onClick={() => setPanelOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reg-panel-title"
+            className="reg-panel flex h-full w-full max-w-lg flex-col bg-neutral-50 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-neutral-200 bg-white px-5 py-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ background: "linear-gradient(135deg,#7C3AED,#A855F7)" }}>
+                {editId ? <UserCheck className="h-5 w-5 text-white" aria-hidden="true" /> : <UserPlus className="h-5 w-5 text-white" aria-hidden="true" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="reg-panel-title" className="text-base font-bold text-neutral-900">{editId ? "Edit participant" : "Register participant"}</h2>
+                <p className="truncate text-xs text-neutral-500">{feasts.find((f) => f.id === feastId)?.name ?? "Fest"}</p>
+              </div>
+              <button type="button" onClick={() => setPanelOpen(false)} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700">
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
-            <div className="space-y-3">
-              <HierarchyPicker
-                value={form.shakhaId}
-                onChange={(shakhaId) => setForm({ ...form, shakhaId })}
-                hierarchy={hierarchy}
-                disabled={!!editId}
-              />
-              <input className="input" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <input className="input" placeholder="House Name" value={form.houseName} onChange={(e) => setForm({ ...form, houseName: e.target.value })} />
-              <div>
-                <input type="date" className="input" value={form.dob} onChange={(e) => handleDobOrGenderChange({ dob: e.target.value })} />
-                {catSlug && <p className="mt-1 text-xs text-neutral-500">{CATEGORY_LABELS[catSlug]}</p>}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleDobOrGenderChange({ gender: "boy" })}
-                  className="flex-1 rounded-lg py-2 text-sm font-semibold"
-                  style={form.gender === "boy" ? { background: "#3B82F6", color: "#fff" } : { background: "#f3f4f6", color: "#374151" }}
-                >
-                  Boy
-                </button>
-                <button
-                  onClick={() => handleDobOrGenderChange({ gender: "girl" })}
-                  className="flex-1 rounded-lg py-2 text-sm font-semibold"
-                  style={form.gender === "girl" ? { background: "#EC4899", color: "#fff" } : { background: "#f3f4f6", color: "#374151" }}
-                >
-                  Girl
-                </button>
-              </div>
-              <input className="input" placeholder="Phone" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+              {/* Shakha */}
+              <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+                <h3 className="reg-label mb-2">Shakha</h3>
+                <HierarchyPicker
+                  value={form.shakhaId}
+                  onChange={(shakhaId) => setForm({ ...form, shakhaId })}
+                  hierarchy={hierarchy}
+                  disabled={!!editId}
+                />
+                {form.shakhaId && hierarchy.hierarchyLevel !== "shakha" && (
+                  <p className="mt-2 text-[11px] text-neutral-500">
+                    Item limits count across the whole {hierarchy.hierarchyLevel}
+                    {panelTeamScope ? <>: <strong className="text-neutral-700">{panelTeamScope}</strong></> : ""}.
+                  </p>
+                )}
+              </section>
 
-              <div>
-                <div className="mb-1.5 flex items-center justify-between">
-                  <span className="text-xs font-medium text-neutral-600">Competitions</span>
-                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${selectedComps.length >= 2 ? "bg-amber-50 text-amber-600" : "bg-neutral-100 text-neutral-500"}`}>
+              {/* Participant details */}
+              <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+                <h3 className="reg-label mb-3">Participant</h3>
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="reg-name" className="reg-field-label">Name <span className="text-red-500">*</span></label>
+                    <input id="reg-name" className="input" placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label htmlFor="reg-house" className="reg-field-label">House name</label>
+                    <input id="reg-house" className="input" placeholder="House name" value={form.houseName} onChange={(e) => setForm({ ...form, houseName: e.target.value })} />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="reg-dob" className="reg-field-label">Date of birth <span className="text-red-500">*</span></label>
+                      <input id="reg-dob" type="date" className="input" value={form.dob} onChange={(e) => handleDobOrGenderChange({ dob: e.target.value })} />
+                      {catSlug && (
+                        <span className="mt-1.5 inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                          {CATEGORY_LABELS[catSlug]}
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="reg-field-label" id="reg-gender-label">Gender <span className="text-red-500">*</span></span>
+                      <div role="group" aria-labelledby="reg-gender-label" className="grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1">
+                        {([["boy", "Boy", "#2563EB"], ["girl", "Girl", "#DB2777"]] as const).map(([value, label, color]) => {
+                          const on = form.gender === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              aria-pressed={on}
+                              onClick={() => handleDobOrGenderChange({ gender: value })}
+                              className="rounded-lg py-2 text-sm font-semibold transition-colors"
+                              style={on ? { background: color, color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,.12)" } : { color: "#525252" }}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="reg-phone" className="reg-field-label">Phone</label>
+                    <input id="reg-phone" className="input" placeholder="Phone number" type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Individual competitions */}
+              <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <h3 className="reg-label">Competitions</h3>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold tabular-nums ${selectedComps.length >= 2 ? "bg-amber-50 text-amber-700" : "bg-neutral-100 text-neutral-600"}`}>
                     {selectedComps.length} / 2 selected
                   </span>
                 </div>
-                {selectedComps.length >= 2 && <p className="mb-1.5 text-[11px] text-amber-600">Maximum 2 competitions allowed. Deselect one to change.</p>}
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 p-2">
-                  {eligibleComps.map((c) => (
-                    <label key={c.id} className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={selectedComps.includes(c.id)} onChange={() => toggleComp(c.id)} />
-                      {c.competition.name}
-                    </label>
-                  ))}
-                  {eligibleComps.length === 0 && <p className="text-xs text-neutral-400">No eligible competitions for this category/gender.</p>}
+                <p className="mb-3 text-[11px] text-neutral-500">
+                  {!form.shakhaId
+                    ? "Pick a shakha first — limits are counted per " + (hierarchy.hierarchyLevel === "shakha" ? "shakha" : hierarchy.hierarchyLevel) + "."
+                    : !form.dob || !form.gender
+                      ? "Enter date of birth and gender to see the items this person can enter."
+                      : selectedComps.length >= 2
+                        ? "Maximum 2 items. Deselect one to change."
+                        : "Up to 2 items. Items whose limit is already filled are locked."}
+                </p>
+                <div className="space-y-2">
+                  {eligibleComps.map((c) => {
+                    const on = selectedComps.includes(c.id);
+                    const full = regFull(c);
+                    const atMax = !on && selectedComps.length >= 2;
+                    const locked = !form.shakhaId || full || atMax;
+                    const cap = regCap(c);
+                    const taken = regTaken(c) + (on ? 1 : 0);
+                    return (
+                      <label
+                        key={c.id}
+                        className={`reg-option ${on ? "is-on" : ""} ${full ? "is-full" : ""} ${locked && !full ? "is-dim" : ""}`}
+                        title={full ? `Limit reached for ${panelTeamScope || "this " + hierarchy.hierarchyLevel}` : undefined}
+                      >
+                        <input type="checkbox" className="sr-only" checked={on} disabled={locked && !on} onChange={() => toggleComp(c)} />
+                        <span className="reg-check" aria-hidden="true">{on ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : full ? <Lock className="h-3 w-3" /> : null}</span>
+                        <span className="min-w-0 flex-1 text-sm font-semibold">{c.competition.name}</span>
+                        {form.shakhaId && <CapBadge taken={taken} cap={cap} on={on} full={full} loading={!regCountsReady} unit="places" />}
+                      </label>
+                    );
+                  })}
+                  {eligibleComps.length === 0 && (
+                    <p className="rounded-xl border border-dashed border-neutral-200 px-3 py-4 text-center text-xs text-neutral-400">No eligible competitions for this category and gender.</p>
+                  )}
                 </div>
-              </div>
+              </section>
 
+              {/* Team events */}
               {eligibleTeamComps.length > 0 && (
-                <div>
-                  <div className="mb-1.5 flex items-center gap-2" role="separator" aria-label="Team events">
-                    <span className="h-px flex-1 bg-neutral-200" />
-                    <span className="text-xs font-medium text-neutral-600">Team events</span>
-                    <span className="h-px flex-1 bg-neutral-200" />
-                  </div>
-                  <p className="mb-1.5 text-[11px] text-neutral-500">
+                <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+                  <h3 className="reg-label mb-1">Team events</h3>
+                  <p className="mb-3 text-[11px] text-neutral-500">
                     {form.shakhaId
                       ? <>Adds this person to the <strong className="text-neutral-700">{panelTeamScope || "…"}</strong> team. The first registration starts the team.</>
                       : "Pick a shakha to see its team counts."}
                   </p>
-                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-neutral-200 p-2">
+                  <div className="space-y-2">
                     {eligibleTeamComps.map((c) => {
                       const max = teamMax(c);
                       const on = selectedTeams.includes(c.id);
                       const count = panelTeamCounts[c.id] ?? 0;
                       const full = !on && count >= max;
                       return (
-                        <label key={c.id} className={`flex items-center gap-2 text-sm ${full ? "cursor-not-allowed text-neutral-400" : ""}`}>
-                          <input type="checkbox" checked={on} disabled={full || !form.shakhaId} onChange={() => toggleTeamComp(c)} />
-                          <span className="min-w-0 flex-1">{c.competition.name}</span>
-                          <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${full ? "bg-amber-50 text-amber-600" : "bg-neutral-100 text-neutral-500"}`}
-                            aria-label={`${count + (on ? 1 : 0)} of ${max} members`}
-                          >
-                            {full ? "Full · " : ""}{count + (on ? 1 : 0)}/{max}
-                          </span>
+                        <label key={c.id} className={`reg-option ${on ? "is-on" : ""} ${full ? "is-full" : ""} ${!form.shakhaId ? "is-dim" : ""}`}>
+                          <input type="checkbox" className="sr-only" checked={on} disabled={full || !form.shakhaId} onChange={() => toggleTeamComp(c)} />
+                          <span className="reg-check" aria-hidden="true">{on ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : full ? <Lock className="h-3 w-3" /> : null}</span>
+                          <span className="min-w-0 flex-1 text-sm font-semibold">{c.competition.name}</span>
+                          <CapBadge taken={count + (on ? 1 : 0)} cap={max} on={on} full={full} unit="members" />
                         </label>
                       );
                     })}
                   </div>
-                </div>
+                </section>
               )}
 
-              {panelError && <p className="text-sm text-red-600">{panelError}</p>}
+              {editId && (
+                <section className="rounded-2xl border border-red-200 bg-white p-4">
+                  {!confirmingDelete ? (
+                    <button type="button" onClick={() => setConfirmingDelete(true)} className="flex w-full items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold text-red-600 hover:bg-red-50">
+                      <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete registration
+                    </button>
+                  ) : (
+                    <div>
+                      <p className="mb-2 text-sm text-red-700">Permanently delete this registration?</p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setConfirmingDelete(false)} className="flex-1 rounded-xl border border-neutral-300 py-2 text-sm font-semibold">Cancel</button>
+                        <button type="button" onClick={handleDeleteParticipant} className="flex-1 rounded-xl bg-red-600 py-2 text-sm font-semibold text-white">Yes, delete</button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
 
-              <button onClick={handleSaveParticipant} disabled={saving} className="w-full rounded-lg bg-[#7C3AED] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
-                {saving ? "Saving…" : "Save"}
-              </button>
-
-              {editId && !confirmingDelete && (
-                <button onClick={() => setConfirmingDelete(true)} className="w-full rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold text-red-600">
-                  Delete Registration
+            {/* Footer */}
+            <div className="border-t border-neutral-200 bg-white px-5 py-4">
+              {panelError && <p role="alert" className="mb-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{panelError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setPanelOpen(false)} className="rounded-xl border border-neutral-300 px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">
+                  Cancel
                 </button>
-              )}
-              {editId && confirmingDelete && (
-                <div className="rounded-lg border border-red-300 bg-red-50 p-3">
-                  <p className="mb-2 text-sm text-red-700">Permanently delete this registration?</p>
-                  <div className="flex gap-2">
-                    <button onClick={() => setConfirmingDelete(false)} className="flex-1 rounded-lg border border-neutral-300 py-1.5 text-sm">Cancel</button>
-                    <button onClick={handleDeleteParticipant} className="flex-1 rounded-lg bg-red-600 py-1.5 text-sm font-semibold text-white">Yes, Delete</button>
-                  </div>
-                </div>
-              )}
+                <button
+                  type="button"
+                  onClick={handleSaveParticipant}
+                  disabled={saving}
+                  aria-busy={saving}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-70"
+                  style={{ background: "linear-gradient(135deg,#7C3AED,#A855F7)" }}
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  {saving ? "Saving…" : editId ? "Save changes" : "Register"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1260,6 +1406,19 @@ export default function ParticipantsPage() {
 
       <style jsx>{`
         .input { border-radius: 0.5rem; border: 1px solid #d4d4d8; padding: 0.5rem 0.75rem; font-size: 0.8125rem; width: 100%; }
+        .reg-panel .input { border-radius: 0.75rem; border-color: #e5e5e5; padding: 0.6rem 0.8rem; font-size: 0.875rem; background: #fff; transition: border-color .15s, box-shadow .15s; }
+        .reg-panel .input:focus { outline: none; border-color: #7C3AED; box-shadow: 0 0 0 3px rgba(124, 58, 237, .15); }
+        .reg-label { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #737373; }
+        .reg-field-label { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 600; color: #404040; }
+        .reg-option { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1.5px solid #e5e5e5; background: #fff; color: #262626; cursor: pointer; transition: border-color .15s, background .15s; }
+        .reg-option:hover { border-color: #c4b5fd; }
+        .reg-option:focus-within { box-shadow: 0 0 0 3px rgba(124, 58, 237, .18); }
+        .reg-option.is-on { border-color: #7C3AED; background: #f5f3ff; }
+        .reg-option.is-full { border-style: dashed; background: #fafafa; color: #a3a3a3; cursor: not-allowed; }
+        .reg-option.is-dim { opacity: .55; cursor: not-allowed; }
+        .reg-check { display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; border-radius: 6px; border: 1.5px solid #d4d4d4; background: #fff; color: #fff; }
+        .reg-option.is-on .reg-check { border-color: #7C3AED; background: #7C3AED; }
+        .reg-option.is-full .reg-check { border-color: #e5e5e5; background: #f5f5f5; color: #a3a3a3; }
       `}</style>
     </div>
   );

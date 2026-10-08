@@ -67,6 +67,22 @@ export async function saveDraftTeamScores(input: {
   return {};
 }
 
+// Team counterpart of clearDraftScores (results.ts): every draft team score
+// for the item back to "not entered". Refused once published.
+export async function clearDraftTeamScores(feastCompetitionId: string): Promise<{ error?: string }> {
+  const admin = getSupabaseAdmin();
+  const { data: fc } = await admin.from("feast_competitions").select("result_status").eq("id", feastCompetitionId).single();
+  if (!fc) return { error: "Competition not found." };
+  if (fc.result_status === "published") return { error: "Revert to draft before clearing scores." };
+  const { error } = await admin
+    .from("team_results")
+    .delete()
+    .eq("feast_competition_id", feastCompetitionId)
+    .is("published_at", null);
+  if (error) return { error: error.message };
+  return {};
+}
+
 export async function publishTeamResults(feastCompetitionId: string): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
 

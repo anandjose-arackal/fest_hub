@@ -496,6 +496,23 @@ export async function saveDraftScores(input: {
   return {};
 }
 
+// Clears every draft score for an item back to "not entered" — score is
+// NOT NULL, so the draft rows themselves go. Refused once the item is
+// published: revert it to draft first.
+export async function clearDraftScores(feastCompetitionId: string): Promise<{ error?: string }> {
+  const admin = getSupabaseAdmin();
+  const { data: fc } = await admin.from("feast_competitions").select("result_status").eq("id", feastCompetitionId).single();
+  if (!fc) return { error: "Competition not found." };
+  if (fc.result_status === "published") return { error: "Revert to draft before clearing scores." };
+  const { error } = await admin
+    .from("competition_results")
+    .delete()
+    .eq("feast_competition_id", feastCompetitionId)
+    .is("published_at", null);
+  if (error) return { error: error.message };
+  return {};
+}
+
 export async function publishResults(feastCompetitionId: string): Promise<{ error?: string }> {
   const admin = getSupabaseAdmin();
 
