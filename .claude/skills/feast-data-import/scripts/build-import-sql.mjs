@@ -465,11 +465,21 @@ for (const t of teams) {
   prev.position ??= t.position;
   prev.score ??= t.score;
 }
+// A team bigger than its competition's max_team_size raises the cap to fit
+// (unset = DEFAULT_MAX_TEAM_MEMBERS = 7), unless "raise_team_caps": false.
+const raiseCaps = input.raise_team_caps !== false;
+const capRaise = new Map(); // fc.id -> { fc, size }
 for (const t of teamMap.values()) {
   const seen = new Set();
   t.members = t.members.map(personOf).filter((p) => (seen.has(p.key) ? false : seen.add(p.key)));
   const cap = t.fc.max_team_size ?? 7;
-  if (t.members.length > cap) add(warnings, `${t.shakha.name} team for ${fcLabel(t.fc)} has ${t.members.length} members (cap ${cap}) — imported anyway`, t.row);
+  if (t.members.length <= cap) continue;
+  if (!raiseCaps) { add(warnings, `${t.shakha.name} team for ${fcLabel(t.fc)} has ${t.members.length} members (cap ${cap}) — imported anyway`, t.row); continue; }
+  const prev = capRaise.get(t.fc.id);
+  if (!prev || t.members.length > prev.size) capRaise.set(t.fc.id, { fc: t.fc, size: t.members.length, shakha: t.shakha.name });
+}
+for (const { fc, size, shakha } of capRaise.values()) {
+  add(warnings, `Team size cap for ${fcLabel(fc)} raised from ${fc.max_team_size ?? "7 (default)"} to ${size} (largest team: ${shakha}). This changes competitions.max_team_size, which every feast using this competition shares`);
 }
 // At meghala/diocese level the app allows one team per meghala/diocese, not
 // per shakha — the DB unique key is still per shakha, so only warn.
@@ -889,7 +899,14 @@ on conflict (participant_registration_id)
   do update set score = excluded.score, updated_at = now()
   where competition_results.published_at is null;
 
--- ── Teams (one per shakha per competition) + members + draft scores ─────
+${capRaise.size ? `-- ── Raise team size caps so every imported team fits ───────────────────
+update competitions c set max_team_size = v.size
+from (values
+${[...capRaise.values()].map(({ fc, size }) => `  (${q(fc.id)}::uuid, ${size})`).join(",\n")}
+) v(fc_id, size), feast_competitions fc
+where fc.id = v.fc_id and c.id = fc.competition_id and coalesce(c.max_team_size, 7) < v.size;
+
+` : ""}-- ── Teams (one per shakha per competition) + members + draft scores ─────
 insert into team_registrations (feast_id, feast_competition_id, shakha_id, team_name, participated)
 select ${F}, t.fc_id, t.shakha_id, t.team_name, t.participated
 from _imp_team t

@@ -203,7 +203,11 @@ marks are written as `score × max_score / score_max`, and checked against
 **Registration numbers** follow `createParticipantAdmin()`: `'F' || next_reg_number(feast)` (e.g. `F1405`, `formatRegNumber()`), from one counter shared by every feast in the database.
 `participated` is true for every non-absent row of a result sheet. Entry caps
 (per shakha, or per meghala/diocese at those hierarchy levels) are reported but
-not enforced.
+not enforced. A team bigger than its competition's `max_team_size` (unset = 7,
+`DEFAULT_MAX_TEAM_MEMBERS`) makes the SQL raise `competitions.max_team_size`
+to the largest imported team, so the app accepts it. That column is shared by
+every feast using the competition. Set `"raise_team_caps": false` in the
+normalized input to only warn instead.
 
 **Hierarchy.** Only `shakha_id` is written. Meghala and diocese standings are
 computed on read from `shakhas.meghala_id` → `meghalas.diocese_id`, so
