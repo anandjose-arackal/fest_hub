@@ -26,16 +26,28 @@ export interface FontPreset {
   label: string;
   fontFamily: string;
   googleFont: string | null;
+  // Groups the selector: Latin display/script faces vs. fonts with full
+  // Malayalam script coverage (names, house names, competition names).
+  group: "English" | "Malayalam";
 }
 
 export const FONT_PRESETS: FontPreset[] = [
-  { label: "Arial (Default)", fontFamily: "Arial, Helvetica, sans-serif", googleFont: null },
-  { label: "Dancing Script — Curly Bold", fontFamily: "'Dancing Script', cursive", googleFont: "Dancing+Script:wght@700" },
-  { label: "Berkshire Swash — Curly Bold", fontFamily: "'Berkshire Swash', cursive", googleFont: "Berkshire+Swash" },
-  { label: "Pacifico — Bold Script", fontFamily: "'Pacifico', cursive", googleFont: "Pacifico" },
-  { label: "Great Vibes — Elegant Script", fontFamily: "'Great Vibes', cursive", googleFont: "Great+Vibes" },
-  { label: "Playfair Display — Elegant Serif", fontFamily: "'Playfair Display', serif", googleFont: "Playfair+Display:wght@700" },
-  { label: "Cinzel — Classic Engraved", fontFamily: "'Cinzel', serif", googleFont: "Cinzel:wght@700" },
+  { label: "Arial (Default)", fontFamily: "Arial, Helvetica, sans-serif", googleFont: null, group: "English" },
+  { label: "Dancing Script — Curly Bold", fontFamily: "'Dancing Script', cursive", googleFont: "Dancing+Script:wght@700", group: "English" },
+  { label: "Berkshire Swash — Curly Bold", fontFamily: "'Berkshire Swash', cursive", googleFont: "Berkshire+Swash", group: "English" },
+  { label: "Pacifico — Bold Script", fontFamily: "'Pacifico', cursive", googleFont: "Pacifico", group: "English" },
+  { label: "Great Vibes — Elegant Script", fontFamily: "'Great Vibes', cursive", googleFont: "Great+Vibes", group: "English" },
+  { label: "Playfair Display — Elegant Serif", fontFamily: "'Playfair Display', serif", googleFont: "Playfair+Display:wght@700", group: "English" },
+  { label: "Cinzel — Classic Engraved", fontFamily: "'Cinzel', serif", googleFont: "Cinzel:wght@700", group: "English" },
+  // Malayalam — every Google Fonts family with Malayalam script support.
+  { label: "Noto Sans Malayalam — Clean Sans", fontFamily: "'Noto Sans Malayalam', sans-serif", googleFont: "Noto+Sans+Malayalam:wght@400;700", group: "Malayalam" },
+  { label: "Noto Serif Malayalam — Book Serif", fontFamily: "'Noto Serif Malayalam', serif", googleFont: "Noto+Serif+Malayalam:wght@400;700", group: "Malayalam" },
+  { label: "Anek Malayalam — Modern Sans", fontFamily: "'Anek Malayalam', sans-serif", googleFont: "Anek+Malayalam:wght@400;700", group: "Malayalam" },
+  { label: "Baloo Chettan 2 — Rounded Bold", fontFamily: "'Baloo Chettan 2', sans-serif", googleFont: "Baloo+Chettan+2:wght@400;700", group: "Malayalam" },
+  { label: "Manjari — Soft Rounded", fontFamily: "'Manjari', sans-serif", googleFont: "Manjari:wght@400;700", group: "Malayalam" },
+  { label: "Gayathri — Light Sans", fontFamily: "'Gayathri', sans-serif", googleFont: "Gayathri:wght@400;700", group: "Malayalam" },
+  { label: "Chilanka — Handwritten", fontFamily: "'Chilanka', cursive", googleFont: "Chilanka", group: "Malayalam" },
+  { label: "Arima — Display Serif", fontFamily: "'Arima', serif", googleFont: "Arima:wght@400;700", group: "Malayalam" },
 ];
 
 /** Turns a typed Google Fonts family name (e.g. "Open Sans") into a css2 API query segment. */

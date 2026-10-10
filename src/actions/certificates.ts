@@ -15,23 +15,19 @@ const MAX_ASSET_BYTES = 4 * 1024 * 1024; // 4MB — leaves headroom under next.c
 // bucket (001_schema.sql). Goes through the service-role client — same
 // reason as everything else in this file — so the bucket itself needs no
 // storage RLS policies, just public:true for the printed <img> URLs.
-export async function uploadCertificateAsset(
-  feastId: string,
-  fileName: string,
-  fileBase64: string,
-  contentType: string
-): Promise<{ url?: string; error?: string }> {
-  let buffer: Buffer;
-  try {
-    buffer = Buffer.from(fileBase64, "base64");
-  } catch {
-    return { error: "Invalid file data." };
-  }
-  if (buffer.length === 0) return { error: "File is empty." };
-  if (buffer.length > MAX_ASSET_BYTES) return { error: "Image is too large — please use a file under 4MB." };
+// Takes the File itself, not a base64 string: React's server-action decoder
+// counts every character of a string argument against a 1M-slot limit, so
+// any image over ~750KB sent as base64 failed with "Maximum array nesting
+// exceeded". A File travels as a multipart part and isn't counted.
+export async function uploadCertificateAsset(feastId: string, file: File): Promise<{ url?: string; error?: string }> {
+  if (!(file instanceof Blob)) return { error: "Invalid file data." };
+  if (file.size === 0) return { error: "File is empty." };
+  if (file.size > MAX_ASSET_BYTES) return { error: "Image is too large — please use a file under 4MB." };
+  const contentType = file.type;
   if (!contentType.startsWith("image/")) return { error: "Only image files are supported." };
+  const buffer = Buffer.from(await file.arrayBuffer());
 
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const safeName = (file.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${feastId}/${Date.now()}-${safeName}`;
   const admin = getSupabaseAdmin();
   const { error } = await admin.storage.from("certificate-assets").upload(path, buffer, { contentType, upsert: false });

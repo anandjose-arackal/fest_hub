@@ -118,13 +118,11 @@ function fieldPreviewContent(field: CertificateField): string {
   return field.gradeValue ?? "✓"; // grade_tick
 }
 
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(((reader.result as string) || "").split(",")[1] ?? "");
-    reader.onerror = () => reject(new Error("Could not read the file."));
-    reader.readAsDataURL(file);
-  });
+// Mirrors uploadCertificateAsset's server-side limit, so an oversized
+// picture is refused before it is sent.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+function uploadTooLarge(file: File): string | null {
+  return file.size > MAX_UPLOAD_BYTES ? `That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — please use one under 4MB.` : null;
 }
 
 function readImageSize(file: File): Promise<{ width: number; height: number }> {
@@ -477,13 +475,16 @@ export default function CertificatesPage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !template) return;
+    const tooLarge = uploadTooLarge(file);
+    if (tooLarge) { setError(tooLarge); return; }
     setBgUploading(true);
     setError(null);
     try {
-      const base64 = await readFileAsBase64(file);
-      const { url, error } = await uploadCertificateAsset(template.feast_id, file.name, base64, file.type);
+      const { url, error } = await uploadCertificateAsset(template.feast_id, file);
       if (error || !url) { setError(error ?? "Upload failed."); return; }
       patchTemplate({ background_image_url: url });
+    } catch {
+      setError("Upload failed — check the connection and try again.");
     } finally {
       setBgUploading(false);
     }
@@ -493,11 +494,12 @@ export default function CertificatesPage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !template) return;
+    const tooLarge = uploadTooLarge(file);
+    if (tooLarge) { setError(tooLarge); return; }
     setSigUploading(true);
     setError(null);
     try {
-      const [base64, size] = await Promise.all([readFileAsBase64(file), readImageSize(file)]);
-      const { url, error } = await uploadCertificateAsset(template.feast_id, file.name, base64, file.type);
+      const [size, { url, error }] = await Promise.all([readImageSize(file), uploadCertificateAsset(template.feast_id, file)]);
       if (error || !url) { setError(error ?? "Upload failed."); return; }
       const aspect = size.width / size.height || 1;
       const widthMm = 40;
@@ -507,6 +509,8 @@ export default function CertificatesPage() {
         setSelectedFieldId(f.id);
         return { ...t, fields: [...t.fields, f] };
       });
+    } catch {
+      setError("Upload failed — check the connection and try again.");
     } finally {
       setSigUploading(false);
     }
@@ -804,8 +808,12 @@ export default function CertificatesPage() {
                           }
                         }}
                       >
-                        {FONT_PRESETS.map((p) => (
-                          <option key={p.fontFamily} value={p.fontFamily}>{p.label}</option>
+                        {(["English", "Malayalam"] as const).map((group) => (
+                          <optgroup key={group} label={group === "Malayalam" ? "Malayalam (മലയാളം)" : group}>
+                            {FONT_PRESETS.filter((p) => p.group === group).map((p) => (
+                              <option key={p.fontFamily} value={p.fontFamily}>{p.label}</option>
+                            ))}
+                          </optgroup>
                         ))}
                         <option value="custom">Custom Google Font…</option>
                       </select>
