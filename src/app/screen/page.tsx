@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Award, Check, ChevronLeft, ChevronRight, Church, Pause, Play, Settings, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -113,6 +113,51 @@ function GradeCount({ grade, n }: { grade: "A" | "B" | "C"; n: number }) {
   );
 }
 
+// Podium place marker: a gold / silver / bronze cup with the place on it
+// (the round .fp-medal stays on leaderboard rows and the result screen).
+const TROPHY_TONES: Record<MedalPos, { stops: [string, string, string, string]; ink: string; glow: string }> = {
+  1: { stops: ["#FFF3CC", "#FFD66B", "#F5C542", "#A8700A"], ink: "#3A2A06", glow: "rgba(245,197,66,.5)" },
+  2: { stops: ["#FFFFFF", "#E8EBF0", "#B7BDC8", "#6E7684"], ink: "#262B33", glow: "rgba(200,210,224,.4)" },
+  3: { stops: ["#FFE6CF", "#E3AA7C", "#A77A4D", "#5E3B1F"], ink: "#3A2210", glow: "rgba(199,138,90,.4)" },
+};
+
+function PlaceTrophy({ pos, size }: { pos: MedalPos; size: number }) {
+  const id = useId().replace(/:/g, "");
+  const t = TROPHY_TONES[pos];
+  const fill = `url(#tr-${id})`;
+  return (
+    <svg
+      role="img"
+      aria-label={`${pos === 1 ? "1st" : pos === 2 ? "2nd" : "3rd"} place`}
+      viewBox="0 0 64 72"
+      width={size}
+      height={size * 1.125}
+      style={{ flex: "none", overflow: "visible", filter: `drop-shadow(0 4px 10px ${t.glow})` }}
+    >
+      <defs>
+        <linearGradient id={`tr-${id}`} x1="0" y1="0" x2="0.35" y2="1">
+          <stop offset="0" stopColor={t.stops[0]} />
+          <stop offset=".35" stopColor={t.stops[1]} />
+          <stop offset=".7" stopColor={t.stops[2]} />
+          <stop offset="1" stopColor={t.stops[3]} />
+        </linearGradient>
+      </defs>
+      {/* handles */}
+      <path d="M15 12H7.5a3.5 3.5 0 0 0-3.5 3.5V18c0 7 5 12 12.5 13" fill="none" stroke={fill} strokeWidth="4.5" strokeLinecap="round" />
+      <path d="M49 12h7.5a3.5 3.5 0 0 1 3.5 3.5V18c0 7-5 12-12.5 13" fill="none" stroke={fill} strokeWidth="4.5" strokeLinecap="round" />
+      {/* cup, stem, base */}
+      <path d="M13 5h38v17c0 11.6-8.5 20-19 20S13 33.6 13 22V5z" fill={fill} />
+      <path d="M28 41h8v9h-8z" fill={fill} />
+      <path d="M20 50h24a3 3 0 0 1 3 3v3H17v-3a3 3 0 0 1 3-3z" fill={fill} />
+      <rect x="12" y="56" width="40" height="11" rx="3" fill={fill} />
+      {/* rim + shine */}
+      <rect x="11" y="3" width="42" height="5" rx="2.5" fill={t.stops[0]} opacity=".9" />
+      <path d="M19 11c0 8 2 15 6 19" fill="none" stroke="#fff" strokeOpacity=".55" strokeWidth="3" strokeLinecap="round" />
+      <text x="32" y="29" textAnchor="middle" fontSize="19" fontWeight="900" fill={t.ink} style={{ fontFamily: "var(--font-archivo), sans-serif", fontStretch: "80%" }}>{pos}</text>
+    </svg>
+  );
+}
+
 // ── Rankings (Meghala or Shakha tier) ──────────────────────────────────
 function Podium({ rows, tier, caption }: { rows: RankRow[]; tier: Tier; caption: string }) {
   const top = rows.filter((r) => !r.unassigned).slice(0, 3);
@@ -137,7 +182,7 @@ function Podium({ rows, tier, caption }: { rows: RankRow[]; tier: Tier; caption:
           const t = TONE[i];
           return (
             <div key={row.id} className="fp-rise" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center", minWidth: 0, animationDelay: `${0.15 * slot}s` }}>
-              <Medal pos={pos} size={ped[i].medal} />
+              <PlaceTrophy pos={pos} size={(ped[i].medal + 8) * 2} />
               <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: "100%" }}>
                 <div className="fp-ml" style={{ fontSize: 25, fontWeight: 800, lineHeight: 1.1, overflowWrap: "anywhere" }}>{row.name}</div>
                 {row.sub && <div className="fp-ml" style={{ fontSize: 16, fontWeight: 600, color: "var(--fp-sub)" }}>{row.sub}</div>}
