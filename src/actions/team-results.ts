@@ -7,8 +7,11 @@ import { TAG, TTL, expireTags } from "@/lib/cache-tags";
 import { calcGrade, calcPositions, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
 import { rebuildStandings, type ScoreEntry, type DraftScore } from "@/actions/results";
 import { TEAM_CATEGORY_SLUG } from "@/lib/feast-data";
+import { requireRole } from "@/lib/require-role";
 
 export async function getTeamCompetitionScores(feastCompetitionId: string): Promise<ScoreEntry[]> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return [];
   const { data } = await getSupabaseAdmin()
     .from("team_results")
     .select("team_registration_id, score, grade, position, total_points")
@@ -23,6 +26,8 @@ export async function getTeamCompetitionScores(feastCompetitionId: string): Prom
 }
 
 export async function getScoresForTeamCompetitions(feastCompetitionIds: string[]): Promise<Record<string, ScoreEntry[]>> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return {};
   if (feastCompetitionIds.length === 0) return {};
   const admin = getSupabaseAdmin();
   const { data } = await fetchAllIn(feastCompetitionIds, (ids, from, to) =>
@@ -50,6 +55,8 @@ export async function saveDraftTeamScores(input: {
   feastCompetitionId: string;
   scores: DraftScore[];
 }): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const rows = input.scores.map((s) => ({
     feast_competition_id: input.feastCompetitionId,
@@ -70,6 +77,8 @@ export async function saveDraftTeamScores(input: {
 // Team counterpart of clearDraftScores (results.ts): every draft team score
 // for the item back to "not entered". Refused once published.
 export async function clearDraftTeamScores(feastCompetitionId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const { data: fc } = await admin.from("feast_competitions").select("result_status").eq("id", feastCompetitionId).single();
   if (!fc) return { error: "Competition not found." };
@@ -84,6 +93,8 @@ export async function clearDraftTeamScores(feastCompetitionId: string): Promise<
 }
 
 export async function publishTeamResults(feastCompetitionId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
 
   const [{ data: fc }, { data: draftRows }] = await Promise.all([
@@ -166,6 +177,8 @@ export async function publishTeamResults(feastCompetitionId: string): Promise<{ 
 }
 
 export async function unpublishTeamResults(feastCompetitionId: string, feastId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   await Promise.all([
     admin
@@ -173,6 +186,8 @@ export async function unpublishTeamResults(feastCompetitionId: string, feastId: 
       .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
       .eq("feast_competition_id", feastCompetitionId),
     admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId),
+    // Same as unpublishResults: a print of withdrawn results is stale.
+    admin.from("feast_competition_prints").delete().eq("feast_competition_id", feastCompetitionId),
   ]);
   const [, { error }] = await Promise.all([
     rebuildStandings(feastId, admin),

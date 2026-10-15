@@ -6,6 +6,8 @@ import { fetchAll, fetchAllIn } from "@/lib/fetch-all";
 import { TAG, TTL, expireTags } from "@/lib/cache-tags";
 import { calcGrade, calcPositions, DEFAULT_GRADE_POINTS, DEFAULT_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { requireRole } from "@/lib/require-role";
+import { addLedgerPoints, emptySplit, type GenderSplit } from "@/lib/standings-split";
 
 export interface StandingsRow {
   shakhaId: string;
@@ -131,6 +133,9 @@ export interface LeaderboardRow {
   aGrade: number;
   bGrade: number;
   cGrade: number;
+  team: number;
+  /** Boys / Girls / Common points per age category (team events not split). */
+  split: GenderSplit;
 }
 
 function toLeaderboardRow(r: StandingsRow, rank: number): LeaderboardRow {
@@ -150,6 +155,8 @@ function toLeaderboardRow(r: StandingsRow, rank: number): LeaderboardRow {
     aGrade: r.aGradeCount,
     bGrade: r.bGradeCount,
     cGrade: r.cGradeCount,
+    team: r.teamPoints,
+    split: emptySplit(),
   };
 }
 
@@ -174,17 +181,22 @@ type LeaderboardTier = "shakha" | "meghala" | "diocese";
 // is expired by rebuildStandings) instead of one per phone refresh.
 const cachedLeaderboard = unstable_cache(
   async (scope: "feast" | "overall", tier: LeaderboardTier, feastSlug: string): Promise<LeaderboardRow[]> => {
+    const splitScope = scope === "overall" ? {} : { feastSlug };
     if (tier === "shakha") {
-      const rows = scope === "overall" ? await getOverallStandings() : await readFeastStandingsBySlug(feastSlug);
-      return rows.map((r, i) => toLeaderboardRow(r, r.rank ?? i + 1));
+      const [rows, split] = await Promise.all([
+        scope === "overall" ? getOverallStandings() : readFeastStandingsBySlug(feastSlug),
+        readGenderSplit(splitScope, "shakha"),
+      ]);
+      return rows.map((r, i) => ({ ...toLeaderboardRow(r, r.rank ?? i + 1), split: split[r.shakhaId] ?? emptySplit() }));
     }
-    const [rows, groupMap] = await Promise.all([
+    const [rows, groupMap, split] = await Promise.all([
       scope === "overall" ? getOverallStandings() : readFeastStandingsBySlug(feastSlug),
       getShakhaGroupMap(tier),
+      readGenderSplit(splitScope, tier),
     ]);
-    return groupStandingsRows(rows, groupMap).map((r, i) => toLeaderboardRowFromGroup(r, r.rank ?? i + 1));
+    return groupStandingsRows(rows, groupMap).map((r, i) => ({ ...toLeaderboardRowFromGroup(r, r.rank ?? i + 1), split: split[r.groupId] ?? emptySplit() }));
   },
-  ["fp-leaderboard"],
+  ["fp-leaderboard-v2"],
   { tags: [TAG.standings, TAG.hierarchy], revalidate: TTL.standard },
 );
 
@@ -328,6 +340,41 @@ export async function getOverallDioceseStandings(): Promise<GroupStandingsRow[]>
   return groupStandingsRows(rows, groupMap);
 }
 
+// Boys / Girls / Common split of every age category's points, keyed by
+// shakha id (or meghala/diocese id, "__unassigned__" included, for those
+// tiers) — /admin/standings' sub-columns. Computed on read from the ledger
+// like the rollups above; feastId null = across every fest. External fests
+// have no ledger rows (their points are entered as totals), so they add
+// nothing here.
+export async function getStandingsGenderSplit(feastId: string | null, tier: LeaderboardTier = "shakha"): Promise<Record<string, GenderSplit>> {
+  return readGenderSplit(feastId ? { feastId } : {}, tier);
+}
+
+// Shared by getStandingsGenderSplit (admin, by fest id) and the public
+// leaderboard (by fest slug). No fest = every fest.
+async function readGenderSplit(scope: { feastId?: string; feastSlug?: string }, tier: LeaderboardTier): Promise<Record<string, GenderSplit>> {
+  const admin = getSupabaseAdmin();
+  const [{ data }, groupMap] = await Promise.all([
+    fetchAll((from, to) => {
+      let q = admin
+        .from("shakha_point_ledger")
+        .select("shakha_id, category_slug, total_points, feast_competition:feast_competitions(competition:competitions(gender)), feast:feasts!inner(slug)");
+      if (scope.feastId) q = q.eq("feast_id", scope.feastId);
+      if (scope.feastSlug) q = q.eq("feast.slug", scope.feastSlug);
+      return q.order("id").range(from, to);
+    }),
+    tier === "shakha" ? Promise.resolve(null) : getShakhaGroupMap(tier),
+  ]);
+  const out: Record<string, GenderSplit> = {};
+  for (const row of data) {
+    const key = groupMap ? (groupMap.get(row.shakha_id) ?? UNASSIGNED_GROUP).id : row.shakha_id;
+    const fc = Array.isArray(row.feast_competition) ? row.feast_competition[0] : row.feast_competition;
+    const competition = Array.isArray(fc?.competition) ? fc?.competition[0] : fc?.competition;
+    addLedgerPoints((out[key] ??= emptySplit()), row.category_slug, competition?.gender ?? null, row.total_points);
+  }
+  return out;
+}
+
 function toLeaderboardRowFromGroup(r: GroupStandingsRow, rank: number): LeaderboardRow {
   return {
     shakhaId: r.groupId,
@@ -345,6 +392,8 @@ function toLeaderboardRowFromGroup(r: GroupStandingsRow, rank: number): Leaderbo
     aGrade: r.aGradeCount,
     bGrade: r.bGradeCount,
     cGrade: r.cGradeCount,
+    team: r.teamPoints,
+    split: emptySplit(),
   };
 }
 
@@ -366,6 +415,8 @@ export async function getOverallDioceseLeaderboard(): Promise<{ data?: Leaderboa
 
 // ── score entry / publishing ──────────────────────────────────────────────
 export async function setMaxScore(feastCompetitionId: string, maxScore: number): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const { error } = await getSupabaseAdmin()
     .from("feast_competitions")
     .update({ max_score: maxScore })
@@ -383,6 +434,8 @@ export interface ScoreEntry {
 }
 
 export async function getCompetitionScores(feastCompetitionId: string): Promise<ScoreEntry[]> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return [];
   const { data } = await getSupabaseAdmin()
     .from("competition_results")
     .select("participant_registration_id, score, grade, position, total_points")
@@ -397,6 +450,8 @@ export async function getCompetitionScores(feastCompetitionId: string): Promise<
 }
 
 export async function getScoresForCompetitions(feastCompetitionIds: string[]): Promise<Record<string, ScoreEntry[]>> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return {};
   if (feastCompetitionIds.length === 0) return {};
   const admin = getSupabaseAdmin();
   const { data } = await fetchAllIn(feastCompetitionIds, (ids, from, to) =>
@@ -479,6 +534,8 @@ export async function saveDraftScores(input: {
   feastCompetitionId: string;
   scores: DraftScore[];
 }): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const rows = input.scores.map((s) => ({
     feast_competition_id: input.feastCompetitionId,
@@ -500,6 +557,8 @@ export async function saveDraftScores(input: {
 // NOT NULL, so the draft rows themselves go. Refused once the item is
 // published: revert it to draft first.
 export async function clearDraftScores(feastCompetitionId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const { data: fc } = await admin.from("feast_competitions").select("result_status").eq("id", feastCompetitionId).single();
   if (!fc) return { error: "Competition not found." };
@@ -514,6 +573,8 @@ export async function clearDraftScores(feastCompetitionId: string): Promise<{ er
 }
 
 export async function publishResults(feastCompetitionId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
 
   // The competition row (with its fest's external flag) and the draft scores
@@ -606,15 +667,20 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
 }
 
 export async function unpublishResults(feastCompetitionId: string, feastId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   // Clearing the results and dropping their ledger rows touch different
-  // tables — run them together, then rebuild once both are done.
+  // tables — run them together, then rebuild once both are done. Anything
+  // printed for these results is stale too, so the item goes back to "not
+  // printed" (feast_competition_prints — gates trophy handover).
   await Promise.all([
     admin
       .from("competition_results")
       .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
       .eq("feast_competition_id", feastCompetitionId),
     admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId),
+    admin.from("feast_competition_prints").delete().eq("feast_competition_id", feastCompetitionId),
   ]);
   const [, { error }] = await Promise.all([
     rebuildStandings(feastId, admin),
@@ -761,6 +827,8 @@ export interface ExternalFeastPointsRow {
 }
 
 export async function saveExternalFeastPoints(feastId: string, rows: ExternalFeastPointsRow[]): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
 
   const { data: feast, error: feastErr } = await admin.from("feasts").select("is_external").eq("id", feastId).single();

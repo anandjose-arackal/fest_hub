@@ -32,8 +32,13 @@ function roles(level: HierarchyLevel): { value: UserRole; label: string; desc: s
     { value: "admin", label: "Admin", desc: `Full back-office access — not tied to a ${label}, can't register participants`, classes: "bg-blue-100 text-blue-700" },
     { value: "me_admin", label: "ME Admin", desc: `Can view all ${label}s`, classes: "bg-purple-100 text-purple-700" },
     { value: "sa_admin", label: "SA Admin", desc: `${scopeLabel(level)} admin — registers participants for their assigned ${label} via the public site, no back-office access`, classes: "bg-red-100 text-red-700" },
+    { value: "trophy_manager", label: "Trophy Manager", desc: "Marks trophy & certificate handovers — no other admin access", classes: "bg-amber-100 text-amber-800" },
   ];
 }
+
+// Not tied to any node: a scope would also make the public portal offer
+// them registration (feast-details.tsx's canRegister keys off adminScope).
+const UNSCOPED_ROLES: UserRole[] = ["trophy_manager"];
 
 export default function UsersPage() {
   const { session, profile: currentUser } = useAuth();
@@ -97,7 +102,7 @@ export default function UsersPage() {
       return;
     }
     setEditSaving(true);
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from("profiles")
       .update({
         full_name: editProfile.full_name,
@@ -105,12 +110,18 @@ export default function UsersPage() {
         shakha_id: null,
         meghala_id: null,
         diocese_id: null,
-        [scopeColumn(hierarchy.hierarchyLevel)]: editScopeId || null,
+        [scopeColumn(hierarchy.hierarchyLevel)]: UNSCOPED_ROLES.includes(editRole) ? null : editScopeId || null,
       })
-      .eq("id", editProfile.id);
+      .eq("id", editProfile.id)
+      .select("id");
     setEditSaving(false);
     if (error) {
       setEditError(error.message);
+      return;
+    }
+    // RLS filters a disallowed update down to zero rows instead of erroring.
+    if (!updated || updated.length === 0) {
+      setEditError("You don't have permission to edit this user.");
       return;
     }
     setEditProfile(null);
@@ -136,7 +147,7 @@ export default function UsersPage() {
         password: newPassword,
         full_name: newName,
         role: newRole,
-        scope_id: newScopeId || null,
+        scope_id: UNSCOPED_ROLES.includes(newRole) ? null : newScopeId || null,
       }),
     });
     const json = await res.json();
@@ -235,7 +246,7 @@ export default function UsersPage() {
                   <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
                 ))}
               </select>
-              <ScopePicker value={editScopeId} onChange={setEditScopeId} hierarchy={hierarchy} emptyLabel="None" />
+              {!UNSCOPED_ROLES.includes(editRole) && <ScopePicker value={editScopeId} onChange={setEditScopeId} hierarchy={hierarchy} emptyLabel="None" />}
               {editError && <p className="text-sm text-red-600">{editError}</p>}
               <button onClick={handleSaveEdit} disabled={editSaving} className="w-full rounded-lg bg-[#6B46FF] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
                 {editSaving ? "Saving…" : "Save"}
@@ -272,7 +283,7 @@ export default function UsersPage() {
                   <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>
                 ))}
               </select>
-              <ScopePicker value={newScopeId} onChange={setNewScopeId} hierarchy={hierarchy} emptyLabel="None" />
+              {!UNSCOPED_ROLES.includes(newRole) && <ScopePicker value={newScopeId} onChange={setNewScopeId} hierarchy={hierarchy} emptyLabel="None" />}
               {createError && <p className="text-sm text-red-600">{createError}</p>}
               <button
                 onClick={handleCreate}

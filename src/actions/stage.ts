@@ -1,6 +1,7 @@
 "use server";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { requireRole } from "@/lib/require-role";
 
 // stages has no authenticated write RLS policy — admin writes go through
 // the service-role client (spec §4.4: a real relation replacing the
@@ -14,6 +15,8 @@ export interface StageInput {
 }
 
 export async function createStage(input: StageInput): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   if (!input.title.trim()) return { error: "Title is required." };
   const { error } = await getSupabaseAdmin().from("stages").insert({
     feast_id: input.feastId,
@@ -26,6 +29,8 @@ export async function createStage(input: StageInput): Promise<{ error?: string }
 }
 
 export async function updateStage(id: string, input: StageInput): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   if (!input.title.trim()) return { error: "Title is required." };
   const { error } = await getSupabaseAdmin()
     .from("stages")
@@ -36,6 +41,8 @@ export async function updateStage(id: string, input: StageInput): Promise<{ erro
 }
 
 export async function deleteStage(id: string): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   const { error } = await getSupabaseAdmin().from("stages").delete().eq("id", id);
   if (error) return { error: error.message };
   return {};
@@ -46,6 +53,8 @@ export async function assignCompetitionStage(
   stageId: string | null,
   displayOrder?: number
 ): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   const payload: { stage_id: string | null; display_order?: number } = { stage_id: stageId };
   if (displayOrder != null) payload.display_order = displayOrder;
   const { error } = await getSupabaseAdmin().from("feast_competitions").update(payload).eq("id", feastCompetitionId);

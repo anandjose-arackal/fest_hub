@@ -17,6 +17,7 @@ import {
   ProgressBar, RibbonMedal, Sparkle, isMedalPos, toneStyle, toneTextClass, useCountUp, useMediaQuery,
   type MedalPos,
 } from "./feast-ui";
+import { emptySplit, splitGenderTotal, type SplitCategory, type SplitGender } from "@/lib/standings-split";
 import type { HierarchyLevel } from "@/types";
 
 type Tier = "shakha" | "meghala" | "diocese";
@@ -30,12 +31,19 @@ function tiersFor(level: HierarchyLevel): Tier[] {
 
 type CatKey = "subJunior" | "junior" | "senior" | "superSenior" | "elder";
 type SortKey = "all" | CatKey;
-const CATS: { key: CatKey; slug: string; label: string }[] = [
+const CATS: { key: CatKey; slug: SplitCategory; label: string }[] = [
   { key: "subJunior", slug: "sub_junior", label: "Sub Junior" },
   { key: "junior", slug: "junior", label: "Junior" },
   { key: "senior", slug: "senior", label: "Senior" },
   { key: "superSenior", slug: "super_senior", label: "Super Senior" },
   { key: "elder", slug: "elder", label: "Elder" },
+];
+
+// Each age category's points split by item gender (team events aren't split).
+const GENDERS: { g: SplitGender; label: string; color: string }[] = [
+  { g: "boy", label: "Boys", color: "var(--fp-boys)" },
+  { g: "girl", label: "Girls", color: "var(--fp-girls)" },
+  { g: "common", label: "Common", color: "var(--fp-primary)" },
 ];
 
 const MEDAL_BAR = { g: "#F5C542", s: "#B7BDC8", b: "#C48A5A" };
@@ -183,6 +191,39 @@ interface StatsCtx {
   ranked: Ranked[];
   catRank: Record<string, Partial<Record<CatKey, number>>>;
   catMax: number;
+  /** Overall, or the category the list is ranked by — the Boys/Girls/Common figures follow it. */
+  sort: SortKey;
+}
+
+// Boys / Girls / Common points behind the score being shown: the whole
+// total when ranking overall (team events listed separately — they aren't
+// split), or just the selected age category.
+function rowSplit(r: LeaderboardRow, sort: SortKey): { values: Record<SplitGender, number>; team: number | null } {
+  const split = r.split ?? emptySplit();
+  if (sort === "all") {
+    return { values: { boy: splitGenderTotal(split, "boy"), girl: splitGenderTotal(split, "girl"), common: splitGenderTotal(split, "common") }, team: r.team ?? 0 };
+  }
+  const slug = CATS.find((c) => c.key === sort)?.slug;
+  return { values: slug ? split[slug] : { boy: 0, girl: 0, common: 0 }, team: null };
+}
+
+// Compact "B 30 · G 26" for a leaderboard row — Boys and Girls only; the
+// stats panel has the full breakdown (Common, Team).
+const ROW_GENDERS = GENDERS.filter((x) => x.g !== "common");
+
+function RowSplit({ r, sort, className }: { r: LeaderboardRow; sort: SortKey; className?: string }) {
+  const { values } = rowSplit(r, sort);
+  return (
+    <span className={`flex items-center gap-2 font-bold tabular-nums ${className ?? ""}`} style={{ color: theme.text }}>
+      {ROW_GENDERS.map((x) => (
+        <span key={x.g} className="inline-flex items-baseline gap-[3px]" title={x.label}>
+          <span style={{ color: x.color }}>{x.label[0]}</span>
+          {values[x.g]}
+          <span className="sr-only"> {x.label}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function StatTile({ value, label, gold }: { value: React.ReactNode; label: string; gold?: boolean }) {
@@ -190,6 +231,18 @@ function StatTile({ value, label, gold }: { value: React.ReactNode; label: strin
     <div className="rounded-[14px] p-3" style={gold ? { background: "var(--fp-note-bg)", border: "1px solid var(--fp-note-line)" } : { background: theme.surface3, border: `1px solid ${theme.line}` }}>
       <div className={`fp-num text-[24px] xl:text-[28px] ${gold ? "fp-t-gold" : ""}`}>{value}</div>
       <div className="mt-1.5 text-[11.5px] font-bold leading-tight xl:text-[12px]" style={{ color: theme.sub }}>{label}</div>
+    </div>
+  );
+}
+
+function PointsTile({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div className="rounded-[14px] px-2.5 py-2.5" style={{ background: theme.surface3, border: `1px solid ${theme.line}` }}>
+      <div className="flex items-center gap-1.5">
+        <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+        <span className="truncate text-[11px] font-bold" style={{ color: theme.sub }}>{label}</span>
+      </div>
+      <div className="fp-num mt-1.5 text-[22px]">{value}</div>
     </div>
   );
 }
@@ -209,12 +262,23 @@ function StatsBody({ item, ctx }: { item: Ranked; ctx: StatsCtx }) {
   const top = ctx.ranked[0]?.score ?? 0;
   const second = ctx.ranked[1]?.score ?? 0;
   const gap = lead ? top - second : top - item.score;
+  const split = r.split ?? emptySplit();
+  const shown = rowSplit(r, ctx.sort);
+  const sortLabel = CATS.find((c) => c.key === ctx.sort)?.label;
   return (
     <div className="flex flex-col gap-[22px]">
       <div className="grid grid-cols-3 gap-2">
         <StatTile value={r.firstCount + r.secondCount + r.thirdCount} label="Podium finishes" />
         <StatTile value={r.aGrade + r.bGrade + r.cGrade} label="Graded entries" />
         <StatTile value={lead ? `+${gap}` : `−${gap}`} label={lead ? "Lead over #2" : "Behind #1"} gold />
+      </div>
+
+      <div className="@container flex flex-col gap-2.5">
+        <span className="fp-cap" style={{ color: theme.goldInk }}>{sortLabel ? `${sortLabel} points split` : "Total points split"}</span>
+        <div className={`grid gap-2 ${shown.team == null ? "grid-cols-3" : "grid-cols-2 @min-[340px]:grid-cols-4"}`}>
+          {GENDERS.map((x) => <PointsTile key={x.g} value={shown.values[x.g]} label={x.label} color={x.color} />)}
+          {shown.team != null && <PointsTile value={shown.team} label="Team" color="var(--fp-accent)" />}
+        </div>
       </div>
 
       <div className="flex flex-col gap-3.5">
@@ -225,15 +289,23 @@ function StatsBody({ item, ctx }: { item: Ranked; ctx: StatsCtx }) {
         {CATS.map((c, j) => {
           const pts = r[c.key];
           return (
-            <CategoryBar
-              key={c.key}
-              label={c.label}
-              color={catStyle(c.slug).color}
-              pts={pts}
-              pct={ctx.catMax > 0 ? (pts / ctx.catMax) * 100 : 0}
-              rank={pts > 0 ? ctx.catRank[r.shakhaId]?.[c.key] ?? null : null}
-              delay={0.08 + j * 0.07}
-            />
+            <div key={c.key} className="flex flex-col gap-1.5">
+              <CategoryBar
+                label={c.label}
+                color={catStyle(c.slug).color}
+                pts={pts}
+                pct={ctx.catMax > 0 ? (pts / ctx.catMax) * 100 : 0}
+                rank={pts > 0 ? ctx.catRank[r.shakhaId]?.[c.key] ?? null : null}
+                delay={0.08 + j * 0.07}
+              />
+              <div className="flex flex-wrap gap-x-3.5 gap-y-0.5 pl-[18px] text-[11.5px] font-bold" style={{ color: theme.sub }}>
+                {GENDERS.map((x) => (
+                  <span key={x.g}>
+                    <span style={{ color: x.color }}>{x.label}</span> <span className="tabular-nums" style={{ color: theme.text }}>{split[c.slug][x.g]}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -308,25 +380,33 @@ const MobileRow = memo(function MobileRow({ item, top, open, onToggle, ctx, colo
         onClick={() => onToggle(item.row.shakhaId)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex w-full items-center gap-3 text-left"
-        style={{ padding: podium ? "15px 14px 10px" : "11px 14px 8px", color: theme.text }}
+        // Grid: rank | [medal] | name | points | chevron on the first line;
+        // the Boys/Girls + 1st/2nd/3rd line runs under the medal, name and
+        // points, so it stays on one line even on a narrow phone.
+        className="grid w-full items-center gap-x-3 gap-y-1.5 text-left"
+        style={{
+          gridTemplateColumns: podium ? "auto auto minmax(0,1fr) auto auto" : "auto minmax(0,1fr) auto auto",
+          padding: podium ? "15px 14px 10px" : "11px 14px 8px",
+          color: theme.text,
+        }}
       >
-        <span className={`fp-num w-[34px] shrink-0 ${podium ? toneTextClass(podium) : ""}`} style={{ fontSize: podium ? 30 : 21, color: podium ? undefined : theme.faint }}>
+        <span className={`fp-num row-span-2 w-[34px] ${podium ? toneTextClass(podium) : ""}`} style={{ fontSize: podium ? 30 : 21, color: podium ? undefined : theme.faint }}>
           {String(item.rank).padStart(2, "0")}
         </span>
         {podium && <Medal pos={podium} size={30} />}
-        <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <span className="flex min-w-0 items-center gap-2">
-            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-            <span className="truncate font-extrabold leading-tight tracking-[-0.01em]" style={{ fontSize: podium ? 17 : 15.5 }}>{item.row.name}</span>
-          </span>
-          <RowMedalCounts r={item.row} />
+        <span className="flex min-w-0 items-center gap-2">
+          <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
+          <span className="truncate font-extrabold leading-tight tracking-[-0.01em]" style={{ fontSize: podium ? 17 : 15.5 }}>{item.row.name}</span>
         </span>
         <span className="flex flex-col items-end gap-1">
           <span className="fp-num" style={{ fontSize: podium ? 30 : 22 }}>{item.score}</span>
           <span className="fp-cap text-[9px]" style={{ color: theme.faint }}>pts</span>
         </span>
-        <ChevronDown className="h-[18px] w-[18px] shrink-0 transition-transform duration-300" style={{ color: theme.faint, transform: open ? "rotate(180deg)" : undefined }} />
+        <ChevronDown className="row-span-2 h-[18px] w-[18px] transition-transform duration-300" style={{ color: theme.faint, transform: open ? "rotate(180deg)" : undefined }} />
+        <span className={`flex items-center gap-x-3 ${podium ? "col-span-3 col-start-2" : "col-span-2 col-start-2"}`}>
+          <RowSplit r={item.row} sort={ctx.sort} className="text-[12.5px]" />
+          <RowMedalCounts r={item.row} />
+        </span>
       </button>
       <div aria-hidden="true" className="mx-4 mb-[11px] h-[2px] rounded-sm" style={{ background: "var(--fp-track)" }}>
         <div className="h-full rounded-sm" style={{ width: `${Math.max(3, top > 0 ? Math.round((item.score / top) * 100) : 0)}%`, background: podium ? TONE_BAR[podium] : theme.lavender }} />
@@ -340,11 +420,11 @@ const MobileRow = memo(function MobileRow({ item, top, open, onToggle, ctx, colo
   );
 });
 
-const DesktopRow = memo(function DesktopRow({ item, selected, onSelect, ctx, color, delay }: {
+const DesktopRow = memo(function DesktopRow({ item, selected, onSelect, color, delay, sort }: {
   item: Ranked;
   selected: boolean;
   onSelect: (id: string) => void;
-  ctx: StatsCtx;
+  sort: SortKey;
   color: string;
   delay: number;
 }) {
@@ -356,7 +436,7 @@ const DesktopRow = memo(function DesktopRow({ item, selected, onSelect, ctx, col
       type="button"
       onClick={() => onSelect(item.row.shakhaId)}
       aria-pressed={selected}
-      className="fp-fade-up flex w-full items-center gap-x-5 rounded-[18px] text-left transition-[background,border-color,box-shadow] duration-200 2xl:gap-x-[22px]"
+      className="fp-fade-up flex w-full items-center gap-x-3.5 rounded-[18px] text-left transition-[background,border-color,box-shadow] duration-200 2xl:gap-x-[22px]"
       style={{
         animationDelay: `${delay}s`,
         padding: podium ? "16px 20px" : "12px 20px",
@@ -365,25 +445,21 @@ const DesktopRow = memo(function DesktopRow({ item, selected, onSelect, ctx, col
         ...(selected ? { border: "1px solid var(--fp-primary)", boxShadow: "0 0 0 1px var(--fp-primary), 0 14px 30px rgba(var(--fp-primary-rgb),.18)" } : {}),
       }}
     >
-      <span className="flex min-w-0 flex-1 items-center gap-3.5">
-        <span className={`fp-num w-11 shrink-0 ${podium ? toneTextClass(podium) : ""}`} style={{ fontSize: podium ? 34 : 24, color: podium ? undefined : theme.faint }}>
+      <span className="flex min-w-0 flex-1 items-center gap-2.5 2xl:gap-3.5">
+        <span className={`fp-num w-10 shrink-0 2xl:w-11 ${podium ? toneTextClass(podium) : ""}`} style={{ fontSize: podium ? 34 : 24, color: podium ? undefined : theme.faint }}>
           {String(item.rank).padStart(2, "0")}
         </span>
-        {podium && <Medal pos={podium} size={34} />}
+        {podium && <Medal pos={podium} size={30} />}
         <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
-        <span className="truncate font-extrabold tracking-[-0.01em]" style={{ fontSize: podium ? 19 : 16.5 }}>{r.name}</span>
+        <span className="truncate font-extrabold tracking-[-0.01em]" style={{ fontSize: podium ? 17.5 : 16.5 }}>{r.name}</span>
       </span>
-      <MedalCounts g={r.firstCount} s={r.secondCount} b={r.thirdCount} size={13} className="shrink-0 text-[14px]" />
+      {/* Boys/Girls split on the same line, right-aligned beside the 1st/2nd/3rd counts. */}
+      <RowSplit r={r} sort={sort} className="shrink-0 text-[13px]" />
+      <MedalCounts g={r.firstCount} s={r.secondCount} b={r.thirdCount} size={13} className="shrink-0 text-[13px] 2xl:text-[14px]" />
       <span className="hidden items-center gap-2.5 text-[13px] font-bold tabular-nums 2xl:flex" style={{ color: theme.sub }}>
         {([["A", r.aGrade], ["B", r.bGrade], ["C", r.cGrade]] as const).map(([g, n]) => (
           <span key={g} className="inline-flex items-center gap-[5px]"><GradeBadge grade={g} size={18} />{n}</span>
         ))}
-      </span>
-      <span aria-hidden="true" className="hidden h-[30px] items-end gap-1 2xl:flex">
-        {CATS.map((c) => {
-          const col = catStyle(c.slug).color;
-          return <span key={c.key} className="w-[9px] rounded-[3px]" style={{ height: Math.max(4, ctx.catMax > 0 ? Math.round((r[c.key] / ctx.catMax) * 30) : 4), background: `linear-gradient(180deg, ${col}, color-mix(in srgb, ${col} 30%, transparent))` }} />;
-        })}
       </span>
       <span className="flex min-w-[88px] shrink-0 items-baseline justify-end gap-[5px]">
         <span className="fp-num" style={{ fontSize: podium ? 34 : 26 }}>{item.score}</span>
@@ -548,7 +624,7 @@ export function FeastLeaderboard() {
     }
     return { catRank, catMax };
   }, [rows]);
-  const ctx: StatsCtx = useMemo(() => ({ ranked, catRank, catMax }), [ranked, catRank, catMax]);
+  const ctx: StatsCtx = useMemo(() => ({ ranked, catRank, catMax, sort }), [ranked, catRank, catMax, sort]);
   const topScore = ranked[0]?.score ?? 0;
   const selectedItem = ranked.find((x) => x.row.shakhaId === selected) ?? ranked[0];
   const sortLabel = CATS.find((c) => c.key === sort)?.label;
@@ -706,7 +782,7 @@ export function FeastLeaderboard() {
                       item={x}
                       selected={selectedItem?.row.shakhaId === x.row.shakhaId}
                       onSelect={setSelected}
-                      ctx={ctx}
+                      sort={sort}
                       color={shakhaColor(x.row.shakhaId)}
                       delay={0.3 + Math.min(i, 14) * 0.04}
                     />

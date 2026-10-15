@@ -3,7 +3,9 @@
 // a generated Database type — matches the source app's pattern. Keep these
 // in sync with the SQL by hand; the SQL is ground truth.
 
-export type UserRole = "admin" | "me_admin" | "sa_admin";
+// trophy_manager: back-office login whose only screens are /admin/trophies
+// (trophy + certificate handover tracking) — see src/lib/permissions.ts.
+export type UserRole = "admin" | "me_admin" | "sa_admin" | "trophy_manager";
 
 // Optional org hierarchy (see supabase/migrations/001_schema.sql):
 // Diocese -> Meghala -> Shakha, Shakha is the default/leaf level. Which
@@ -307,4 +309,6 @@ export interface CertificateRosterRow {
   competitionLabelEn: string;
   place: number | null;
   grade: "A" | "B" | "C" | null;
+  /** The item this certificate belongs to — printing marks it printed (feast_competition_prints). */
+  feastCompetitionId: string;
 }

@@ -33,6 +33,21 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// Mirrors the access token into a cookie so server actions can identify the
+// caller (src/lib/require-role.ts) — the session itself lives in
+// localStorage, which never reaches the server. Same token, same lifetime;
+// rewritten on every refresh, cleared on sign-out. Name must match
+// require-role.ts's AUTH_COOKIE (not imported: that module is server-only).
+function syncAuthCookie(session: Session | null) {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  if (session?.access_token) {
+    const maxAge = Math.max(0, (session.expires_at ?? 0) - Math.floor(Date.now() / 1000)) || session.expires_in || 3600;
+    document.cookie = `fh-at=${session.access_token}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+  } else {
+    document.cookie = `fh-at=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     session: null,
@@ -69,6 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Synchronous, no Supabase call — safe inside the callback.
+      syncAuthCookie(session);
       setTimeout(async () => {
         if (session?.user) {
           const profile = await fetchProfile(session.user.id);
@@ -92,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (isSupabaseConfigured) await supabase.auth.signOut();
+    syncAuthCookie(null);
     setState({ session: null, profile: null, loading: false });
   }, []);
 

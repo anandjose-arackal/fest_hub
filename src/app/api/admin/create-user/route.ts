@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
     }
-    if (role && !["admin", "me_admin", "sa_admin"].includes(role)) {
+    if (role && !["admin", "me_admin", "sa_admin", "trophy_manager"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
 
@@ -84,7 +84,8 @@ export async function POST(req: NextRequest) {
           shakha_id: null,
           meghala_id: null,
           diocese_id: null,
-          [scopeColumn]: scope_id || null,
+          // trophy_manager is never tied to a node (see /admin/users).
+          [scopeColumn]: role === "trophy_manager" ? null : scope_id || null,
         })
         .eq("id", newUser.user.id);
     }

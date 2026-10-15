@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { getCertificateRoster, getCertificateTemplate, saveCertificateTemplate, uploadCertificateAsset } from "@/actions/certificates";
 import { alignTx, customGoogleFontQuery, FONT_PRESETS, googleFontsHref } from "@/lib/certificate-render";
 import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
+import { markItemsPrinted } from "@/actions/handover";
 import type { CertificateField, CertificateFieldType, CertificateRosterRow, CertificateTemplate, Feast } from "@/types";
 
 const A4 = { w: 210, h: 297 };
@@ -579,6 +580,10 @@ export default function CertificatesPage() {
     try {
       await downloadCertificatesPdf(template, filteredRoster, printWithBg, feastName, (done, total) => setPdfProgress({ done, total }));
       setConfirmOpen(false);
+      // The roster only holds published results, so every item in it now
+      // counts as printed (unlocks trophy handover). Fire-and-forget: the
+      // PDF is already downloaded either way.
+      markItemsPrinted(filteredRoster.map((r) => r.feastCompetitionId));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not generate the PDF.");
     } finally {

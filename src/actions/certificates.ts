@@ -3,6 +3,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { fetchAllIn } from "@/lib/fetch-all";
 import type { CertificateField, CertificateRosterRow, CertificateTemplate } from "@/types";
+import { requireRole } from "@/lib/require-role";
 
 // certificate_templates has no RLS (no public consumer — only this file's
 // actions and the admin designer page touch it), so every read/write here
@@ -20,6 +21,8 @@ const MAX_ASSET_BYTES = 4 * 1024 * 1024; // 4MB — leaves headroom under next.c
 // any image over ~750KB sent as base64 failed with "Maximum array nesting
 // exceeded". A File travels as a multipart part and isn't counted.
 export async function uploadCertificateAsset(feastId: string, file: File): Promise<{ url?: string; error?: string }> {
+  const auth = await requireRole("certificates.manage");
+  if ("error" in auth) return { error: auth.error };
   if (!(file instanceof Blob)) return { error: "Invalid file data." };
   if (file.size === 0) return { error: "File is empty." };
   if (file.size > MAX_ASSET_BYTES) return { error: "Image is too large — please use a file under 4MB." };
@@ -37,6 +40,8 @@ export async function uploadCertificateAsset(feastId: string, file: File): Promi
 }
 
 export async function getCertificateTemplate(feastId: string): Promise<{ data?: CertificateTemplate | null; error?: string }> {
+  const auth = await requireRole("certificates.manage");
+  if ("error" in auth) return { error: auth.error };
   const { data, error } = await getSupabaseAdmin()
     .from("certificate_templates")
     .select("feast_id, paper_width_mm, paper_height_mm, background_image_url, fields, created_at, updated_at")
@@ -55,6 +60,8 @@ export interface SaveCertificateTemplateInput {
 }
 
 export async function saveCertificateTemplate(input: SaveCertificateTemplateInput): Promise<{ error?: string }> {
+  const auth = await requireRole("certificates.manage");
+  if ("error" in auth) return { error: auth.error };
   if (!(input.paperWidthMm > 0) || !(input.paperHeightMm > 0)) {
     return { error: "Paper width and height must be positive." };
   }
@@ -148,6 +155,7 @@ async function buildRosterRows(
       competitionLabelEn: compInfo?.labelEn ?? "Competition",
       place: r.position,
       grade: r.grade as "A" | "B" | "C" | null,
+      feastCompetitionId: r.feast_competition_id,
     });
   }
 
@@ -169,6 +177,7 @@ async function buildRosterRows(
         competitionLabelEn: compInfo?.labelEn ?? "Competition",
         place: r.position,
         grade: r.grade as "A" | "B" | "C" | null,
+        feastCompetitionId: r.feast_competition_id,
       });
     }
   }
@@ -178,6 +187,8 @@ async function buildRosterRows(
 
 // Every participant with a published result across the whole feast.
 export async function getCertificateRoster(feastId: string): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
+  const auth = await requireRole("certificates.manage");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
 
   const { data: fcs, error: fcErr } = await admin
@@ -211,6 +222,8 @@ export async function getCertificateRoster(feastId: string): Promise<{ data?: Ce
 // the "Print Certificate" button on /admin/results, scoped to whichever
 // competition is currently selected there.
 export async function getCertificateRosterForCompetition(feastCompetitionId: string): Promise<{ data?: CertificateRosterRow[]; error?: string }> {
+  const auth = await requireRole("certificates.manage");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
 
   const { data: fc, error: fcErr } = await admin
