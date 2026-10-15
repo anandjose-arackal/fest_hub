@@ -73,6 +73,17 @@ export function fieldContentForRow(field: CertificateField, row: CertificateRost
   // Combined convenience field — "Name (House)" when a house name is set, otherwise just the name.
   if (field.type === "name_house") return row.houseName ? `${toTitleCase(row.name)} (${toTitleCase(row.houseName)})` : toTitleCase(row.name);
   if (field.type === "place") return certificatePositionLabel(row.place);
+  // Place and grade in one line — "First with A Grade" / "First & A". Either
+  // part alone when the row only has one (an unplaced grade, or a place with
+  // no grade).
+  if (field.type === "place_grade" || field.type === "place_grade_short") {
+    const place = certificatePositionLabel(row.place);
+    const grade = row.grade ?? "";
+    if (place && grade) return field.type === "place_grade" ? `${place} with ${grade} Grade` : `${place} & ${grade}`;
+    if (place) return place;
+    if (grade) return field.type === "place_grade" ? `${grade} Grade` : grade;
+    return "";
+  }
   if (field.type === "shakha") return row.shakhaName;
   if (field.type === "competition") return row.competitionLabel;
   if (field.type === "competition_en") return row.competitionLabelEn;
