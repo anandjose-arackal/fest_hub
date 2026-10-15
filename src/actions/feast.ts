@@ -9,6 +9,7 @@ import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-c
 import { DEFAULT_MAX_PER_SHAKHA, formatRegNumber } from "@/lib/feast-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompStatus } from "@/types";
+import { requireRole } from "@/lib/require-role";
 
 // ── shared helper ───────────────────────────────────────────────────────
 // Returns the subset of feastCompetitionIds that are already at/over cap for
@@ -63,6 +64,11 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
       const fakeNum = 100 + Math.floor(Math.random() * 900);
       return { regNo: `REG-0${fakeNum}` };
     }
+
+    // The portal only offers registration to a signed-in branch admin
+    // (feast-details.tsx's canRegister) — enforce the same here.
+    const auth = await requireRole("registration.write");
+    if ("error" in auth) return { error: auth.error };
 
     const { data: feast, error: feastErr } = await supabase
       .from("feasts")
@@ -149,7 +155,11 @@ export interface AdminRegInput {
   teamCompetitionIds?: string[];
 }
 
-export async function createParticipantAdmin(input: AdminRegInput): Promise<{ error?: string; regNo?: string; participantId?: string }> {
+export async function createParticipantAdmin(
+  input: AdminRegInput
+): Promise<{ error?: string; regNo?: string; participantId?: string; registrationIds?: Record<string, string> }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
   try {
     const admin = getSupabaseAdmin();
 
@@ -191,14 +201,22 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
       .single();
     if (insertErr || !participant) return { error: insertErr?.message || "Failed to create participant." };
 
+    // feast_competition_id → new participant_registrations.id, so a caller
+    // can show the entry straight away (/admin/results' Register button)
+    // without reloading its list.
+    const registrationIds: Record<string, string> = {};
     if (input.feastCompetitionIds.length > 0) {
-      const { error: regErr } = await admin.from("participant_registrations").insert(
-        input.feastCompetitionIds.map((fcId) => ({
-          participant_id: participant.id,
-          feast_competition_id: fcId,
-        }))
-      );
+      const { data: regRows, error: regErr } = await admin
+        .from("participant_registrations")
+        .insert(
+          input.feastCompetitionIds.map((fcId) => ({
+            participant_id: participant.id,
+            feast_competition_id: fcId,
+          }))
+        )
+        .select("id, feast_competition_id");
       if (regErr) return { error: regErr.message };
+      for (const r of regRows ?? []) registrationIds[r.feast_competition_id] = r.id;
     }
 
     // All or nothing, as in registerParticipant.
@@ -208,11 +226,46 @@ export async function createParticipantAdmin(input: AdminRegInput): Promise<{ er
       return { error: joined.error };
     }
 
-    return { regNo, participantId: participant.id };
+    return { regNo, participantId: participant.id, registrationIds };
   } catch (err) {
     console.error("[createParticipantAdmin]", err);
     return { error: "Something went wrong." };
   }
+}
+
+// ── addParticipantToCompetition — enter an existing participant in one item ─
+// /admin/results' Register button: someone already registered in the fest
+// (for other items) who's missing from this item's list. Same Shakha cap as
+// any registration; refused once the item's results are published.
+export async function addParticipantToCompetition(input: {
+  participantId: string;
+  feastCompetitionId: string;
+}): Promise<{ error?: string; registrationId?: string }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
+  const admin = getSupabaseAdmin();
+
+  const [{ data: participant }, { data: fc }] = await Promise.all([
+    admin.from("participants").select("id, feast_id, shakha_id").eq("id", input.participantId).maybeSingle(),
+    admin.from("feast_competitions").select("id, feast_id, result_status, competition:competitions(type)").eq("id", input.feastCompetitionId).maybeSingle(),
+  ]);
+  if (!participant || !fc || participant.feast_id !== fc.feast_id) return { error: "Participant or competition not found." };
+  const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
+  if (competition?.type === "group") return { error: "Team competitions take a team registration." };
+  if (fc.result_status === "published") return { error: "Results for this item are published — unpublish before adding entries." };
+
+  if (participant.shakha_id) {
+    const full = await findFullCompetitionsForShakha(admin, [fc.id], participant.shakha_id, participant.id);
+    if (full.length > 0) return { error: "The registration limit for this item has been reached for this Shakha." };
+  }
+
+  const { data: reg, error } = await admin
+    .from("participant_registrations")
+    .insert({ participant_id: participant.id, feast_competition_id: fc.id })
+    .select("id")
+    .single();
+  if (error || !reg) return { error: error?.code === "23505" ? "Already entered in this item." : error?.message ?? "Could not add the entry." };
+  return { registrationId: reg.id };
 }
 
 // ── updateParticipant — admin edit ───────────────────────────────────────
@@ -230,6 +283,8 @@ export interface UpdateInput {
 }
 
 export async function updateParticipant(input: UpdateInput): Promise<{ error?: string }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
   try {
     const admin = getSupabaseAdmin();
 
@@ -346,6 +401,8 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
 }
 
 export async function deleteParticipant(participantId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const { data: regs, error: regsErr } = await admin
     .from("participant_registrations")
@@ -397,6 +454,8 @@ export async function setParticipation(
   registrationId: string,
   participated: boolean
 ): Promise<{ error?: string; progressPct?: number | null; compStatus?: CompStatus }> {
+  const auth = await requireRole("attendance.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const { data: reg, error } = await admin
     .from("participant_registrations")
@@ -412,6 +471,8 @@ export async function setParticipation(
 export async function recalcCompetitionProgress(
   feastCompetitionId: string
 ): Promise<{ error?: string; progressPct?: number | null; compStatus?: CompStatus }> {
+  const auth = await requireRole("attendance.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
 
   const { data: fc } = await admin
@@ -443,6 +504,8 @@ export async function recalcCompetitionProgress(
 }
 
 export async function setChanceNo(registrationId: string, chanceNo: number | null): Promise<{ error?: string }> {
+  const auth = await requireRole("attendance.write");
+  if ("error" in auth) return { error: auth.error };
   if (chanceNo !== null && (!Number.isInteger(chanceNo) || chanceNo < 1 || chanceNo > 10000)) {
     return { error: "Chance number must be between 1 and 10000." };
   }
@@ -465,6 +528,8 @@ export interface CompStatusInput {
 }
 
 export async function updateCompetitionStatus(input: CompStatusInput): Promise<{ error?: string }> {
+  const auth = await requireRole("competitions.status");
+  if ("error" in auth) return { error: auth.error };
   const { error } = await getSupabaseAdmin()
     .from("feast_competitions")
     .update({

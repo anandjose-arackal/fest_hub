@@ -6,6 +6,7 @@ import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { recalcCompetitionProgress } from "@/actions/feast";
 import type { CompStatus } from "@/types";
+import { requireRole } from "@/lib/require-role";
 
 async function getMaxTeamSize(feastCompetitionId: string): Promise<number> {
   const admin = getSupabaseAdmin();
@@ -27,6 +28,8 @@ export interface RegisterTeamInput {
 }
 
 export async function registerTeam(input: RegisterTeamInput): Promise<{ error?: string; teamId?: string }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const teamName = input.teamName.trim();
   const participantIds = [...new Set(input.participantIds)];
@@ -114,6 +117,8 @@ export interface UpdateTeamInput {
 }
 
 export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: string }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const teamName = input.teamName.trim();
   const participantIds = [...new Set(input.participantIds)];
@@ -173,6 +178,8 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
 }
 
 export async function deleteTeam(teamId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("registration.write");
+  if ("error" in auth) return { error: auth.error };
   const { error } = await getSupabaseAdmin().from("team_registrations").delete().eq("id", teamId);
   if (error) return { error: error.message };
   return {};
@@ -182,6 +189,8 @@ export async function setTeamParticipation(
   teamRegistrationId: string,
   participated: boolean
 ): Promise<{ error?: string; progressPct?: number | null; compStatus?: CompStatus }> {
+  const auth = await requireRole("attendance.write");
+  if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
   const { data: team, error } = await admin
     .from("team_registrations")
@@ -194,6 +203,8 @@ export async function setTeamParticipation(
 }
 
 export async function setTeamChanceNo(teamRegistrationId: string, chanceNo: number | null): Promise<{ error?: string }> {
+  const auth = await requireRole("attendance.write");
+  if ("error" in auth) return { error: auth.error };
   if (chanceNo !== null && (!Number.isInteger(chanceNo) || chanceNo < 1 || chanceNo > 10000)) {
     return { error: "Chance number must be between 1 and 10000." };
   }

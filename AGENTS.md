@@ -24,6 +24,7 @@ Meghala/Diocese-wise point rollups are computed on read (`getMeghalaStandings`/`
 - `npm run build` — production build (the real correctness gate — run before considering a feature done)
 - `npm run lint` — note: `react-hooks/set-state-in-effect` fires on `auth-context.tsx`'s synchronous `setState` inside `onAuthStateChange`'s effect. This is intentional (see the comment there — deferring it would deadlock GoTrue's `initialize()`); it fails `lint`, not `build`. Don't "fix" it by removing the sync call.
 - `npx tsc --noEmit`
+- `npm test` — Node's built-in test runner over `src/**/*.test.ts` (Node strips the TS types; no test library). Tested modules must be pure with type-only `@/` imports, and tests import them with the `.ts` extension. `src/lib/permissions.test.ts` also scans `src/actions` and fails if any exported action is neither guarded nor listed in `PUBLIC_ACTIONS`.
 
 ## Data model summary
 
@@ -33,11 +34,17 @@ Scoring: scores land in `competition_results`/`team_results`; publishing compute
 
 ## Auth / roles
 
-`useAuth()` (`src/lib/auth-context.tsx`) exposes the signed-in admin's profile plus a derived `adminScope: { level: 'shakha'|'meghala'|'diocese'; id; name } | null` (`src/lib/org-hierarchy.ts`) — whichever of `profile.shakha_id`/`meghala_id`/`diocese_id` is set (a DB constraint guarantees at most one is). `UserRole = admin | me_admin | sa_admin`; an sa_admin's single assignment sits at whichever tier is the org's configured top level (a shakha by default, unchanged) and administers every shakha beneath that node — there's still one admin role, not a separate tier per level. Registration/`"My Registrations"` code should read `adminScope` (and `getDescendantShakhaIds()` for the shakha set it covers), not `profile.shakha_id` directly. The very first admin is created through `/setup` (only reachable while `profiles` is empty).
+`useAuth()` (`src/lib/auth-context.tsx`) exposes the signed-in admin's profile plus a derived `adminScope: { level: 'shakha'|'meghala'|'diocese'; id; name } | null` (`src/lib/org-hierarchy.ts`) — whichever of `profile.shakha_id`/`meghala_id`/`diocese_id` is set (a DB constraint guarantees at most one is). `UserRole = admin | me_admin | sa_admin | trophy_manager`; an sa_admin's single assignment sits at whichever tier is the org's configured top level (a shakha by default, unchanged) and administers every shakha beneath that node — there's still one admin role, not a separate tier per level. Registration/`"My Registrations"` code should read `adminScope` (and `getDescendantShakhaIds()` for the shakha set it covers), not `profile.shakha_id` directly. The very first admin is created through `/setup` (only reachable while `profiles` is empty).
+
+`trophy_manager` is a fourth role: a back-office login confined to `/admin/trophies` (Trophy Dashboard, per-fest trophy handover, bulk certificate handover). It is never given a scope. Handover state lives in `trophy_handovers` / `certificate_handovers` (append-only; undo stamps `undone_at`) and the per-item "printed" status in `feast_competition_prints`, which gates trophy handover. Printed is set when certificates are printed for an item, or with the toggle on `/admin/results`, and is cleared on unpublish. It's a separate table because `feast_competitions.updated_at` drives the activity feed and `/screen`'s publish takeover. The rules (groups, counts, Mekhala/Shakha coverage) are pure functions in `src/lib/handover.ts`.
+
+**Server-side role checks.** Every non-public server action starts with `const auth = await requireRole("<key>"); if ("error" in auth) return { error: auth.error };` (`src/lib/require-role.ts`), where the key comes from `PERMISSIONS` in `src/lib/permissions.ts`. Since the browser session lives in localStorage, `auth-context.tsx` mirrors the access token into the `fh-at` cookie; `requireRole` verifies it (`getClaims`) and reads the role from `profiles`. A new action needs a guard, or an entry in `PUBLIC_ACTIONS` if it's a deliberate public read. `admin/layout.tsx`'s redirects are only the UI half.
 
 ## RLS convention
 
 Public-read tables (`shakhas`, `dioceses`, `meghalas`, `feasts`, `feast_competitions`, `competitions`, `competition_categories`, `participants`, `participant_registrations`, `stages`) are queried directly client-side with the anon client. Tables with no write policy — including `competition_results`, `team_results`, `shakha_point_ledger`, `shakha_feast_standings`, `dioceses`, `meghalas` (RLS intentionally off on these, by convention not enforcement) — must be written through a `"use server"` action using `getSupabaseAdmin()` (service-role client, server-only, never imported client-side), returning `{ error?: string }`.
+
+Client-writable policies check the caller's role with `public.has_role(text[])` (SECURITY DEFINER, `014_trophy_manager.sql`), not `auth.role() = 'authenticated'`: `feasts`/`competitions`/`feast_competitions` are admin-only, and `profiles` writes are limited to admin/me_admin. A trigger blocks anyone else changing a `role` or scope column, including on their own row. New tables written only by actions should enable RLS with no policies (like the handover tables), so the anon key can't touch them.
 
 Supabase nested-relation results need defensive unwrapping: `Array.isArray(x) ? x[0] : x`.
 

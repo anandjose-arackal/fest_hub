@@ -57,8 +57,31 @@ function buildFullNavSections(hierarchyLevel: HierarchyLevel): NavSection[] {
         { href: "/admin/certificates", label: "Certificates", icon: Award, color: "#A16207" },
       ],
     },
+    {
+      title: "Handover",
+      items: [
+        { href: "/admin/trophies", label: "Trophies", icon: Trophy, color: "#B45309" },
+        { href: "/admin/trophies/certificates", label: "Certificate Handover", icon: Award, color: "#0F766E" },
+      ],
+    },
     { title: "Fest Util", items: utilItems },
   ];
+}
+
+// trophy_manager: only the handover screens. Their server actions are
+// gated too (src/lib/permissions.ts "handover.*") — this is the UI half.
+const TROPHY_HOME = "/admin/trophies";
+const TROPHY_MANAGER_NAV_SECTIONS: NavSection[] = [
+  {
+    title: null,
+    items: [
+      { href: TROPHY_HOME, label: "Trophy Dashboard", icon: Trophy, color: "#B45309" },
+      { href: "/admin/trophies/certificates", label: "Certificate Handover", icon: Award, color: "#0F766E" },
+    ],
+  },
+];
+function isTrophyPath(pathname: string) {
+  return pathname === TROPHY_HOME || pathname.startsWith(`${TROPHY_HOME}/`);
 }
 
 const ME_ADMIN_ALLOWED_PATHS = ["/admin", "/admin/participants", "/admin/participation", "/admin/standings"];
@@ -74,8 +97,12 @@ const ME_ADMIN_NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function isActive(href: string, pathname: string) {
-  return href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+function isActive(href: string, pathname: string, allHrefs: string[] = []) {
+  if (href === "/admin") return pathname === "/admin";
+  if (!pathname.startsWith(href)) return false;
+  // A longer nav href that also matches wins (/admin/trophies/certificates
+  // shouldn't light up /admin/trophies too).
+  return !allHrefs.some((h) => h.length > href.length && h.startsWith(href) && pathname.startsWith(h));
 }
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -97,9 +124,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // adminShakha lookup), never through /admin. Unlike me_admin, they get no
   // allowed-paths slice at all — every /admin/* route bounces them out.
   const isSaAdmin = profile?.role === "sa_admin";
+  const isTrophyManager = profile?.role === "trophy_manager";
   const needsLoginRedirect = !loading && !session && !isLoginPage;
   const needsMeAdminRedirect = !loading && !isLoginPage && isMeAdmin && !ME_ADMIN_ALLOWED_PATHS.includes(pathname);
   const needsSaAdminRedirect = !loading && !isLoginPage && isSaAdmin;
+  const needsTrophyRedirect = !loading && !isLoginPage && isTrophyManager && !isTrophyPath(pathname);
   // Landing on /admin/login with a session already established (e.g. signed
   // in earlier via the Feast Portal's LoginSheet, then navigating straight
   // here) used to just show the form again with no redirect — you had to
@@ -110,8 +139,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     if (needsLoginRedirect) router.replace("/admin/login");
     else if (needsSaAdminRedirect) router.replace("/");
     else if (needsMeAdminRedirect) router.replace("/admin");
-    else if (needsAwayFromLoginRedirect) router.replace(isSaAdmin ? "/" : "/admin");
-  }, [needsLoginRedirect, needsSaAdminRedirect, needsMeAdminRedirect, needsAwayFromLoginRedirect, isSaAdmin, router]);
+    else if (needsTrophyRedirect) router.replace(TROPHY_HOME);
+    else if (needsAwayFromLoginRedirect) router.replace(isSaAdmin ? "/" : isTrophyManager ? TROPHY_HOME : "/admin");
+  }, [needsLoginRedirect, needsSaAdminRedirect, needsMeAdminRedirect, needsTrophyRedirect, needsAwayFromLoginRedirect, isSaAdmin, isTrophyManager, router]);
 
   if (loading) {
     return (
@@ -121,14 +151,16 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (needsLoginRedirect || needsSaAdminRedirect || needsMeAdminRedirect || needsAwayFromLoginRedirect) return null;
+  if (needsLoginRedirect || needsSaAdminRedirect || needsMeAdminRedirect || needsTrophyRedirect || needsAwayFromLoginRedirect) return null;
 
   if (isLoginPage) return <>{children}</>;
 
-  const navSections = isMeAdmin ? ME_ADMIN_NAV_SECTIONS : buildFullNavSections(hierarchyLevel);
+  const navSections = isMeAdmin ? ME_ADMIN_NAV_SECTIONS : isTrophyManager ? TROPHY_MANAGER_NAV_SECTIONS : buildFullNavSections(hierarchyLevel);
   const flatItems = navSections.flatMap((s) => s.items);
-  const currentTitle = flatItems.find((i) => isActive(i.href, pathname))?.label ?? "Admin";
-  const bottomNavItems = isMeAdmin ? flatItems.slice(0, 3) : flatItems.slice(0, 3);
+  const allHrefs = flatItems.map((i) => i.href);
+  const active = (href: string) => isActive(href, pathname, allHrefs);
+  const currentTitle = flatItems.find((i) => active(i.href))?.label ?? "Admin";
+  const bottomNavItems = flatItems.slice(0, 3);
 
   return (
     <div className="min-h-screen bg-[#FAFAFC]">
@@ -153,17 +185,17 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">{section.title}</p>
               )}
               {section.items.map((item) => {
-                const active = isActive(item.href, pathname);
+                const isOn = active(item.href);
                 const Icon = item.icon;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={`mb-0.5 flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
-                      active ? "bg-[#6B46FF]/10 text-[#6B46FF]" : "text-neutral-600 hover:bg-neutral-100"
+                      isOn ? "bg-[#6B46FF]/10 text-[#6B46FF]" : "text-neutral-600 hover:bg-neutral-100"
                     }`}
                   >
-                    <Icon className="h-4 w-4" style={{ color: active ? "#6B46FF" : item.color }} />
+                    <Icon className="h-4 w-4" style={{ color: isOn ? "#6B46FF" : item.color }} />
                     {item.label}
                   </Link>
                 );
@@ -194,18 +226,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-30 flex h-[58px] items-center border-t border-neutral-200 bg-white md:hidden">
         {bottomNavItems.map((item) => {
-          const active = isActive(item.href, pathname);
+          const isOn = active(item.href);
           const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
               className="flex flex-1 flex-col items-center gap-0.5 py-1.5 text-[10px] font-medium"
-              style={active ? { color: "#6B46FF" } : { color: "#6b7280" }}
+              style={isOn ? { color: "#6B46FF" } : { color: "#6b7280" }}
             >
               <span
                 className="flex h-8 w-8 items-center justify-center rounded-full"
-                style={active ? { background: "rgba(107,70,255,0.1)" } : undefined}
+                style={isOn ? { background: "rgba(107,70,255,0.1)" } : undefined}
               >
                 <Icon className="h-4.5 w-4.5" />
               </span>

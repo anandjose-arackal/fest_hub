@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { Medal, Check, ImageDown, Download, X, Award, Loader2, RotateCcw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Medal, Check, ImageDown, Download, X, Award, Loader2, RotateCcw, Printer, PrinterCheck, UserPlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchAllIn, groupBy } from "@/lib/fetch-all";
 import { setMaxScore, saveDraftScores, clearDraftScores, publishResults, unpublishResults, getCompetitionScores, getScoresForCompetitions } from "@/actions/results";
@@ -19,6 +20,8 @@ import { feastPosterHeading } from "@/lib/feast-data";
 import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, type PosterData, type PosterWinner, type PosterTheme } from "@/lib/poster-render";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import { getCertificateTemplate, getCertificateRosterForCompetition } from "@/actions/certificates";
+import { getPrintedItems, markItemsPrinted, setItemPrinted } from "@/actions/handover";
+import { RegisterEntryDialog, type AddedEntry } from "@/components/admin/register-entry-dialog";
 import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
 import { toPng } from "html-to-image";
 import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, Meghala, OrgSettings, Shakha, CertificateRosterRow } from "@/types";
@@ -35,6 +38,7 @@ interface EntryRow {
   chanceNo: number | null;
   savedScore: number | null;
   members?: { name: string; houseName: string }[]; // team competitions only — printed as a name/house-name mini-table under the team's heading, see buildResultsHtml
+  participantId?: string; // individual competitions only — lets the Register dialog skip people already in this item
 }
 
 interface Preview {
@@ -69,6 +73,12 @@ const GRADE_FILTER_OPTIONS: { grade: "A" | "B" | "C"; label: string }[] = [
   { grade: "B", label: "All Grade B" },
   { grade: "C", label: "All Grade C" },
 ];
+
+function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
 
 // ─── Grade / position cells — matches cml-mission-hub's admin/results table ──
 
@@ -119,6 +129,7 @@ function PosCell({ pos, pts }: { pos: number | null; pts: number }) {
 }
 
 export default function ResultsPage() {
+  const router = useRouter();
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
@@ -138,8 +149,9 @@ export default function ResultsPage() {
   const [publishOpen, setPublishOpen] = useState(false);
   // Which write is in flight — drives each button's spinner and the page
   // mask, and blocks double-submits until the server action returns.
-  const [busyAction, setBusyAction] = useState<null | "save" | "publish" | "unpublish" | "reset">(null);
+  const [busyAction, setBusyAction] = useState<null | "save" | "publish" | "unpublish" | "reset" | "printed">(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [registerOpen, setRegisterOpen] = useState(false);
   const busy = busyAction !== null;
   const [org, setOrg] = useState<OrgSettings | null>(null);
   const [posterOpen, setPosterOpen] = useState(false);
@@ -156,6 +168,10 @@ export default function ResultsPage() {
   const [certGenerating, setCertGenerating] = useState(false);
   const [certProgress, setCertProgress] = useState<{ done: number; total: number } | null>(null);
   const [certError, setCertError] = useState<string | null>(null);
+  // feast_competition_id → printed_at. "Printed" unlocks trophy handover
+  // (/admin/trophies); set automatically when certificates are printed here
+  // or on /admin/certificates, or by hand with the toggle below.
+  const [printedAt, setPrintedAt] = useState<Record<string, string>>({});
   const [posterData, setPosterData] = useState<PosterData | null>(null);
   const [posterTheme, setPosterTheme] = useState<PosterTheme>("maroon");
   const [posterDownloading, setPosterDownloading] = useState(false);
@@ -191,6 +207,11 @@ export default function ResultsPage() {
 
   useEffect(() => {
     if (!feastId) return;
+    getPrintedItems(feastId).then((res) => setPrintedAt(res.data ?? {}));
+  }, [feastId]);
+
+  useEffect(() => {
+    if (!feastId) return;
     supabase
       .from("feast_competitions")
       .select("*, competition:competitions(*, competition_category:competition_categories(*))")
@@ -206,6 +227,7 @@ export default function ResultsPage() {
   const selectedFc = feastComps.find((c) => c.id === compId);
   const isGroup = selectedFc?.competition.type === "group";
   const isPublished = selectedFc?.result_status === "published";
+  const isPrinted = !!(compId && printedAt[compId]);
   const maxScore = selectedFc?.max_score ?? null;
   // External fest: points were calculated outside the app, so the preview
   // (like publishResults) shows grade/position with no points.
@@ -271,7 +293,7 @@ export default function ResultsPage() {
         const [{ data: regs, error: regsErr }, scoreEntries] = await Promise.all([
           supabase
             .from("participant_registrations")
-            .select("id, chance_no, participant:participants(name, house_name, registration_number, shakha:shakhas(id, name))")
+            .select("id, chance_no, participant:participants(id, name, house_name, registration_number, shakha:shakhas(id, name))")
             .eq("feast_competition_id", compId),
           getCompetitionScores(compId),
         ]);
@@ -292,6 +314,7 @@ export default function ResultsPage() {
             shakhaId: shakha?.id ?? "",
             chanceNo: r.chance_no,
             savedScore: scoreMap.get(r.id) ?? null,
+            participantId: p?.id,
           };
         });
         setEntries(rows);
@@ -310,6 +333,18 @@ export default function ResultsPage() {
   useEffect(() => {
     loadEntries();
   }, [loadEntries]);
+
+  // Register-dialog bookkeeping: who/which Shakha is already in this item.
+  const enteredParticipantIds = useMemo(() => new Set(entries.map((e) => e.participantId).filter((id): id is string => !!id)), [entries]);
+  const enteredShakhaIds = useMemo(() => new Set(isGroup ? entries.map((e) => e.shakhaId).filter(Boolean) : []), [entries, isGroup]);
+
+  // A registration added from this page is appended in place — no
+  // loadEntries(), which would reset every score typed but not yet saved.
+  function handleEntryAdded(entry: AddedEntry) {
+    setEntries((prev) => (prev.some((e) => e.regId === entry.regId) ? prev : [...prev, { ...entry, chanceNo: null, savedScore: null }]));
+    setRegisterOpen(false);
+    showSuccess(`${entry.name} added to this item`);
+  }
 
   function setScore(regId: string, raw: string) {
     const clean = raw.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
@@ -408,26 +443,79 @@ export default function ResultsPage() {
     showSuccess("Max score updated");
   }
 
-  async function handleSaveDraft() {
+  // Resolves true once the typed scores are saved (or there was nothing to
+  // save) — the unsaved-scores dialog only moves on after that.
+  async function handleSaveDraft(): Promise<boolean> {
     const scores = entries
       .filter((e) => typedScores[e.regId] != null && typedScores[e.regId] !== "")
       .map((e) => ({ registrationId: e.regId, score: Number(typedScores[e.regId]) }));
-    if (scores.length === 0 || busy) return;
+    if (scores.length === 0) return true;
+    if (busy) return false;
     setBusyAction("save");
     try {
       const result = isGroup ? await saveDraftTeamScores({ feastCompetitionId: compId, scores }) : await saveDraftScores({ feastCompetitionId: compId, scores });
       if (!result.error) {
         showSuccess("Result saved successfully");
         loadEntries(false);
-      } else {
-        showBanner(result.error);
+        return true;
       }
+      showBanner(result.error);
+      return false;
     } catch {
       showBanner("Couldn't save — check the connection and try again.");
+      return false;
     } finally {
       setBusyAction(null);
     }
   }
+
+  // ── Unsaved scores ─────────────────────────────────────────────────────
+  // Scores typed but not saved as a draft yet (what Save Draft would write
+  // that differs from what's stored). Leaving the page — or switching fest /
+  // item, which reloads the list — would drop them, so ask first.
+  const unsavedCount = useMemo(
+    () =>
+      entries.filter((e) => {
+        const typed = typedScores[e.regId];
+        return typed != null && typed !== "" && Number(typed) !== e.savedScore;
+      }).length,
+    [entries, typedScores]
+  );
+  const hasUnsaved = unsavedCount > 0 && !isPublished;
+  const [leavePrompt, setLeavePrompt] = useState<null | { proceed: () => void }>(null);
+
+  function guardUnsaved(proceed: () => void) {
+    if (hasUnsaved) setLeavePrompt({ proceed });
+    else proceed();
+  }
+
+  // In-app links (sidebar, bottom nav, menu) are intercepted before Next's
+  // Link handles them; a reload/close gets the browser's own "Leave site?"
+  // prompt (custom dialogs aren't allowed there).
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeavePrompt({ proceed: () => router.push(url.pathname + url.search + url.hash) });
+    };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [hasUnsaved, router]);
 
   // Clears every entered score in this item back to empty (not entered) —
   // a clean slate for re-scoring. Draft only: a published item has to be
@@ -481,12 +569,33 @@ export default function ResultsPage() {
       if (!result.error) {
         showSuccess("Reverted to draft");
         loadEntries(false);
+        // unpublish also clears the printed status server-side
+        setPrintedAt((m) => withoutKey(m, compId));
         setFeastComps((prev) => prev.map((c) => (c.id === compId ? { ...c, result_status: "draft", comp_status: "completed" } : c)));
       } else {
         showBanner(result.error);
       }
     } catch {
       showBanner("Couldn't revert — check the connection and try again.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function handleTogglePrinted() {
+    if (busy || !compId) return;
+    const next = !isPrinted;
+    setBusyAction("printed");
+    try {
+      const result = await setItemPrinted(compId, next);
+      if (result.error) {
+        showBanner(result.error);
+        return;
+      }
+      setPrintedAt((m) => (next ? { ...m, [compId]: new Date().toISOString() } : withoutKey(m, compId)));
+      showSuccess(next ? "Marked as printed — trophies can be handed over" : "Marked as not printed");
+    } catch {
+      showBanner("Couldn't update — check the connection and try again.");
     } finally {
       setBusyAction(null);
     }
@@ -614,6 +723,13 @@ export default function ResultsPage() {
         setCertProgress({ done, total })
       );
       setCertPrintOpen(false);
+      // Certificates printed for a published item → the item counts as printed.
+      if (isPublished && !isPrinted) {
+        const printedId = selectedFc.id;
+        markItemsPrinted([printedId]).then((res) => {
+          if (!res.error) setPrintedAt((m) => ({ ...m, [printedId]: m[printedId] ?? new Date().toISOString() }));
+        });
+      }
     } catch (e) {
       setCertError(e instanceof Error ? e.message : "Could not generate the certificates PDF.");
     } finally {
@@ -786,7 +902,7 @@ export default function ResultsPage() {
       )}
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <select className="input max-w-xs" value={feastId} onChange={(e) => setFeastId(e.target.value)}>
+        <select className="input max-w-xs" value={feastId} onChange={(e) => { const v = e.target.value; guardUnsaved(() => setFeastId(v)); }}>
           {feasts.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
@@ -794,20 +910,20 @@ export default function ResultsPage() {
         <select
           className="input max-w-xs"
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as "" | "draft" | "published")}
+          onChange={(e) => { const v = e.target.value as "" | "draft" | "published"; guardUnsaved(() => setStatusFilter(v)); }}
           title="Filter the competition list by result status"
         >
           <option value="">All Status</option>
           <option value="published">Published</option>
           <option value="draft">In Progress</option>
         </select>
-        <select className="input max-w-xs" value={compId} onChange={(e) => setCompId(e.target.value)}>
+        <select className="input max-w-xs" value={compId} onChange={(e) => { const v = e.target.value; guardUnsaved(() => setCompId(v)); }}>
           {visibleFeastComps.length === 0 && <option value="">No competitions match this filter</option>}
           {visibleFeastComps.map((c) => (
             <option key={c.id} value={c.id}>
               {c.competition.type === "group" ? "👥 " : ""}
               {formatCompetitionOptionLabel(c.competition.name, c.competition.gender, c.competition.competition_category?.name)}
-              {c.result_status === "published" ? " · Published" : ""}
+              {c.result_status === "published" ? (printedAt[c.id] ? " · Published · Printed" : " · Published") : ""}
             </option>
           ))}
         </select>
@@ -868,6 +984,44 @@ export default function ResultsPage() {
           ))}
         </div>
       </div>
+
+      {selectedFc && (
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setRegisterOpen(true)}
+            disabled={isPublished || loading}
+            title={isPublished ? "Unpublish (revert to draft) before adding entries" : `Add a ${isGroup ? "team" : "participant"} missing from this list`}
+            className="flex items-center gap-1.5 rounded-lg border-2 border-dashed border-[#a78bfa] bg-white px-3 py-1.5 text-sm font-bold text-[#4C1D95] hover:bg-[#f5f3ff] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <UserPlus className="h-4 w-4" aria-hidden="true" />
+            Register {isGroup ? "team" : "participant"}
+          </button>
+        </div>
+      )}
+      {selectedFc && (
+        // Keyed per item, and kept mounted while closed so half-typed details
+        // survive closing and reopening the dialog.
+        <RegisterEntryDialog
+          key={selectedFc.id}
+          open={registerOpen}
+          onClose={() => setRegisterOpen(false)}
+          target={{
+            id: selectedFc.id,
+            feastId,
+            isGroup,
+            isPublished,
+            name: selectedFc.competition.name,
+            gender: selectedFc.competition.gender,
+            categorySlug: selectedFc.competition.competition_category?.slug ?? null,
+            categoryName: selectedFc.competition.competition_category?.name ?? null,
+            maxTeamSize: selectedFc.competition.max_team_size,
+          }}
+          enteredParticipantIds={enteredParticipantIds}
+          enteredShakhaIds={enteredShakhaIds}
+          onAdded={handleEntryAdded}
+        />
+      )}
 
       {loading ? (
         <p className="text-sm text-neutral-500">Loading…</p>
@@ -1033,6 +1187,21 @@ export default function ResultsPage() {
             {busyAction === "unpublish" ? "Reverting…" : "Unpublish (revert to draft)"}
           </button>
         )}
+        {isPublished && (
+          <button
+            onClick={handleTogglePrinted}
+            disabled={busy}
+            aria-pressed={isPrinted}
+            aria-busy={busyAction === "printed"}
+            title={isPrinted ? "Printed — trophies for this item can be handed over. Click to mark as not printed." : "Mark this item's results/certificates as printed — unlocks trophy handover"}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold disabled:opacity-60 ${
+              isPrinted ? "border-green-300 bg-green-50 text-green-700" : "border-neutral-300 text-neutral-700"
+            }`}
+          >
+            {busyAction === "printed" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : isPrinted ? <PrinterCheck className="h-4 w-4" aria-hidden="true" /> : <Printer className="h-4 w-4" aria-hidden="true" />}
+            {isPrinted ? "Printed" : "Mark printed"}
+          </button>
+        )}
         <button
           onClick={() => setResultPrintOpen(true)}
           disabled={!compId || entries.length === 0}
@@ -1069,6 +1238,62 @@ export default function ResultsPage() {
           <div className="flex items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold shadow-lg">
             <Loader2 className="h-5 w-5 animate-spin text-red-600" aria-hidden="true" />
             Reverting to draft and rebuilding standings…
+          </div>
+        </div>
+      )}
+
+      {leavePrompt && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={() => { if (busyAction !== "save") setLeavePrompt(null); }}>
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-title"
+            className="relative w-full max-w-sm overflow-hidden rounded-t-2xl bg-white p-5 sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+            aria-busy={busyAction === "save"}
+          >
+            {busyAction === "save" && (
+              <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1 overflow-hidden bg-violet-100">
+                <div className="admin-progress h-full w-1/3 rounded-full" style={{ background: "linear-gradient(90deg,#6B46FF,#A855F7)" }} />
+              </div>
+            )}
+            <h2 id="unsaved-title" className="mb-2 text-base font-semibold">Save the scores you entered?</h2>
+            <p className="mb-4 text-sm text-neutral-600">
+              {unsavedCount} score{unsavedCount === 1 ? "" : "s"} in this item {unsavedCount === 1 ? "isn't" : "aren't"} saved yet. Leaving without saving will lose {unsavedCount === 1 ? "it" : "them"}.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={busyAction === "save"}
+                onClick={async () => {
+                  const { proceed } = leavePrompt;
+                  if (await handleSaveDraft()) {
+                    setLeavePrompt(null);
+                    proceed();
+                  }
+                }}
+                className="flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-semibold text-white disabled:opacity-80"
+                style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}
+              >
+                {busyAction === "save" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                {busyAction === "save" ? "Saving…" : "Save draft & continue"}
+              </button>
+              <button
+                type="button"
+                disabled={busyAction === "save"}
+                onClick={() => {
+                  const { proceed } = leavePrompt;
+                  setLeavePrompt(null);
+                  proceed();
+                }}
+                className="rounded-lg border border-red-300 py-2 text-sm font-semibold text-red-600 disabled:opacity-50"
+              >
+                Don&apos;t save
+              </button>
+              <button type="button" disabled={busyAction === "save"} onClick={() => setLeavePrompt(null)} className="rounded-lg border border-neutral-300 py-2 text-sm disabled:opacity-50">
+                Cancel — stay here
+              </button>
+            </div>
           </div>
         </div>
       )}

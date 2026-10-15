@@ -3,6 +3,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { TAG, expireTags } from "@/lib/cache-tags";
 import type { HierarchyLevel, PortalTheme } from "@/types";
+import { requireRole } from "@/lib/require-role";
 
 export interface OrgSettingsInput {
   appName?: string;
@@ -17,6 +18,8 @@ export interface OrgSettingsInput {
 }
 
 export async function updateOrgSettings(input: OrgSettingsInput): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   if (!input.orgNameEn.trim()) return { error: "Organization name is required." };
   const { error } = await getSupabaseAdmin()
     .from("org_settings")

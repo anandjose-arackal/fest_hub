@@ -17,7 +17,8 @@ import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-la
 import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, HierarchyLevel, Meghala, OrgSettings, Participant, Shakha } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
-type ParticipantRow = Participant & { shakha: Shakha | null; events: number };
+// `events` = individual registrations + teams the participant is a member of.
+type ParticipantRow = Participant & { shakha: Shakha | null; events: number; teamEvents: number };
 
 // "Which columns print" for the Participants/Teams PDF exports — same pattern
 // as /admin/results' ResultColumns, shakha always shown, meghala/diocese
@@ -334,7 +335,7 @@ export default function ParticipantsPage() {
       fetchAll((from, to) =>
         supabase
           .from("team_registrations")
-          .select("id, team_name, shakha:shakhas(id,name), feast_competition:feast_competitions(id, competition:competitions(name)), team_registration_members(participant:participants(name))")
+          .select("id, team_name, shakha:shakhas(id,name), feast_competition:feast_competitions(id, competition:competitions(name)), team_registration_members(participant_id, participant:participants(name))")
           .eq("feast_id", feastId)
           .order("id")
           .range(from, to)
@@ -349,8 +350,18 @@ export default function ParticipantsPage() {
     }
     setParticipantRegs(regByParticipant);
 
+    const teamCountByParticipant: Record<string, number> = {};
+    for (const t of teamRows) {
+      for (const m of t.team_registration_members ?? []) {
+        teamCountByParticipant[m.participant_id] = (teamCountByParticipant[m.participant_id] ?? 0) + 1;
+      }
+    }
+
     setParticipants(
-      parts.map((p) => ({ ...p, events: regByParticipant[p.id]?.length ?? 0 }))
+      parts.map((p) => {
+        const teamEvents = teamCountByParticipant[p.id] ?? 0;
+        return { ...p, events: (regByParticipant[p.id]?.length ?? 0) + teamEvents, teamEvents };
+      })
     );
 
     setTeams(
@@ -726,7 +737,7 @@ export default function ParticipantsPage() {
 
   // ── Exports ──────────────────────────────────────────────────────────────
   function exportCSV() {
-    const header = ["Reg No", "Name", "House Name", "Shakha", "Gender", "Category", "Events", "Phone", "Registered"];
+    const header = ["Reg No", "Name", "House Name", "Shakha", "Gender", "Category", "Events", "Team Events", "Phone", "Registered"];
     const rows = filtered.map((p) => {
       const cat = categories.find((c) => c.id === p.competition_category_id);
       return [
@@ -737,6 +748,7 @@ export default function ParticipantsPage() {
         p.gender ?? "",
         cat?.name ?? "",
         String(p.events),
+        String(p.teamEvents),
         p.phone ?? "",
         new Date(p.created_at).toLocaleDateString("en-IN"),
       ];
@@ -996,7 +1008,7 @@ export default function ParticipantsPage() {
                         <span className="inline-block rounded-lg px-2.5 py-1 text-[12px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
                       </td>
                       <td className="px-3 py-3 text-center">
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-xs font-black text-white">{p.events}</span>
+                        <span title={`${p.events - p.teamEvents} individual · ${p.teamEvents} team`} className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-xs font-black text-white">{p.events}</span>
                       </td>
                       <td className="px-3 py-3">
                         <button onClick={() => openEdit(p)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
@@ -1023,7 +1035,7 @@ export default function ParticipantsPage() {
                         {p.house_name && <p className="mt-0.5 text-[12px] font-black" style={{ color: "#5B21B6" }}>{p.house_name}</p>}
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-[11px] font-black text-white">{p.events}</span>
+                        <span title={`${p.events - p.teamEvents} individual · ${p.teamEvents} team`} className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4C1D95] text-[11px] font-black text-white">{p.events}</span>
                         <button onClick={() => openEdit(p)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
                       </div>
                     </div>

@@ -2,6 +2,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { TAG, expireTags } from "@/lib/cache-tags";
+import { requireRole } from "@/lib/require-role";
 
 // dioceses has no authenticated write RLS policy (public read only) — all
 // writes go through the service-role client, same convention as shakhas
@@ -18,6 +19,8 @@ export interface DioceseInput {
 }
 
 export async function createDiocese(input: DioceseInput): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   const name = input.name.trim();
   if (!name) return { error: "Name is required." };
   const slug = input.slug?.trim() || slugify(name);
@@ -28,6 +31,8 @@ export async function createDiocese(input: DioceseInput): Promise<{ error?: stri
 }
 
 export async function updateDiocese(id: string, input: DioceseInput): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   const name = input.name.trim();
   if (!name) return { error: "Name is required." };
   const slug = input.slug?.trim() || slugify(name);
@@ -38,6 +43,8 @@ export async function updateDiocese(id: string, input: DioceseInput): Promise<{ 
 }
 
 export async function deleteDiocese(id: string): Promise<{ error?: string }> {
+  const auth = await requireRole("masterdata.write");
+  if ("error" in auth) return { error: auth.error };
   const { error } = await getSupabaseAdmin().from("dioceses").delete().eq("id", id);
   if (error) return { error: error.message };
   expireTags(TAG.hierarchy, TAG.standings);

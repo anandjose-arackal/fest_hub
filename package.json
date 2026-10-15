@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\"",
     "generate:posters": "node --env-file=.env.local scripts/generate-posters.mjs"
   },
   "dependencies": {
