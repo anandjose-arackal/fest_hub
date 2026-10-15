@@ -20,7 +20,7 @@ interface ParticipantRow {
   shakha: { name: string } | null;
 }
 interface RegRow { id: string; feast_competition_id: string; participant: ParticipantRow | null; }
-interface TeamRow { id: string; feast_competition_id: string; team_name: string; memberNames: string[]; }
+interface TeamRow { id: string; feast_competition_id: string; team_name: string; shakhaName: string | null; members: ParticipantRow[]; memberNames: string[]; }
 
 function normGender(g: string | null | undefined) {
   if (!g) return null;
@@ -103,8 +103,8 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
   );
 }
 
-function TeamAccordionRow({ compName, gender, catSlug, team, idx, onEditTeam, editLocked }: {
-  compName: string; gender: string | null | undefined; catSlug: string | null | undefined; team: TeamRow | null; idx: number; onEditTeam: (id: string) => void; editLocked: boolean;
+function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, onEditTeam, editLocked }: {
+  compName: string; gender: string | null | undefined; catSlug: string | null | undefined; teams: TeamRow[]; showShakha: boolean; idx: number; onEditTeam: (id: string) => void; editLocked: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ng = normGender(gender);
@@ -125,25 +125,28 @@ function TeamAccordionRow({ compName, gender, catSlug, team, idx, onEditTeam, ed
             <span style={{ color: theme.faint }}> · Team</span>
           </div>
         </div>
-        <div className="mr-1 shrink-0 rounded-full px-2.5 py-1 text-[13px] font-black" style={{ background: team ? `${a}22` : theme.fill, color: team ? a : theme.faint }}>{team ? 1 : 0}</div>
+        <div className="mr-1 shrink-0 rounded-full px-2.5 py-1 text-[13px] font-black" style={{ background: teams.length > 0 ? `${a}22` : theme.fill, color: teams.length > 0 ? a : theme.faint }}>{teams.length}</div>
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform" style={{ background: a, transform: open ? "rotate(180deg)" : undefined }}><ChevronDown className="h-4 w-4 text-white" strokeWidth={3} /></div>
       </button>
       {open && (
         <div style={{ borderTop: `1px solid ${theme.hairline}` }}>
-          {!team ? (
-            <div className="flex flex-col items-center gap-1.5 py-5"><UserX className="h-[22px] w-[22px]" style={{ color: theme.faint }} /><p className="text-[12.5px]" style={{ color: theme.faint }}>No team registered from your shakha</p></div>
+          {teams.length === 0 ? (
+            <div className="flex flex-col items-center gap-1.5 py-5"><UserX className="h-[22px] w-[22px]" style={{ color: theme.faint }} /><p className="text-[12.5px]" style={{ color: theme.faint }}>{showShakha ? "No teams registered from your shakhas" : "No team registered from your shakha"}</p></div>
           ) : (
-            <div className="flex items-center gap-3 px-4 py-3.5">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[14.5px] font-extrabold leading-snug" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{team.team_name}</div>
-                <p className="mt-1 text-xs font-semibold leading-snug" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>{team.memberNames.join(", ") || "No members yet"}</p>
+            teams.map((team, ti) => (
+              <div key={team.id} className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: ti < teams.length - 1 ? `1px solid ${theme.hairline}` : undefined, background: ti % 2 === 1 ? "rgba(var(--fp-primary-rgb),0.05)" : undefined }}>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[14.5px] font-extrabold leading-snug" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{team.team_name}</div>
+                  {showShakha && team.shakhaName && <div className="mt-0.5 truncate text-[12.5px] font-bold" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>{team.shakhaName}</div>}
+                  <p className="mt-1 text-xs font-semibold leading-snug" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>{team.memberNames.join(", ") || "No members yet"}</p>
+                </div>
+                {!editLocked && (
+                  <button onClick={(e) => { e.stopPropagation(); onEditTeam(team.id); }} aria-label={`Edit ${team.team_name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: theme.fillStrong }}>
+                    <Pencil className="h-[13px] w-[13px]" style={{ color: theme.purple }} />
+                  </button>
+                )}
               </div>
-              {!editLocked && (
-                <button onClick={(e) => { e.stopPropagation(); onEditTeam(team.id); }} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: theme.fillStrong }}>
-                  <Pencil className="h-[13px] w-[13px]" style={{ color: theme.purple }} />
-                </button>
-              )}
-            </div>
+            ))
           )}
         </div>
       )}
@@ -196,7 +199,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
           ),
       !scopeShakhaIds?.length || teamIds.length === 0
         ? Promise.resolve({ data: [] })
-        : supabase.from("team_registrations").select("id, feast_competition_id, team_name, members:team_registration_members(participant:participants(name))").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamIds),
+        : supabase.from("team_registrations").select("id, feast_competition_id, team_name, shakha:shakhas(name), members:team_registration_members(participant:participants(id, name, house_name, shakha_id, registration_number, gender, shakha:shakhas(name)))").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamIds),
     ])
       .then(([{ data: regData }, { data: teamData }]) => {
         const all = (regData ?? []).map((row) => {
@@ -209,11 +212,17 @@ export function FeastRegistrations({ slug }: { slug: string }) {
         setRegs(filtered);
 
         const teams = (teamData ?? []).map((row) => {
-          const t = row as unknown as { id: string; feast_competition_id: string; team_name: string; members: { participant: { name: string } | { name: string }[] | null }[] };
-          const memberNames = (t.members ?? [])
-            .map((m) => { const p = Array.isArray(m.participant) ? m.participant[0] : m.participant; return p?.name ?? null; })
-            .filter((n): n is string => !!n);
-          return { id: t.id, feast_competition_id: t.feast_competition_id, team_name: t.team_name, memberNames };
+          const t = row as unknown as { id: string; feast_competition_id: string; team_name: string; shakha: { name: string } | { name: string }[] | null; members: { participant: ParticipantRow | ParticipantRow[] | null }[] };
+          const members = (t.members ?? [])
+            .map((m) => {
+              const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
+              if (p) p.shakha = Array.isArray(p.shakha) ? (p.shakha as unknown as { name: string }[])[0] ?? null : p.shakha;
+              return p ?? null;
+            })
+            .filter((p): p is ParticipantRow => !!p)
+            .sort((x, y) => x.name.localeCompare(y.name));
+          const teamShakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
+          return { id: t.id, feast_competition_id: t.feast_competition_id, team_name: t.team_name, shakhaName: teamShakha?.name ?? null, members, memberNames: members.map((p) => p.name) };
         });
         setTeamRegs(teams);
         setLoading(false);
@@ -260,16 +269,20 @@ export function FeastRegistrations({ slug }: { slug: string }) {
 
   const regsByComp: Record<string, RegRow[]> = {};
   for (const r of regs) (regsByComp[r.feast_competition_id] ??= []).push(r);
-  const teamByComp: Record<string, TeamRow> = {};
-  for (const t of teamRegs) teamByComp[t.feast_competition_id] = t;
+  // A meghala/diocese-scoped admin covers several shakhas, and each shakha
+  // can register its own team per competition — keep every one.
+  const teamsByComp: Record<string, TeamRow[]> = {};
+  for (const t of teamRegs) (teamsByComp[t.feast_competition_id] ??= []).push(t);
+  for (const list of Object.values(teamsByComp)) list.sort((x, y) => (x.shakhaName ?? "").localeCompare(y.shakhaName ?? "") || x.team_name.localeCompare(y.team_name));
+  const multiShakha = scopeShakhaIds.length > 1;
 
   const totalRegs = regs.length;
   const shakhaLabel = adminScope?.name ?? "Your Shakha";
 
   function downloadRegistrationsPDF() {
-    if (!feast || totalRegs === 0) return;
-    const compById: Record<string, { name: string; catSlug: string | null }> = {};
-    for (const c of feast.competitions) compById[c.id] = { name: c.name, catSlug: c.competitionCategorySlug ?? null };
+    if (!feast || (totalRegs === 0 && teamRegs.length === 0)) return;
+    const compById: Record<string, { name: string; catSlug: string | null; gender: string | null }> = {};
+    for (const c of feast.competitions) compById[c.id] = { name: c.name, catSlug: c.competitionCategorySlug ?? null, gender: c.gender ?? null };
 
     const buckets: Record<string, RegRow[]> = {};
     for (const r of regs) {
@@ -295,6 +308,29 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       })
       .join("");
 
+    // Team competitions: one section per competition (in feast order), each
+    // team as a sub-heading followed by every member participant.
+    const teamSectionsHtml = feast.competitions
+      .filter((c) => teamsByComp[c.id]?.length)
+      .map((c) => {
+        const ng = normGender(c.gender);
+        const detail = [c.competitionCategorySlug ? CATEGORY_LABELS[c.competitionCategorySlug] : null, ng ? GENDER_STYLE[ng].label : null].filter(Boolean).join(" · ");
+        const head = `<tr class="cat-head"><td colspan="6">${esc(c.name)} — Team${detail ? ` <span class="detail">(${esc(detail)})</span>` : ""}</td></tr>`;
+        const teams = teamsByComp[c.id]
+          .map((t) => {
+            const teamHead = `<tr class="team-head"><td colspan="6">${esc(t.team_name)}${t.shakhaName ? ` <span class="detail">· ${esc(t.shakhaName)}</span>` : ""} <span class="detail">· ${t.members.length} member${t.members.length === 1 ? "" : "s"}</span></td></tr>`;
+            const rows = t.members.length === 0
+              ? `<tr><td colspan="6" class="empty">No members yet</td></tr>`
+              : t.members
+                  .map((p, i) => `<tr><td class="sl">${i + 1}</td><td class="reg">${esc(p.registration_number ?? "—")}</td><td class="name">${esc(p.name)}</td><td class="house">${esc(p.house_name ?? "—")}</td><td class="bg">${esc(genderLetter(p.gender))}</td><td class="shakha-col">${esc(p.shakha?.name ?? "—")}</td></tr>`)
+                  .join("");
+            return teamHead + rows;
+          })
+          .join("");
+        return head + teams;
+      })
+      .join("");
+
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>Registrations — ${esc(shakhaLabel)}</title><style>
       @page { size: A4 portrait; margin: 16mm 14mm; }
       * { box-sizing: border-box; }
@@ -308,11 +344,17 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       td.sl, td.bg { text-align: center; font-weight: 700; }
       td.reg { font-family: "Courier New", monospace; font-weight: 700; }
       tr.cat-head td { background: #e5e0ff; font-weight: 800; text-transform: uppercase; font-size: 12px; }
+      tr.team-head td { background: #f6f4ff; font-weight: 800; font-size: 12.5px; }
+      .detail { font-weight: 600; color: #555; text-transform: none; }
+      td.empty { text-align: center; color: #777; font-style: italic; }
+      h2.section { font-size: 15px; font-weight: 900; color: #4C1D95; margin: 22px 0 0; text-transform: uppercase; letter-spacing: 0.04em; }
+      tbody { break-inside: auto; } tr { break-inside: avoid; }
       @media print { .noprint { display: none; } }
       .noprint { text-align: center; margin: 18px 0; }
       </style></head><body>
       <div class="hdr"><p class="feast">${esc(feast.name)}</p><p class="shakha">Registrations for ${esc(shakhaLabel)}</p></div>
-      <table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Competition</th></tr></thead><tbody>${sectionsHtml}</tbody></table>
+      ${sectionsHtml ? `<table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Competition</th></tr></thead><tbody>${sectionsHtml}</tbody></table>` : ""}
+      ${teamSectionsHtml ? `${sectionsHtml ? `<h2 class="section">Team Registrations</h2>` : ""}<table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Shakha</th></tr></thead><tbody>${teamSectionsHtml}</tbody></table>` : ""}
       <div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
       </body></html>`;
 
@@ -338,7 +380,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
           <div className="truncate text-[15px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{shakhaLabel}</div>
           <div className="mt-0.5 text-[12.5px]" style={{ color: theme.sub }}>{totalRegs === 0 ? "No registrations yet" : `${totalRegs} registration${totalRegs > 1 ? "s" : ""} across ${feast.name}`}</div>
         </div>
-        <button onClick={downloadRegistrationsPDF} disabled={totalRegs === 0} className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2.5 disabled:opacity-40" style={{ background: `linear-gradient(135deg, ${theme.purple}, ${theme.lavender})` }}>
+        <button onClick={downloadRegistrationsPDF} disabled={totalRegs === 0 && teamRegs.length === 0} className="flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2.5 disabled:opacity-40" style={{ background: `linear-gradient(135deg, ${theme.purple}, ${theme.lavender})` }}>
           <Download className="h-[15px] w-[15px] text-white" strokeWidth={2.5} /><span className="text-[12.5px] font-bold text-white">Download</span>
         </button>
       </div>
@@ -346,7 +388,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
 
       {feast.competitions.map((c, i) =>
         c.cat === "Team" ? (
-          <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} team={teamByComp[c.id] ?? null} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} editLocked={editLocked} />
+          <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} teams={teamsByComp[c.id] ?? []} showShakha={multiShakha} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} editLocked={editLocked} />
         ) : (
           <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} />
         )
