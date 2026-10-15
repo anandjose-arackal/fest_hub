@@ -21,6 +21,8 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   house_name: "House Name",
   name_house: "Name + House Name",
   place: "Place",
+  place_grade: "Place with Grade",
+  place_grade_short: "Place & Grade",
   shakha: "Shakha",
   competition: "Competition Name",
   competition_en: "Competition Name (English)",
@@ -38,6 +40,8 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "house_name", label: "House", emoji: "🏠", color: "#4F46E5" },
   { type: "name_house", label: "Name + House", emoji: "🧾", color: "#0EA5E9" },
   { type: "place", label: "Place", emoji: "🥇", color: "#D97706" },
+  { type: "place_grade", label: "Place with Grade", emoji: "🏅", color: "#B45309" },
+  { type: "place_grade_short", label: "Place & Grade", emoji: "🎖️", color: "#C2410C" },
   { type: "shakha", label: "Shakha", emoji: "🏫", color: "#0D9488" },
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
   { type: "competition_en", label: "Competition (EN)", emoji: "🌐", color: "#9333EA" },
@@ -111,6 +115,8 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "house_name") return "House Name";
   if (field.type === "name_house") return "Participant Name (House Name)";
   if (field.type === "place") return "First";
+  if (field.type === "place_grade") return "First with A Grade";
+  if (field.type === "place_grade_short") return "First & A";
   if (field.type === "shakha") return "Shakha";
   if (field.type === "competition") return "Sub Junior Boys Elocution";
   if (field.type === "competition_en") return "Sub Junior Boys Essay";

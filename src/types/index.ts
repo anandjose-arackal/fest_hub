@@ -259,7 +259,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "shakha" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text";
+export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "place_grade" | "place_grade_short" | "shakha" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text";
 
 export interface CertificateField {
   id: string;
