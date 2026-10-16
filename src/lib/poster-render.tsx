@@ -130,6 +130,18 @@ export interface PosterWinner {
   name: string;
   houseName: string;
   shakhaName: string;
+  // Optional winner photo (/admin/posters) — a data: URL cropped in the
+  // browser, never uploaded. Omitted → the card renders exactly as without.
+  photoUrl?: string | null;
+}
+
+// The poster's "which group won" line: above shakha level the winner's
+// Meghala (with "Meghala" appended) instead of the shakha — falls back to
+// the shakha when the org is set to meghala/diocese level but this shakha
+// isn't assigned into a meghala yet. Same rule as scripts/generate-posters.mjs.
+export function posterGroupLabel(hierarchyLevel: string | null | undefined, shakhaName: string, meghalaName: string | null | undefined): string {
+  if (hierarchyLevel && hierarchyLevel !== "shakha" && meghalaName) return `${meghalaName} Meghala`;
+  return `${shakhaName} Shakha`;
 }
 
 export interface PosterData {
@@ -195,7 +207,12 @@ function useFitFontSize(text: string, maxWidth: number, family: string, weight: 
 export const ResultPoster = forwardRef<HTMLDivElement, { data: PosterData }>(function ResultPoster({ data }, ref) {
   const { org, feastName, competitionName, categoryLabel, winners, theme } = data;
   const t = THEME_STYLE[theme];
-  const byPlace = (p: 1 | 2 | 3) => winners.find((w) => w.place === p);
+  const byPlace = (p: 1 | 2 | 3) => winners.filter((w) => w.place === p);
+  // Tied places stack every winner inside that place's card; past the usual
+  // three rows the winner text and photos shrink so the cards still clear
+  // the bottom artwork. Exactly 1.0 (no change) without ties.
+  const rowCount = ([1, 2, 3] as const).reduce((n, p) => n + Math.max(1, byPlace(p).length), 0);
+  const fit = rowCount <= 3 ? 1 : Math.max(0.45, 3.1 / rowCount);
   // Fill the poster edge-to-edge minus a 10px gutter on each side.
   const headingFontSize = useFitFontSize(feastName, POSTER_WIDTH - 20, "Nayana", 700, 30, 400);
 
@@ -301,11 +318,14 @@ export const ResultPoster = forwardRef<HTMLDivElement, { data: PosterData }>(fun
         {/* Winners */}
         <div style={{ marginTop: 12, width: "100%", display: "flex", flexDirection: "column", gap: 24 }}>
           {([1, 2, 3] as const).map((place) => {
-            const w = byPlace(place);
+            const placeWinners = byPlace(place);
+            const tied = placeWinners.length > 1;
             return (
-              <div key={place} style={{ display: "flex", alignItems: "stretch", gap: 18 }}>
+              <div key={place} style={{ display: "flex", alignItems: tied ? "flex-start" : "stretch", gap: 18 }}>
                 <div style={{ position: "relative", flexShrink: 0, display: "flex" }}>
-                  <img src={t.medal[place]} alt="" crossOrigin="anonymous" style={{ height: "100%", width: "auto" }} />
+                  {/* A tied card runs taller than one winner's — keep the
+                      medal at its single-winner size instead of stretching. */}
+                  <img src={t.medal[place]} alt="" crossOrigin="anonymous" style={tied ? { height: 300 * fit, width: "auto" } : { height: "100%", width: "auto" }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ position: "relative", width: "100%", height: 66 }}>
@@ -337,13 +357,44 @@ export const ResultPoster = forwardRef<HTMLDivElement, { data: PosterData }>(fun
                       boxShadow: `0 6px 18px ${t.cardShadow}`,
                     }}
                   >
-                    <p style={{ fontSize: 57, fontWeight: 800, color: "#2B1710", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w?.name ?? "—"}</p>
-                    {w?.houseName && (
-                      <p style={{ marginTop: 2, fontSize: 40, fontWeight: 600, color: t.headingColor, fontFamily: "var(--font-anek), sans-serif" }}>{w.houseName}</p>
-                    )}
-                    {w?.shakhaName && (
-                      <p style={{ marginTop: 2, fontSize: 48, fontWeight: 600, color: t.footerColor, fontFamily: "var(--font-anek), sans-serif" }}>{w.shakhaName}</p>
-                    )}
+                    {placeWinners.length === 0 && <p style={{ fontSize: 57, fontWeight: 800, color: "#2B1710", lineHeight: 1.2 }}>—</p>}
+                    {placeWinners.map((w, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 20 * fit,
+                          ...(i > 0 ? { marginTop: 12 * fit, paddingTop: 12 * fit, borderTop: `2px dashed ${t.cardBorder}` } : null),
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 57 * fit, fontWeight: 800, color: "#2B1710", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</p>
+                          {w.houseName && (
+                            <p style={{ marginTop: 2, fontSize: 40 * fit, fontWeight: 600, color: t.headingColor, fontFamily: "var(--font-anek), sans-serif" }}>{w.houseName}</p>
+                          )}
+                          {w.shakhaName && (
+                            <p style={{ marginTop: 2, fontSize: 48 * fit, fontWeight: 600, color: t.footerColor, fontFamily: "var(--font-anek), sans-serif" }}>{w.shakhaName}</p>
+                          )}
+                        </div>
+                        {w.photoUrl && (
+                          <img
+                            src={w.photoUrl}
+                            alt=""
+                            style={{
+                              flexShrink: 0,
+                              width: 176 * fit,
+                              height: 176 * fit,
+                              borderRadius: "50%",
+                              objectFit: "cover",
+                              border: `5px solid ${t.bannerBorder}`,
+                              boxShadow: `0 6px 18px ${t.cardShadow}`,
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

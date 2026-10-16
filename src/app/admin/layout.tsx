@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, UserCheck, ClipboardCheck, Medal, Trophy, Users, CalendarDays,
-  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2,
+  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2, ImageDown,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
@@ -53,6 +53,7 @@ function buildFullNavSections(hierarchyLevel: HierarchyLevel): NavSection[] {
         { href: "/admin/participants", label: "Participants", icon: UserCheck, color: "#0891B2" },
         { href: "/admin/participation", label: "Attendance", icon: ClipboardCheck, color: "#BE185D" },
         { href: "/admin/results", label: "Results", icon: Medal, color: "#D97706" },
+        { href: "/admin/posters", label: "Result Posters", icon: ImageDown, color: "#8B1538" },
         { href: "/admin/standings", label: "Standings", icon: Trophy, color: "#7C3AED" },
         { href: "/admin/certificates", label: "Certificates", icon: Award, color: "#A16207" },
       ],
