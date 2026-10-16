@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { UserCheck, UserPlus, Pencil, X, Download, Printer, IdCard, Lock, Check, Loader2, Trash2 } from "lucide-react";
+import { UserCheck, UserPlus, Pencil, X, Download, Printer, IdCard, Hash, Lock, Check, Loader2, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchAll } from "@/lib/fetch-all";
 import { countScopeRegistrations, loadScopeTeams, resolveCapScope } from "@/lib/reg-cap-scope";
@@ -136,13 +136,21 @@ const COMP_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="#6B46FF"
 // Cards are still sorted Diocese > Meghala > Shakha > reg number so
 // same-group cards land contiguously on the sheet, satisfying "group by"
 // without needing fragile cross-page grid/section-header logic.
+//
+// The "regno" variant is the same 8-up cut sheet with only the reg number,
+// printed large, and the participant's name in faint 6pt along the bottom
+// edge — enough to hand the right card to the right person, without it
+// reading as part of the card.
+type CardVariant = "full" | "regno";
+
 function buildRegistrationCardsHtml(
   rows: ParticipantRow[],
   org: OrgSettings | null,
   hierarchy: { shakhas: Shakha[]; meghalas: Meghala[]; dioceses: Diocese[]; hierarchyLevel: HierarchyLevel },
   participantRegs: Record<string, string[]>,
   individualFeastComps: FCRow[],
-  categories: CompetitionCategory[]
+  categories: CompetitionCategory[],
+  variant: CardVariant = "full"
 ): string {
   const compNameById = new Map(individualFeastComps.map((c) => [c.id, c.competition.name]));
   const shakhaById = new Map(hierarchy.shakhas.map((s) => [s.id, s]));
@@ -224,14 +232,30 @@ function buildRegistrationCardsHtml(
     </div>`;
   };
 
+  // Rough starting size from Arial Bold advance widths (em) so the number
+  // already fills most of the ~88mm card; FIT_REGNO_SCRIPT then measures
+  // the real rendered text and scales it to fill the card exactly, since
+  // the font varies by device.
+  const boldWidthEm = (ch: string) => (/[0-9]/.test(ch) ? 0.556 : /[-./ ]/.test(ch) ? 0.3 : /[A-Z]/.test(ch) ? 0.7 : 0.58);
+  const regnoCardHtml = (p: ParticipantRow) => {
+    const regNo = p.registration_number ?? "—";
+    const widthEm = [...regNo].reduce((sum, ch) => sum + boldWidthEm(ch), 0) || 1;
+    const sizeMm = Math.min(50, 84 / widthEm);
+    return `<div class="card rn">
+      <div class="rn-num" style="font-size:${sizeMm.toFixed(1)}mm">${esc(regNo)}</div>
+      <div class="rn-name">${esc(p.name)}</div>
+    </div>`;
+  };
+
   const pages: ParticipantRow[][] = [];
   for (let i = 0; i < sorted.length; i += CARDS_PER_PAGE) pages.push(sorted.slice(i, i + CARDS_PER_PAGE));
 
+  const renderCard = variant === "regno" ? regnoCardHtml : cardHtml;
   const pagesHtml = pages
-    .map((pageRows, i) => `<div class="page${i > 0 ? " brk" : ""}"><div class="grid">${pageRows.map(cardHtml).join("")}</div></div>`)
+    .map((pageRows, i) => `<div class="page${i > 0 ? " brk" : ""}"><div class="grid">${pageRows.map(renderCard).join("")}</div></div>`)
     .join("");
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Registration Cards</title><style>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${variant === "regno" ? "Registration Number Cards" : "Registration Cards"}</title><style>
     @page { size: A4 portrait; margin: 10mm; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, sans-serif; }
     body { margin: 0; }
@@ -255,8 +279,28 @@ function buildRegistrationCardsHtml(
     .comp { display: flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 700; color: #1E1B4B; }
     .comp.muted { color: #9CA3AF; font-weight: 500; font-style: italic; }
     .hdiv { width: 1px; height: 12px; background: #D1D5DB; flex-shrink: 0; }
-    </style></head><body>${PRINT_FALLBACK_BUTTON}${pagesHtml}</body></html>`;
+    .card.rn { position: relative; align-items: center; justify-content: center; padding: 2mm; }
+    .rn-num { font-weight: 700; color: #1E1B4B; line-height: 1; white-space: nowrap; letter-spacing: -0.01em; }
+    .rn-name { position: absolute; left: 4mm; right: 4mm; bottom: 1.8mm; text-align: center; font-size: 6pt; font-weight: 400; color: #C9C9D2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    </style></head><body>${PRINT_FALLBACK_BUTTON}${pagesHtml}${variant === "regno" ? FIT_REGNO_SCRIPT : ""}</body></html>`;
 }
+
+// Runs in the print window before its print() fires: scales each reg number
+// to 96% of its card's inner width, but never so tall that it runs into the
+// 6pt name strip (5.5mm kept clear at top and bottom so it stays centred).
+const FIT_REGNO_SCRIPT = `<script>
+document.querySelectorAll(".rn-num").forEach(function (el) {
+  var card = el.parentElement, cs = getComputedStyle(card);
+  var padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  var padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  var mm = card.clientHeight / 65;
+  var maxW = (card.clientWidth - padX) * 0.96;
+  var maxH = card.clientHeight - padY - 11 * mm;
+  var size = parseFloat(getComputedStyle(el).fontSize);
+  var w = el.scrollWidth || 1;
+  el.style.fontSize = Math.min(size * maxW / w, maxH) + "px";
+});
+</script>`;
 
 export default function ParticipantsPage() {
   const [org, setOrg] = useState<OrgSettings | null>(null);
@@ -275,6 +319,7 @@ export default function ParticipantsPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [printLayoutTarget, setPrintLayoutTarget] = useState<"individual" | "team" | null>(null);
+  const [cardsDialogOpen, setCardsDialogOpen] = useState(false);
   const [pdfColumns, setPdfColumns] = useState<ParticipantPdfColumns>(DEFAULT_PARTICIPANT_PDF_COLUMNS);
 
   const [panelOpen, setPanelOpen] = useState(false);
@@ -914,8 +959,8 @@ export default function ParticipantsPage() {
     openPrintWindow(buildEventPdfHtml(sections, layout));
   }
 
-  function exportRegistrationCards() {
-    const html = buildRegistrationCardsHtml(filtered, org, hierarchy, participantRegs, individualFeastComps, categories);
+  function exportRegistrationCards(variant: CardVariant) {
+    const html = buildRegistrationCardsHtml(filtered, org, hierarchy, participantRegs, individualFeastComps, categories, variant);
     openPrintWindow(html);
   }
 
@@ -935,7 +980,7 @@ export default function ParticipantsPage() {
           <button onClick={() => setPrintLayoutTarget("individual")} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <Printer className="h-3.5 w-3.5" /> PDF
           </button>
-          <button onClick={exportRegistrationCards} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
+          <button onClick={() => setCardsDialogOpen(true)} className="flex items-center gap-1 rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-semibold">
             <IdCard className="h-3.5 w-3.5" /> Cards
           </button>
           <button onClick={openCreate} className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#6D28D9]">
@@ -1483,6 +1528,43 @@ export default function ParticipantsPage() {
           }}
           columnsPicker={pdfColumnsPicker}
         />
+      )}
+
+      {cardsDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setCardsDialogOpen(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-bold text-neutral-800">Registration Cards</h2>
+              <button onClick={() => setCardsDialogOpen(false)}>
+                <X className="h-5 w-5 text-neutral-400" />
+              </button>
+            </div>
+            <p className="mb-4 text-sm text-neutral-600">8 cards per A4 sheet. Which design?</p>
+            <div className="space-y-2">
+              {(
+                [
+                  { variant: "full", Icon: IdCard, title: "Full card", desc: "Name, house, reg number, category, Shakha and events." },
+                  { variant: "regno", Icon: Hash, title: "Reg number only", desc: "Large reg number, with the name in faint small print at the edge." },
+                ] as const
+              ).map(({ variant, Icon, title, desc }) => (
+                <button
+                  key={variant}
+                  onClick={() => {
+                    setCardsDialogOpen(false);
+                    exportRegistrationCards(variant);
+                  }}
+                  className="flex w-full items-start gap-3 rounded-xl border-2 border-neutral-200 p-3 text-left transition-colors hover:border-[#6B46FF] hover:bg-[#6B46FF]/5"
+                >
+                  <Icon className="mt-0.5 h-5 w-5 shrink-0 text-[#6B46FF]" />
+                  <span>
+                    <span className="block text-sm font-bold text-neutral-800">{title}</span>
+                    <span className="block text-xs text-neutral-500">{desc}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       <style jsx>{`
