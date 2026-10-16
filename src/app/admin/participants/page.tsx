@@ -233,14 +233,13 @@ function buildRegistrationCardsHtml(
   };
 
   // Rough starting size from Arial Bold advance widths (em) so the number
-  // already fills most of the ~88mm card; FIT_REGNO_SCRIPT then measures
-  // the real rendered text and scales it to fill the card exactly, since
-  // the font varies by device.
+  // already sits inside the ~88mm card; FIT_REGNO_SCRIPT then measures the
+  // real rendered text and rescales it, since the font varies by device.
   const boldWidthEm = (ch: string) => (/[0-9]/.test(ch) ? 0.556 : /[-./ ]/.test(ch) ? 0.3 : /[A-Z]/.test(ch) ? 0.7 : 0.58);
   const regnoCardHtml = (p: ParticipantRow) => {
     const regNo = p.registration_number ?? "—";
     const widthEm = [...regNo].reduce((sum, ch) => sum + boldWidthEm(ch), 0) || 1;
-    const sizeMm = Math.min(50, 84 / widthEm);
+    const sizeMm = Math.min(REGNO_MAX_H_MM, REGNO_MAX_W_MM / widthEm);
     return `<div class="card rn">
       <div class="rn-num" style="font-size:${sizeMm.toFixed(1)}mm">${esc(regNo)}</div>
       <div class="rn-name">${esc(p.name)}</div>
@@ -285,20 +284,23 @@ function buildRegistrationCardsHtml(
     </style></head><body>${PRINT_FALLBACK_BUTTON}${pagesHtml}${variant === "regno" ? FIT_REGNO_SCRIPT : ""}</body></html>`;
 }
 
-// Runs in the print window before its print() fires: scales each reg number
-// to 96% of its card's inner width, but never so tall that it runs into the
-// 6pt name strip (5.5mm kept clear at top and bottom so it stays centred).
+// Printed size budget for a reg number on the 8-up A4 sheet. A card's inner
+// box is ~88mm × ~60mm (190mm printable width, 2 columns, 4mm gap, 2mm
+// padding); the number gets ~80% of that width, and its height leaves
+// 5.5mm clear top and bottom for the 6pt name strip.
+const REGNO_MAX_W_MM = 70;
+const REGNO_MAX_H_MM = 44;
+
+// Runs in the print window before its print() fires: measures each reg
+// number's real width in em and sets its size in mm against the fixed A4
+// card budget above. It must not measure the card itself — on screen the
+// print window is wider than A4, so a px size fitted there overflows the
+// card once printed.
 const FIT_REGNO_SCRIPT = `<script>
 document.querySelectorAll(".rn-num").forEach(function (el) {
-  var card = el.parentElement, cs = getComputedStyle(card);
-  var padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-  var padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-  var mm = card.clientHeight / 65;
-  var maxW = (card.clientWidth - padX) * 0.96;
-  var maxH = card.clientHeight - padY - 11 * mm;
-  var size = parseFloat(getComputedStyle(el).fontSize);
-  var w = el.scrollWidth || 1;
-  el.style.fontSize = Math.min(size * maxW / w, maxH) + "px";
+  var size = parseFloat(getComputedStyle(el).fontSize) || 1;
+  var widthEm = (el.scrollWidth || 1) / size;
+  el.style.fontSize = Math.min(${REGNO_MAX_W_MM} / widthEm, ${REGNO_MAX_H_MM}) + "mm";
 });
 </script>`;
 
