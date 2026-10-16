@@ -12,7 +12,7 @@ import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-da
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { useOrgHierarchy } from "@/hooks/use-feast";
-import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
+import { EMPTY_HIERARCHY_FILTER, filterShakhaIds, HierarchyFilter, HierarchyPicker, type HierarchyFilterValue } from "@/components/admin/hierarchy-picker";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, HierarchyLevel, Meghala, OrgSettings, Participant, Shakha } from "@/types";
 
@@ -24,7 +24,6 @@ type ParticipantRow = Participant & { shakha: Shakha | null; events: number; tea
 // as /admin/results' ResultColumns, shakha always shown, meghala/diocese
 // optional and only offered once the org has opted into that hierarchy tier.
 interface ParticipantPdfColumns { meghala: boolean; diocese: boolean }
-const DEFAULT_PARTICIPANT_PDF_COLUMNS: ParticipantPdfColumns = { meghala: false, diocese: false };
 
 const PER_PAGE = 30;
 
@@ -233,15 +232,14 @@ function buildRegistrationCardsHtml(
   };
 
   // Rough starting size from Arial Bold advance widths (em) so the number
-  // already sits inside the ~88mm card; FIT_REGNO_SCRIPT then measures the
-  // real rendered text and rescales it, since the font varies by device.
+  // already fills the card; FIT_REGNO_SCRIPT then measures the real
+  // rendered text and refits it, since the font varies by device.
   const boldWidthEm = (ch: string) => (/[0-9]/.test(ch) ? 0.556 : /[-./ ]/.test(ch) ? 0.3 : /[A-Z]/.test(ch) ? 0.7 : 0.58);
   const regnoCardHtml = (p: ParticipantRow) => {
     const regNo = p.registration_number ?? "—";
     const widthEm = [...regNo].reduce((sum, ch) => sum + boldWidthEm(ch), 0) || 1;
-    const sizeMm = Math.min(REGNO_MAX_H_MM, REGNO_MAX_W_MM / widthEm);
     return `<div class="card rn">
-      <div class="rn-num" style="font-size:${sizeMm.toFixed(1)}mm">${esc(regNo)}</div>
+      <div class="rn-num" style="font-size:${regnoFontSize(widthEm)}">${esc(regNo)}</div>
       <div class="rn-name">${esc(p.name)}</div>
     </div>`;
   };
@@ -251,7 +249,7 @@ function buildRegistrationCardsHtml(
 
   const renderCard = variant === "regno" ? regnoCardHtml : cardHtml;
   const pagesHtml = pages
-    .map((pageRows, i) => `<div class="page${i > 0 ? " brk" : ""}"><div class="grid">${pageRows.map(renderCard).join("")}</div></div>`)
+    .map((pageRows, i) => `<div class="page${i > 0 ? " brk" : ""}"><div class="grid${variant === "regno" ? " rn-grid" : ""}">${pageRows.map(renderCard).join("")}</div></div>`)
     .join("");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${variant === "regno" ? "Registration Number Cards" : "Registration Cards"}</title><style>
@@ -260,6 +258,8 @@ function buildRegistrationCardsHtml(
     body { margin: 0; }
     .page.brk { page-break-before: always; break-before: page; }
     .grid { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 65mm; gap: 4mm; padding: 0 5px; }
+    /* Reg-number sheets: 4 rows fill the printed page (100vh is the page area when printing), so 8 cards cover the sheet whatever paper size or scale the print dialog picks; fixed 65mm rows shrank with a "fit" scale and left the bottom third blank. 12mm = the 3 row gaps, 2mm = rounding slack so a full page never spills a row onto the next. */
+    @media print { .grid.rn-grid { grid-auto-rows: calc((100vh - 12mm - 2mm) / 4); } }
     .card { border: 1.5px solid #6B46FF; border-radius: 10px; padding: 10px; break-inside: avoid; page-break-inside: avoid; display: flex; flex-direction: column; overflow: hidden; }
     .hdr { padding-bottom: 4px; margin-bottom: 7px; border-bottom: 1px solid #E5E7EB; }
     .org { font-size: 12px; font-weight: 800; color: #6B46FF; line-height: 1.2; }
@@ -278,30 +278,36 @@ function buildRegistrationCardsHtml(
     .comp { display: flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 700; color: #1E1B4B; }
     .comp.muted { color: #9CA3AF; font-weight: 500; font-style: italic; }
     .hdiv { width: 1px; height: 12px; background: #D1D5DB; flex-shrink: 0; }
-    .card.rn { position: relative; align-items: center; justify-content: center; padding: 2mm; }
+    .card.rn { position: relative; align-items: center; justify-content: center; padding: 2mm; container-type: size; }
     .rn-num { font-weight: 700; color: #1E1B4B; line-height: 1; white-space: nowrap; letter-spacing: -0.01em; }
     .rn-name { position: absolute; left: 4mm; right: 4mm; bottom: 1.8mm; text-align: center; font-size: 6pt; font-weight: 400; color: #C9C9D2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style></head><body>${PRINT_FALLBACK_BUTTON}${pagesHtml}${variant === "regno" ? FIT_REGNO_SCRIPT : ""}</body></html>`;
 }
 
-// Printed size budget for a reg number on the 8-up A4 sheet. A card's inner
-// box is ~88mm × ~60mm (190mm printable width, 2 columns, 4mm gap, 2mm
-// padding); the number gets ~95% of that width — a 5-char "F1235" fills
-// the card with ~4mm to spare at each border — and its height leaves
-// 5.5mm clear top and bottom for the 6pt name strip.
-const REGNO_MAX_W_MM = 84;
-const REGNO_MAX_H_MM = 44;
+// Share of the card's inner box a reg number may fill: 96% of its width (a
+// 5-char "F1235" spans the card edge to edge, just inside the border) and
+// at most 72% of its height, leaving room top and bottom for the 6pt name
+// strip.
+const REGNO_FILL_W_PCT = 96;
+const REGNO_FILL_H_PCT = 72;
+
+// Sized in container units (the card is a size container), not mm or px:
+// they resolve against the card as laid out on the printed page, so the
+// number fills it whatever the print dialog does — a Letter printer or a
+// "Fit to page" scale shrinks the mm sizes but the cards still stretch to
+// the page width, which left a fixed-mm number with wide empty margins.
+function regnoFontSize(widthEm: number): string {
+  return `min(${(REGNO_FILL_W_PCT / widthEm).toFixed(3)}cqw, ${REGNO_FILL_H_PCT}cqh)`;
+}
 
 // Runs in the print window before its print() fires: measures each reg
-// number's real width in em and sets its size in mm against the fixed A4
-// card budget above. It must not measure the card itself — on screen the
-// print window is wider than A4, so a px size fitted there overflows the
-// card once printed.
+// number's real width in em (font-dependent, layout-independent) and refits
+// it with regnoFontSize's container units.
 const FIT_REGNO_SCRIPT = `<script>
 document.querySelectorAll(".rn-num").forEach(function (el) {
   var size = parseFloat(getComputedStyle(el).fontSize) || 1;
   var widthEm = (el.scrollWidth || 1) / size;
-  el.style.fontSize = Math.min(${REGNO_MAX_W_MM} / widthEm, ${REGNO_MAX_H_MM}) + "mm";
+  el.style.fontSize = "min(" + (${REGNO_FILL_W_PCT} / widthEm).toFixed(3) + "cqw, ${REGNO_FILL_H_PCT}cqh)";
 });
 </script>`;
 
@@ -316,14 +322,14 @@ export default function ParticipantsPage() {
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [participantRegs, setParticipantRegs] = useState<Record<string, string[]>>({}); // participantId -> feastCompetitionIds
 
-  const [shakhaFilter, setShakhaFilter] = useState("");
+  const [hierFilter, setHierFilter] = useState<HierarchyFilterValue>(EMPTY_HIERARCHY_FILTER);
   const [compFilter, setCompFilter] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [printLayoutTarget, setPrintLayoutTarget] = useState<"individual" | "team" | null>(null);
   const [cardsDialogOpen, setCardsDialogOpen] = useState(false);
-  const [pdfColumns, setPdfColumns] = useState<ParticipantPdfColumns>(DEFAULT_PARTICIPANT_PDF_COLUMNS);
+  const [pdfColumnOverrides, setPdfColumnOverrides] = useState<Partial<ParticipantPdfColumns>>({});
 
   const [panelOpen, setPanelOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -442,14 +448,16 @@ export default function ParticipantsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [feastId, shakhaFilter, compFilter, search]);
+  }, [feastId, hierFilter, compFilter, search]);
 
   const individualFeastComps = feastComps.filter((c) => c.competition.type !== "group");
   const teamFeastComps = feastComps.filter((c) => c.competition.type === "group");
 
+  const shakhaFilterIds = useMemo(() => filterShakhaIds(hierFilter, hierarchy), [hierFilter, hierarchy]);
+
   const filtered = useMemo(() => {
     let rows = participants;
-    if (shakhaFilter) rows = rows.filter((p) => p.shakha_id === shakhaFilter);
+    if (shakhaFilterIds) rows = rows.filter((p) => !!p.shakha_id && shakhaFilterIds.has(p.shakha_id));
     if (compFilter) rows = rows.filter((p) => participantRegs[p.id]?.includes(compFilter));
     const q = search.trim().toLowerCase();
     if (q) {
@@ -461,7 +469,7 @@ export default function ParticipantsPage() {
       );
     }
     return rows;
-  }, [participants, shakhaFilter, compFilter, search, participantRegs]);
+  }, [participants, shakhaFilterIds, compFilter, search, participantRegs]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const pageRows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -469,11 +477,11 @@ export default function ParticipantsPage() {
   const filteredTeams = useMemo(() => {
     let rows = teams;
     if (teamCompFilter) rows = rows.filter((t) => t.feastCompetitionId === teamCompFilter);
-    if (shakhaFilter) rows = rows.filter((t) => t.shakhaId === shakhaFilter);
+    if (shakhaFilterIds) rows = rows.filter((t) => !!t.shakhaId && shakhaFilterIds.has(t.shakhaId));
     const q = search.trim().toLowerCase();
     if (q) rows = rows.filter((t) => t.teamName.toLowerCase().includes(q) || t.members.some((m) => m.toLowerCase().includes(q)));
     return rows;
-  }, [teams, teamCompFilter, shakhaFilter, search]);
+  }, [teams, teamCompFilter, shakhaFilterIds, search]);
 
   // ── Individual panel ────────────────────────────────────────────────────
   function openCreate() {
@@ -819,10 +827,10 @@ export default function ParticipantsPage() {
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
       <style>
-      @page { size: A4 portrait; margin: 16mm 12mm; }
+      @page { size: A4 portrait; margin: 16mm 6mm; }
       * { box-sizing: border-box; }
       body { font-family: 'Poppins', Arial, sans-serif; margin: 0; }
-      .sheet { border: 1px solid #D4D4D8; border-radius: 10px; padding: 12px 16px 20px; }
+      .sheet { border: 1px solid #D4D4D8; border-radius: 10px; padding: 12px 8px 20px; }
       ${layout === "per-page" ? ".sheet:not(:last-child) { page-break-before: always; }" : ".sheet:not(:last-child) { margin-bottom: 16px; }"}
       .hdr { text-align: center; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 2px solid #7C3AED; }
       .org { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6B7280; }
@@ -833,7 +841,7 @@ export default function ParticipantsPage() {
       thead tr { background: #EDE9FE; }
       th { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #4C1D95; }
       td.name { font-weight: 700; color: #1e1b4b; }
-      td.remarks { min-width: 65px; }
+      td.sign { width: 110px; min-width: 110px; }
       td.blank { min-width: 55px; }
       .reg { font-family: monospace; font-weight: 700; color: #4C1D95; }
       </style></head><body>${PRINT_FALLBACK_BUTTON}${sections.join("")}</body></html>`;
@@ -868,8 +876,16 @@ export default function ParticipantsPage() {
     return meghala?.name ?? null;
   }
 
+  // Meghala prints by default once the org has a Meghala tier (meghala or
+  // diocese level) — the toggle below only records an admin's override.
+  // Derived rather than seeded into state, since the hierarchy loads async.
+  const pdfColumns: ParticipantPdfColumns = {
+    meghala: hierarchy.hierarchyLevel !== "shakha" && (pdfColumnOverrides.meghala ?? true),
+    diocese: hierarchy.hierarchyLevel === "diocese" && (pdfColumnOverrides.diocese ?? false),
+  };
+
   function togglePdfColumn(key: keyof ParticipantPdfColumns) {
-    setPdfColumns((prev) => ({ ...prev, [key]: !prev[key] }));
+    setPdfColumnOverrides((prev) => ({ ...prev, [key]: !pdfColumns[key] }));
   }
 
   // Shared "which columns print" toggle — mirrors /admin/results' columnsPicker,
@@ -910,7 +926,7 @@ export default function ParticipantsPage() {
             const { meghalaName, dioceseName } = hierarchyNamesFor(p.shakha_id);
             return `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="blank"></td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td>${
               pdfColumns.meghala ? `<td>${meghalaName}</td>` : ""
-            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td class="remarks"></td></tr>`;
+            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td class="sign"></td></tr>`;
           })
           .join("");
         const sub = competitionSubLine(fc);
@@ -922,7 +938,7 @@ export default function ParticipantsPage() {
           </div>
           <table><thead><tr><th>SL</th><th>Reg No</th><th>Chance No</th><th>Name</th><th>House Name</th><th>Shakha</th>${
             pdfColumns.meghala ? "<th>Meghala</th>" : ""
-          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Sign</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>`;
       })
       .filter(Boolean);
@@ -935,14 +951,14 @@ export default function ParticipantsPage() {
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const sections = compsToprint
       .map((fc) => {
-        const rows = teams.filter((t) => t.feastCompetitionId === fc.id && (!shakhaFilter || t.shakhaId === shakhaFilter));
+        const rows = teams.filter((t) => t.feastCompetitionId === fc.id && (!shakhaFilterIds || (!!t.shakhaId && shakhaFilterIds.has(t.shakhaId))));
         if (rows.length === 0) return "";
         const rowsHtml = rows
           .map((t, i) => {
             const { meghalaName, dioceseName } = hierarchyNamesFor(t.shakhaId);
-            return `<tr><td>${i + 1}</td><td class="name">${t.teamName}</td><td>${t.shakhaName}</td>${
+            return `<tr><td>${i + 1}</td><td class="blank"></td><td class="name">${t.teamName}</td><td>${t.shakhaName}</td>${
               pdfColumns.meghala ? `<td>${meghalaName}</td>` : ""
-            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td>${t.members.join(", ") || "—"}</td><td class="remarks"></td></tr>`;
+            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td>${t.members.join(", ") || "—"}</td><td class="sign"></td></tr>`;
           })
           .join("");
         const sub = competitionSubLine(fc);
@@ -952,9 +968,9 @@ export default function ParticipantsPage() {
             <div class="comp-name">${fc.competition.name}</div>
             ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
           </div>
-          <table><thead><tr><th>SL</th><th>Team</th><th>Shakha</th>${
+          <table><thead><tr><th>SL</th><th>Chance No</th><th>Team</th><th>Shakha</th>${
             pdfColumns.meghala ? "<th>Meghala</th>" : ""
-          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Members</th><th>Remarks</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Members</th><th>Sign</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>`;
       })
       .filter(Boolean);
@@ -998,7 +1014,7 @@ export default function ParticipantsPage() {
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
         </select>
-        <HierarchyPicker value={shakhaFilter} onChange={setShakhaFilter} hierarchy={hierarchy} className="input max-w-xs" emptyLabel="All Shakhas" />
+        <HierarchyFilter value={hierFilter} onChange={setHierFilter} hierarchy={hierarchy} className="input max-w-xs" />
         <select className="input max-w-xs" value={compFilter} onChange={(e) => setCompFilter(e.target.value)}>
           <option value="">All Competitions</option>
           {individualFeastComps.map((c) => (

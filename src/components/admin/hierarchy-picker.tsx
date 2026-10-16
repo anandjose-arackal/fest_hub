@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getDescendantShakhaIds } from "@/lib/org-hierarchy";
 import type { Diocese, HierarchyLevel, Meghala, Shakha } from "@/types";
 
 export interface PickerHierarchy {
@@ -40,6 +41,9 @@ export function HierarchyPicker({ value, onChange, hierarchy, required, classNam
   // component only controls the leaf shakha id, so the intermediate
   // selections have to be reconstructed from it.
   useEffect(() => {
+    // Picking a meghala/diocese clears the leaf (onChange("")) — don't let
+    // that echo back here and wipe out the meghala/diocese just picked.
+    if (!value) return;
     const sh = shakhas.find((s) => s.id === value);
     const mg = sh?.meghala_id ? meghalas.find((m) => m.id === sh.meghala_id) : undefined;
     setMeghalaId(sh?.meghala_id ?? "");
@@ -108,5 +112,76 @@ export function HierarchyPicker({ value, onChange, hierarchy, required, classNam
         ))}
       </select>
     </div>
+  );
+}
+
+// ─── List filter ────────────────────────────────────────────────────────────
+
+/** A list filter's selection — each tier optional, "" meaning "all". */
+export interface HierarchyFilterValue {
+  dioceseId: string;
+  meghalaId: string;
+  shakhaId: string;
+}
+
+export const EMPTY_HIERARCHY_FILTER: HierarchyFilterValue = { dioceseId: "", meghalaId: "", shakhaId: "" };
+
+/** The shakha ids a filter selection covers (its deepest picked tier and everything beneath it), or null when nothing is picked. */
+export function filterShakhaIds(value: HierarchyFilterValue, hierarchy: PickerHierarchy): Set<string> | null {
+  if (value.shakhaId) return new Set([value.shakhaId]);
+  if (value.meghalaId) return new Set(getDescendantShakhaIds({ level: "meghala", id: value.meghalaId, name: "" }, hierarchy));
+  if (value.dioceseId) return new Set(getDescendantShakhaIds({ level: "diocese", id: value.dioceseId, name: "" }, hierarchy));
+  return null;
+}
+
+// Diocese -> Meghala -> Shakha selects for admin list filters. Unlike
+// HierarchyPicker (a form field that must land on one leaf shakha), every
+// tier here is a filter in its own right: picking a meghala lists all of its
+// shakhas' rows straight away, and the shakha select only narrows further.
+// At hierarchyLevel === "shakha" it's the same single "All Shakhas" select.
+export function HierarchyFilter({
+  value, onChange, hierarchy, className,
+}: {
+  value: HierarchyFilterValue;
+  onChange: (value: HierarchyFilterValue) => void;
+  hierarchy: PickerHierarchy;
+  className?: string;
+}) {
+  const { dioceses, meghalas, shakhas, hierarchyLevel } = hierarchy;
+  const cls = className ?? "input";
+
+  const availableMeghalas = value.dioceseId ? meghalas.filter((m) => m.diocese_id === value.dioceseId) : meghalas;
+  const meghalaScope = value.meghalaId ? null : filterShakhaIds({ ...value, shakhaId: "" }, hierarchy);
+  const availableShakhas =
+    hierarchyLevel === "shakha" ? shakhas
+    : value.meghalaId ? shakhas.filter((s) => s.meghala_id === value.meghalaId)
+    : meghalaScope ? shakhas.filter((s) => meghalaScope.has(s.id))
+    : shakhas;
+
+  return (
+    <>
+      {hierarchyLevel === "diocese" && (
+        <select className={cls} value={value.dioceseId} onChange={(e) => onChange({ dioceseId: e.target.value, meghalaId: "", shakhaId: "" })}>
+          <option value="">All Dioceses</option>
+          {dioceses.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
+        </select>
+      )}
+      {hierarchyLevel !== "shakha" && (
+        <select className={cls} value={value.meghalaId} onChange={(e) => onChange({ ...value, meghalaId: e.target.value, shakhaId: "" })}>
+          <option value="">All Meghalas</option>
+          {availableMeghalas.map((m) => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+      )}
+      <select className={cls} value={value.shakhaId} onChange={(e) => onChange({ ...value, shakhaId: e.target.value })}>
+        <option value="">All Shakhas</option>
+        {availableShakhas.map((s) => (
+          <option key={s.id} value={s.id}>{s.name}</option>
+        ))}
+      </select>
+    </>
   );
 }

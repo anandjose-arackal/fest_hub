@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent, type ChangeEvent } from "react";
 import {
-  AlignCenter, AlignLeft, AlignRight, Award, Printer, Trash2, X,
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, Award, Printer, Trash2, X,
   Upload, ImagePlus, Sparkles, FileImage, Type,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getCertificateRoster, getCertificateTemplate, saveCertificateTemplate, uploadCertificateAsset } from "@/actions/certificates";
-import { alignTx, customGoogleFontQuery, FONT_PRESETS, googleFontsHref } from "@/lib/certificate-render";
+import {
+  alignTx, customGoogleFontQuery, FONT_PRESETS, googleFontsHref, MM_PER_PT,
+  PARAGRAPH_DEFAULT_LINE_HEIGHT, PARAGRAPH_DEFAULT_TEXT, PARAGRAPH_TOKENS, paragraphSegments,
+} from "@/lib/certificate-render";
 import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
 import { markItemsPrinted } from "@/actions/handover";
 import type { CertificateField, CertificateFieldType, CertificateRosterRow, CertificateTemplate, Feast } from "@/types";
@@ -30,6 +33,7 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   grade_tick: "Grade tick",
   image: "Signature / Image",
   custom_text: "Custom Text",
+  paragraph: "Sentence with Data",
 };
 
 // Every button here calls addField() fresh, so "Custom Text" can be clicked
@@ -48,6 +52,7 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "grade_text", label: "Grade", emoji: "🔤", color: "#16A34A" },
   { type: "grade_tick", label: "Grade Tick", emoji: "✅", color: "#DB2777" },
   { type: "custom_text", label: "Custom Text", emoji: "📝", color: "#475569" },
+  { type: "paragraph", label: "Sentence", emoji: "📜", color: "#0F766E" },
 ];
 
 // Who gets a certificate on this print run — every published result matches
@@ -70,6 +75,17 @@ function emptyTemplate(feastId: string): CertificateTemplate {
 }
 
 function newField(type: CertificateFieldType, paperW: number, paperH: number, gradeValue?: "A" | "B" | "C"): CertificateField {
+  if (type === "paragraph") {
+    return {
+      ...newField("custom_text", paperW, paperH),
+      type,
+      font_size_pt: 14,
+      width_mm: Math.round(paperW * 0.7),
+      line_height: PARAGRAPH_DEFAULT_LINE_HEIGHT,
+      bold_data: true,
+      text: PARAGRAPH_DEFAULT_TEXT,
+    };
+  }
   return {
     id: crypto.randomUUID(),
     type,
@@ -113,7 +129,7 @@ function newImageField(paperW: number, paperH: number, url: string, widthMm: num
 function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "name") return "Participant Name";
   if (field.type === "house_name") return "House Name";
-  if (field.type === "name_house") return "Participant Name (House Name)";
+  if (field.type === "name_house") return "Participant Name House Name";
   if (field.type === "place") return "First";
   if (field.type === "place_grade") return "First with A Grade";
   if (field.type === "place_grade_short") return "First & A";
@@ -122,6 +138,7 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "competition_en") return "Sub Junior Boys Essay";
   if (field.type === "grade_text") return "A";
   if (field.type === "custom_text") return field.text || "Custom Text";
+  if (field.type === "paragraph") return field.text || "Type a sentence…";
   return field.gradeValue ?? "✓"; // grade_tick
 }
 
@@ -215,7 +232,109 @@ function FieldChip({
     e.currentTarget.releasePointerCapture(e.pointerId);
   };
 
+  // Paragraph box width — it's centered on x_mm, so the right edge moves
+  // half as far as the width changes; doubling dx keeps it under the cursor.
+  const widthRef = useRef<{ startX: number; w0: number } | null>(null);
+  const onWidthPointerDown = (e: RPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    widthRef.current = { startX: e.clientX, w0: field.width_mm ?? 150 };
+  };
+  const onWidthPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
+    if (!widthRef.current) return;
+    const dxMm = (e.clientX - widthRef.current.startX) / pxPerMm;
+    onChange({ width_mm: Math.max(20, Math.round(widthRef.current.w0 + 2 * dxMm)) });
+  };
+  const onWidthPointerUp = (e: RPointerEvent<HTMLDivElement>) => {
+    widthRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
   const outline = selected ? "1.5px dashed #6B46FF" : "1px dashed rgba(107,70,255,0.25)";
+  // Print size at this canvas's scale, so wrapping matches the printed PDF.
+  const fontSizePx = field.font_size_pt * MM_PER_PT * pxPerMm;
+
+  const selectionHandles = (
+    <>
+      <div
+        onPointerDown={onRotatePointerDown}
+        onPointerMove={onRotatePointerMove}
+        onPointerUp={onRotatePointerUp}
+        title="Drag to rotate — hold Shift to snap to 15°"
+        style={{
+          position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)",
+          width: 14, height: 14, borderRadius: "50%", background: "#6B46FF",
+          border: "2px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)", cursor: "grab", touchAction: "none",
+        }}
+      />
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        onPointerDown={(e) => e.stopPropagation()}
+        title="Delete field"
+        style={{
+          position: "absolute", top: -22, right: -22, width: 18, height: 18, borderRadius: "50%",
+          background: "#DC2626", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+          border: "none", cursor: "pointer",
+        }}
+      >
+        <Trash2 style={{ width: 10, height: 10 }} />
+      </button>
+    </>
+  );
+
+  if (field.type === "paragraph") {
+    const segments = paragraphSegments(fieldPreviewContent(field), (source) => fieldPreviewContent({ ...field, type: source }));
+    return (
+      <div style={{ position: "absolute", left: field.x_mm * pxPerMm, top: field.y_mm * pxPerMm }} onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={innerRef}
+          onPointerDown={onBodyPointerDown}
+          onPointerMove={onBodyPointerMove}
+          onPointerUp={onBodyPointerUp}
+          style={{
+            position: "relative",
+            width: (field.width_mm ?? 150) * pxPerMm,
+            whiteSpace: "pre-line",
+            overflowWrap: "break-word",
+            textAlign: field.text_align,
+            lineHeight: field.line_height ?? PARAGRAPH_DEFAULT_LINE_HEIGHT,
+            transform: `translate(-50%, -50%) rotate(${field.rotation_deg}deg)`,
+            fontSize: fontSizePx,
+            fontFamily: field.font_family,
+            color: field.color,
+            cursor: "grab",
+            userSelect: "none",
+            touchAction: "none",
+            outline,
+          }}
+        >
+          {segments.map((s, i) =>
+            s.data ? (
+              <span key={i} style={{ fontWeight: field.bold_data ? 700 : undefined, background: "rgba(13,148,136,0.14)", borderRadius: 2 }}>{s.text}</span>
+            ) : (
+              <span key={i}>{s.text}</span>
+            )
+          )}
+          {selected && (
+            <>
+              {selectionHandles}
+              <div
+                onPointerDown={onWidthPointerDown}
+                onPointerMove={onWidthPointerMove}
+                onPointerUp={onWidthPointerUp}
+                title="Drag to change how wide the sentence can run before it wraps"
+                style={{
+                  position: "absolute", top: "50%", right: -7, transform: "translateY(-50%)",
+                  width: 10, height: 26, borderRadius: 4, background: "#6B46FF",
+                  border: "2px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)", cursor: "ew-resize", touchAction: "none",
+                }}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (field.type === "image") {
     const w = (field.width_mm ?? 30) * pxPerMm;
@@ -280,7 +399,7 @@ function FieldChip({
           display: "inline-block",
           whiteSpace: "nowrap",
           transform: `translate(${tx}, -50%) rotate(${field.rotation_deg}deg)`,
-          fontSize: field.font_size_pt,
+          fontSize: fontSizePx,
           fontFamily: field.font_family,
           color: field.color,
           cursor: "grab",
@@ -292,33 +411,7 @@ function FieldChip({
         }}
       >
         {fieldPreviewContent(field)}
-        {selected && (
-          <>
-            <div
-              onPointerDown={onRotatePointerDown}
-              onPointerMove={onRotatePointerMove}
-              onPointerUp={onRotatePointerUp}
-              title="Drag to rotate — hold Shift to snap to 15°"
-              style={{
-                position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)",
-                width: 14, height: 14, borderRadius: "50%", background: "#6B46FF",
-                border: "2px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)", cursor: "grab", touchAction: "none",
-              }}
-            />
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              onPointerDown={(e) => e.stopPropagation()}
-              title="Delete field"
-              style={{
-                position: "absolute", top: -22, right: -22, width: 18, height: 18, borderRadius: "50%",
-                background: "#DC2626", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                border: "none", cursor: "pointer",
-              }}
-            >
-              <Trash2 style={{ width: 10, height: 10 }} />
-            </button>
-          </>
-        )}
+        {selected && selectionHandles}
       </div>
     </div>
   );
@@ -373,6 +466,7 @@ export default function CertificatesPage() {
   const [containerWidthPx, setContainerWidthPx] = useState(MAX_CANVAS_PX);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
   const sigFileInputRef = useRef<HTMLInputElement>(null);
+  const paragraphInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
@@ -460,6 +554,22 @@ export default function CertificatesPage() {
   function removeField(id: string) {
     setTemplate((t) => (t ? { ...t, fields: t.fields.filter((f) => f.id !== id) } : t));
     setSelectedFieldId((s) => (s === id ? null : s));
+  }
+
+  // Drops "{token}" in at the textarea's cursor (or replaces its selection),
+  // then puts the cursor right after it so the admin can keep typing.
+  function insertParagraphToken(field: CertificateField, token: string) {
+    const text = field.text ?? "";
+    const el = paragraphInputRef.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const insert = `{${token}}`;
+    updateField(field.id, { text: text.slice(0, start) + insert + text.slice(end) });
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(start + insert.length, start + insert.length);
+    });
   }
 
   function addField(type: CertificateFieldType) {
@@ -805,6 +915,49 @@ export default function CertificatesPage() {
                         />
                       </div>
                     )}
+                    {selectedField.type === "paragraph" && (
+                      <>
+                        <div>
+                          <label className="mb-0.5 block text-[10px] font-medium text-neutral-500">Sentence</label>
+                          <textarea
+                            ref={paragraphInputRef}
+                            className="input w-full"
+                            rows={5}
+                            value={selectedField.text ?? ""}
+                            onChange={(e) => updateField(selectedField.id, { text: e.target.value })}
+                          />
+                          <p className="mb-1 mt-1.5 text-[10px] font-medium text-neutral-500">Tap to insert data at the cursor:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {PARAGRAPH_TOKENS.map((t) => (
+                              <button
+                                key={t.token}
+                                onClick={() => insertParagraphToken(selectedField, t.token)}
+                                className="rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 hover:bg-teal-100"
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-1.5 text-[10px] leading-snug text-neutral-400">
+                            Each certificate fills these in and wraps the sentence to fit the box. Use &quot;Place with Grade&quot; to get &quot;First with A Grade&quot;, or just &quot;A Grade&quot; when someone has no place.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-0.5 block text-[10px] font-medium text-neutral-500">Box width (mm)</label>
+                            <input type="number" className="input w-full" min={20} value={selectedField.width_mm ?? 150} onChange={(e) => updateField(selectedField.id, { width_mm: Number(e.target.value) })} />
+                          </div>
+                          <div>
+                            <label className="mb-0.5 block text-[10px] font-medium text-neutral-500">Line spacing</label>
+                            <input type="number" className="input w-full" min={1} max={3} step={0.1} value={selectedField.line_height ?? PARAGRAPH_DEFAULT_LINE_HEIGHT} onChange={(e) => updateField(selectedField.id, { line_height: Number(e.target.value) })} />
+                          </div>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs font-semibold text-neutral-700">
+                          <input type="checkbox" checked={!!selectedField.bold_data} onChange={(e) => updateField(selectedField.id, { bold_data: e.target.checked })} />
+                          Make the data bold
+                        </label>
+                      </>
+                    )}
                     <div>
                       <label className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-neutral-500"><Type className="h-3 w-3" /> Font</label>
                       <select
@@ -854,7 +1007,12 @@ export default function CertificatesPage() {
                     <div>
                       <label className="mb-0.5 block text-[10px] font-medium text-neutral-500">Align</label>
                       <div className="flex gap-1">
-                        {([{ v: "left", Icon: AlignLeft }, { v: "center", Icon: AlignCenter }, { v: "right", Icon: AlignRight }] as const).map(({ v, Icon }) => (
+                        {[
+                          { v: "left" as const, Icon: AlignLeft },
+                          { v: "center" as const, Icon: AlignCenter },
+                          { v: "right" as const, Icon: AlignRight },
+                          ...(selectedField.type === "paragraph" ? [{ v: "justify" as const, Icon: AlignJustify }] : []),
+                        ].map(({ v, Icon }) => (
                           <button
                             key={v}
                             onClick={() => updateField(selectedField.id, { text_align: v })}

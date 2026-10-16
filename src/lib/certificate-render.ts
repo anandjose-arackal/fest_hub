@@ -1,11 +1,73 @@
 import { PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
-import type { CertificateField, CertificateRosterRow, CertificateTemplate } from "@/types";
+import type { CertificateField, CertificateFieldType, CertificateRosterRow, CertificateTemplate } from "@/types";
 
 // Shared by the /admin/certificates designer canvas and the printed output
 // (both here and any other print entry point, e.g. the per-competition
 // button on /admin/results) so the two stay pixel-for-pixel WYSIWYG.
 export function alignTx(align: CertificateField["text_align"]): string {
   return align === "left" ? "0%" : align === "right" ? "-100%" : "-50%";
+}
+
+// font_size_pt is a print size — 1pt = 25.4/72 mm. Every renderer that
+// works in px (designer canvas, PDF rasterizer) scales through this so a
+// "paragraph" field wraps at the same words everywhere.
+export const MM_PER_PT = 25.4 / 72;
+
+export const PARAGRAPH_DEFAULT_LINE_HEIGHT = 1.4;
+
+// The {placeholders} a "paragraph" field's text can carry. Each one renders
+// exactly like the standalone field of the same source type, so wording
+// ("First with A Grade", Title Casing, …) stays identical either way.
+export const PARAGRAPH_TOKENS: { token: string; label: string; source: CertificateFieldType }[] = [
+  { token: "name", label: "Name", source: "name" },
+  { token: "house", label: "House", source: "house_name" },
+  { token: "name_house", label: "Name + House", source: "name_house" },
+  { token: "shakha", label: "Shakha", source: "shakha" },
+  { token: "place", label: "Place", source: "place" },
+  { token: "grade", label: "Grade", source: "grade_text" },
+  { token: "place_grade", label: "Place with Grade", source: "place_grade" },
+  { token: "place_grade_short", label: "Place & Grade", source: "place_grade_short" },
+  { token: "competition", label: "Competition", source: "competition" },
+  { token: "competition_en", label: "Competition (EN)", source: "competition_en" },
+];
+
+export const PARAGRAPH_DEFAULT_TEXT =
+  "This certificate is proudly presented to {name} of {shakha} in recognition of securing {place_grade} in {competition}.";
+
+export interface ParagraphSegment {
+  text: string;
+  /** True for a filled-in {placeholder}, false for the admin's literal wording. */
+  data: boolean;
+}
+
+/** Splits a paragraph template into literal text and filled-in placeholders. Unknown {tokens} stay as typed, so a typo is visible on the canvas. */
+export function paragraphSegments(text: string, valueFor: (source: CertificateFieldType) => string): ParagraphSegment[] {
+  const segments: ParagraphSegment[] = [];
+  let last = 0;
+  for (const m of text.matchAll(/\{(\w+)\}/g)) {
+    const token = PARAGRAPH_TOKENS.find((t) => t.token === m[1]);
+    if (!token) continue;
+    if (m.index > last) segments.push({ text: text.slice(last, m.index), data: false });
+    segments.push({ text: valueFor(token.source), data: true });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) segments.push({ text: text.slice(last), data: false });
+  return segments;
+}
+
+/** Inline HTML for a paragraph's segments (escaped) — shared by the print HTML and the PDF rasterizer. */
+export function paragraphInnerHtml(field: CertificateField, segments: ParagraphSegment[]): string {
+  return segments
+    .map((s) => (s.data && field.bold_data ? `<span style="font-weight:700">${escHtml(s.text)}</span>` : escHtml(s.text)))
+    .join("");
+}
+
+// The wrapping box itself: centered on (x_mm, y_mm) like every other field,
+// width_mm wide, growing up and down as a longer name/competition adds a
+// line. pre-line keeps the admin's own line breaks but collapses the double
+// space an empty placeholder (e.g. no house name) would leave behind.
+export function paragraphBoxStyle(field: CertificateField): string {
+  return `width:${field.width_mm ?? 150}mm;white-space:pre-line;overflow-wrap:break-word;text-align:${field.text_align};line-height:${field.line_height ?? PARAGRAPH_DEFAULT_LINE_HEIGHT};transform:translate(-50%, -50%) rotate(${field.rotation_deg}deg);font-size:${field.font_size_pt}pt;color:${field.color};font-family:${field.font_family};`;
 }
 
 // Certificate-only wording — spelled out ("First"/"Second"/"Third") rather
@@ -70,8 +132,8 @@ function toTitleCase(s: string): string {
 export function fieldContentForRow(field: CertificateField, row: CertificateRosterRow): string {
   if (field.type === "name") return toTitleCase(row.name);
   if (field.type === "house_name") return toTitleCase(row.houseName);
-  // Combined convenience field — "Name (House)" when a house name is set, otherwise just the name.
-  if (field.type === "name_house") return row.houseName ? `${toTitleCase(row.name)} (${toTitleCase(row.houseName)})` : toTitleCase(row.name);
+  // Combined convenience field — "Name House" when a house name is set, otherwise just the name.
+  if (field.type === "name_house") return row.houseName ? `${toTitleCase(row.name)} ${toTitleCase(row.houseName)}` : toTitleCase(row.name);
   if (field.type === "place") return certificatePositionLabel(row.place);
   // Place and grade in one line — "First with A Grade" / "First & A". Either
   // part alone when the row only has one (an unplaced grade, or a place with
@@ -89,7 +151,12 @@ export function fieldContentForRow(field: CertificateField, row: CertificateRost
   if (field.type === "competition_en") return row.competitionLabelEn;
   if (field.type === "grade_text") return row.grade ?? "";
   if (field.type === "custom_text") return field.text ?? "";
+  if (field.type === "paragraph") return paragraphSegmentsForRow(field, row).map((s) => s.text).join("");
   return row.grade === field.gradeValue ? "✓" : ""; // grade_tick
+}
+
+export function paragraphSegmentsForRow(field: CertificateField, row: CertificateRosterRow): ParagraphSegment[] {
+  return paragraphSegments(field.text ?? "", (source) => fieldContentForRow({ ...field, type: source }, row));
 }
 
 function escHtml(s: string): string {
@@ -102,6 +169,11 @@ function renderFieldHtml(field: CertificateField, row: CertificateRosterRow): st
     const w = field.width_mm ?? 30;
     const h = field.height_mm ?? 30;
     return `<div style="position:absolute;left:${field.x_mm}mm;top:${field.y_mm}mm;"><img src="${field.image_url}" alt="" style="display:block;width:${w}mm;height:${h}mm;transform:translate(-50%,-50%) rotate(${field.rotation_deg}deg);" /></div>`;
+  }
+  if (field.type === "paragraph") {
+    const segments = paragraphSegmentsForRow(field, row);
+    if (!segments.some((s) => s.text.trim())) return "";
+    return `<div style="position:absolute;left:${field.x_mm}mm;top:${field.y_mm}mm;"><div style="${paragraphBoxStyle(field)}">${paragraphInnerHtml(field, segments)}</div></div>`;
   }
   const content = fieldContentForRow(field, row);
   if (!content) return "";

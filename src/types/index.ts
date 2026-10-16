@@ -259,7 +259,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "place_grade" | "place_grade_short" | "shakha" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text";
+export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "place_grade" | "place_grade_short" | "shakha" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text" | "paragraph";
 
 export interface CertificateField {
   id: string;
@@ -270,7 +270,8 @@ export interface CertificateField {
   rotation_deg: number;
   font_size_pt: number;
   color: string;
-  text_align: "left" | "center" | "right";
+  /** "justify" is only offered for "paragraph" fields. */
+  text_align: "left" | "center" | "right" | "justify";
   /** CSS font-family value actually applied, e.g. "'Dancing Script', cursive". */
   font_family: string;
   /** Google Fonts API family segment to load, e.g. "Dancing+Script:wght@700" — null for system fonts that need no fetch. */
@@ -279,10 +280,15 @@ export interface CertificateField {
   gradeValue?: "A" | "B" | "C";
   /** Only meaningful when type === "image" (e.g. an imported signature). */
   image_url?: string;
+  /** Image width, or for "paragraph" the width of the box the sentence wraps within. */
   width_mm?: number;
   height_mm?: number;
-  /** Only meaningful when type === "custom_text" — the literal text an admin typed, same on every printed certificate (unlike name/shakha/etc., which come from the roster row). */
+  /** "custom_text": the literal text an admin typed, same on every printed certificate (unlike name/shakha/etc., which come from the roster row). "paragraph": a sentence with {placeholders} filled in per row — see PARAGRAPH_TOKENS. */
   text?: string;
+  /** Only meaningful when type === "paragraph" — unitless CSS line-height. */
+  line_height?: number;
+  /** Only meaningful when type === "paragraph" — prints the filled-in {placeholders} in bold. */
+  bold_data?: boolean;
 }
 
 export interface CertificateTemplate {

@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import { toJpeg } from "html-to-image";
-import { alignTx, fieldContentForRow } from "./certificate-render";
+import { alignTx, fieldContentForRow, MM_PER_PT, paragraphBoxStyle, paragraphInnerHtml, paragraphSegmentsForRow } from "./certificate-render";
 import type { CertificateField, CertificateRosterRow, CertificateTemplate } from "@/types";
 
 // Direct PDF generation, bypassing window.print()/the OS print dialog
@@ -42,13 +42,27 @@ function renderFieldNode(field: CertificateField, row: CertificateRosterRow, pxP
     return anchor;
   }
 
+  if (field.type === "paragraph") {
+    const segments = paragraphSegmentsForRow(field, row);
+    if (!segments.some((s) => s.text.trim())) return null;
+    const box = document.createElement("div");
+    box.style.cssText = paragraphBoxStyle(field);
+    // Same box as the print HTML, re-expressed in this render's px so the
+    // sentence wraps at the same words.
+    box.style.width = `${(field.width_mm ?? 150) * pxPerMm}px`;
+    box.style.fontSize = `${field.font_size_pt * MM_PER_PT * pxPerMm}px`;
+    box.innerHTML = paragraphInnerHtml(field, segments); // every segment is escaped
+    anchor.appendChild(box);
+    return anchor;
+  }
+
   const content = fieldContentForRow(field, row);
   if (!content) return null;
   const inner = document.createElement("div");
   inner.style.display = "inline-block";
   inner.style.whiteSpace = "nowrap";
   inner.style.transform = `translate(${alignTx(field.text_align)}, -50%) rotate(${field.rotation_deg}deg)`;
-  inner.style.fontSize = `${field.font_size_pt * (pxPerMm * 25.4 / 72)}px`; // pt -> px at this render's effective DPI
+  inner.style.fontSize = `${field.font_size_pt * MM_PER_PT * pxPerMm}px`; // pt -> px at this render's effective DPI
   inner.style.color = field.color;
   inner.style.fontFamily = field.font_family;
   inner.textContent = content;
@@ -78,7 +92,10 @@ function renderFieldNode(field: CertificateField, row: CertificateRosterRow, pxP
 // just picked has finished downloading, and again silently falls back.
 async function ensureFontsLoaded(fields: CertificateField[]): Promise<void> {
   const families = [...new Set(fields.map((f) => f.font_family))];
-  await Promise.all(families.map((family) => document.fonts.load(`16px ${family}`).catch(() => undefined)));
+  // Bold too — a paragraph field's bold placeholders use the 700 face.
+  await Promise.all(
+    families.flatMap((family) => [`16px ${family}`, `700 16px ${family}`]).map((font) => document.fonts.load(font).catch(() => undefined))
+  );
   await document.fonts.ready;
 }
 

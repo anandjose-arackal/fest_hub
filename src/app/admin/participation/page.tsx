@@ -11,7 +11,7 @@ import { getScoreHeadings } from "@/lib/scoresheet-headings";
 import { getCompetitionSubject } from "@/lib/competition-subjects";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { useOrgHierarchy } from "@/hooks/use-feast";
-import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
+import { EMPTY_HIERARCHY_FILTER, filterShakhaIds, HierarchyFilter, type HierarchyFilterValue } from "@/components/admin/hierarchy-picker";
 import type { Competition, CompetitionCategory, Feast, FeastCompetition } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
@@ -100,7 +100,7 @@ export default function ParticipationPage() {
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [compId, setCompId] = useState("");
   const hierarchy = useOrgHierarchy();
-  const [shakhaFilter, setShakhaFilter] = useState("");
+  const [hierFilter, setHierFilter] = useState<HierarchyFilterValue>(EMPTY_HIERARCHY_FILTER);
   const [search, setSearch] = useState("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -196,11 +196,12 @@ export default function ParticipationPage() {
 
   const filtered = useMemo(() => {
     let rows = entries;
-    if (shakhaFilter) rows = rows.filter((r) => r.shakhaId === shakhaFilter);
+    const shakhaIds = filterShakhaIds(hierFilter, hierarchy);
+    if (shakhaIds) rows = rows.filter((r) => !!r.shakhaId && shakhaIds.has(r.shakhaId));
     const q = search.trim().toLowerCase();
     if (q) rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.regNo.toLowerCase().includes(q));
     return rows;
-  }, [entries, shakhaFilter, search]);
+  }, [entries, hierFilter, hierarchy, search]);
 
   const markedCount = entries.filter((e) => e.participated).length;
 
@@ -408,7 +409,7 @@ export default function ParticipationPage() {
             </option>
           ))}
         </select>
-        <HierarchyPicker value={shakhaFilter} onChange={setShakhaFilter} hierarchy={hierarchy} className="input max-w-xs" emptyLabel="All Shakhas" />
+        <HierarchyFilter value={hierFilter} onChange={setHierFilter} hierarchy={hierarchy} className="input max-w-xs" />
         <input className="input max-w-xs" placeholder="Search name or reg no…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
