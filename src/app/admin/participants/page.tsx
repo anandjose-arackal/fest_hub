@@ -286,9 +286,10 @@ function buildRegistrationCardsHtml(
 
 // Printed size budget for a reg number on the 8-up A4 sheet. A card's inner
 // box is ~88mm × ~60mm (190mm printable width, 2 columns, 4mm gap, 2mm
-// padding); the number gets ~80% of that width, and its height leaves
+// padding); the number gets ~95% of that width — a 5-char "F1235" fills
+// the card with ~4mm to spare at each border — and its height leaves
 // 5.5mm clear top and bottom for the 6pt name strip.
-const REGNO_MAX_W_MM = 70;
+const REGNO_MAX_W_MM = 84;
 const REGNO_MAX_H_MM = 44;
 
 // Runs in the print window before its print() fires: measures each reg
