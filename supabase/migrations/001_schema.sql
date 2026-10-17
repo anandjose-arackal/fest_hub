@@ -216,7 +216,7 @@ end $$;
 -- ── competition_categories ──────────────────────────────────────────────
 -- Single source of truth for age-category DOB cutoffs (Decision #3): the
 -- app reads these thresholds from this table instead of duplicating them
--- in TS. 1988-01-01 is the senior/super_senior boundary used here.
+-- in TS. 1986-01-01 is the super_senior/elder boundary (Elder = born before 1986).
 create table if not exists competition_categories (
   id         uuid primary key default gen_random_uuid(),
   slug       text not null unique,
@@ -231,8 +231,8 @@ insert into competition_categories (slug, name, min_dob, max_dob, sort_order) va
   ('sub_junior',   'Sub Junior',   '2014-01-01', null,         1),
   ('junior',       'Junior',       '2011-01-01', '2013-12-31', 2),
   ('senior',       'Senior',       '2007-01-01', '2010-12-31', 3),
-  ('super_senior', 'Super Senior', '1988-01-01', '2006-12-31', 4),
-  ('elder',        'Elder',        null,         '1987-12-31', 5)
+  ('super_senior', 'Super Senior', '1986-01-01', '2006-12-31', 4),
+  ('elder',        'Elder',        null,         '1985-12-31', 5)
 on conflict (slug) do nothing;
 
 -- ── competitions ─────────────────────────────────────────────────────────

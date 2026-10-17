@@ -49,8 +49,11 @@ async function main() {
 
   // jiti lets plain Node import the TypeScript actions and resolve the "@/..." alias.
   // "next/cache" is stubbed: revalidateTag() only works inside a Next request.
+  // "@/lib/require-role" is stubbed too: it reads the signed-in admin's cookie,
+  // which a script doesn't have (see require-role-stub.mjs).
   const jiti = createJiti(import.meta.url, {
     alias: {
+      "@/lib/require-role": fileURLToPath(new URL("./require-role-stub.mjs", import.meta.url)),
       "@": fileURLToPath(new URL("../src", import.meta.url)),
       "next/cache": fileURLToPath(new URL("./next-cache-stub.mjs", import.meta.url)),
     },

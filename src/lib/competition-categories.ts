@@ -30,8 +30,8 @@ const FALLBACK_CATEGORIES: CompetitionCategory[] = [
   { id: "sub_junior", slug: "sub_junior", name: "Sub Junior", min_dob: "2014-01-01", max_dob: null, sort_order: 1, created_at: "" },
   { id: "junior", slug: "junior", name: "Junior", min_dob: "2011-01-01", max_dob: "2013-12-31", sort_order: 2, created_at: "" },
   { id: "senior", slug: "senior", name: "Senior", min_dob: "2007-01-01", max_dob: "2010-12-31", sort_order: 3, created_at: "" },
-  { id: "super_senior", slug: "super_senior", name: "Super Senior", min_dob: "1988-01-01", max_dob: "2006-12-31", sort_order: 4, created_at: "" },
-  { id: "elder", slug: "elder", name: "Elder", min_dob: null, max_dob: "1987-12-31", sort_order: 5, created_at: "" },
+  { id: "super_senior", slug: "super_senior", name: "Super Senior", min_dob: "1986-01-01", max_dob: "2006-12-31", sort_order: 4, created_at: "" },
+  { id: "elder", slug: "elder", name: "Elder", min_dob: null, max_dob: "1985-12-31", sort_order: 5, created_at: "" },
 ];
 
 let cached: Promise<CompetitionCategory[]> | null = null;
