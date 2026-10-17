@@ -58,7 +58,8 @@ export function paragraphSegments(text: string, valueFor: (source: CertificateFi
 /** Inline HTML for a paragraph's segments (escaped) — shared by the print HTML and the PDF rasterizer. */
 export function paragraphInnerHtml(field: CertificateField, segments: ParagraphSegment[]): string {
   return segments
-    .map((s) => (s.data && field.bold_data ? `<span style="font-weight:700">${escHtml(s.text)}</span>` : escHtml(s.text)))
+    // font-family:inherit — the print HTML's `* { font-family: Arial }` reset would otherwise hit this span directly.
+    .map((s) => (s.data && field.bold_data ? `<span style="font-weight:700;font-family:inherit">${escHtml(s.text)}</span>` : escHtml(s.text)))
     .join("");
 }
 
