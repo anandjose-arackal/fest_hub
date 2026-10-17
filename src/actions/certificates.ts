@@ -117,7 +117,7 @@ async function buildRosterRows(
       admin
         .from("competition_results")
         .select(
-          "id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name)))"
+          "id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))"
         )
         .in("feast_competition_id", ids)
         .not("published_at", "is", null)
@@ -128,7 +128,7 @@ async function buildRosterRows(
       admin
         .from("team_results")
         .select(
-          "id, feast_competition_id, grade, position, team_registration:team_registrations(shakha:shakhas(name), team_registration_members(participant:participants(name, house_name)))"
+          "id, feast_competition_id, grade, position, team_registration:team_registrations(shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name, house_name)))"
         )
         .in("feast_competition_id", ids)
         .not("published_at", "is", null)
@@ -143,12 +143,14 @@ async function buildRosterRows(
     const partReg = Array.isArray(r.participant_registration) ? r.participant_registration[0] : r.participant_registration;
     const participant = Array.isArray(partReg?.participant) ? partReg?.participant[0] : partReg?.participant;
     const shakha = Array.isArray(participant?.shakha) ? participant?.shakha[0] : participant?.shakha;
+    const meghala = Array.isArray(shakha?.meghala) ? shakha?.meghala[0] : shakha?.meghala;
     if (!participant) continue;
     const compInfo = compInfoByFc.get(r.feast_competition_id);
     rows.push({
       name: participant.name,
       houseName: participant.house_name ?? "",
       shakhaName: shakha?.name ?? "—",
+      meghalaName: meghala?.name ?? "",
       competitionName: compInfo?.name ?? "Competition",
       competitionLabel: compInfo?.label ?? "Competition",
       competitionNameEn: compInfo?.nameEn ?? "Competition",
@@ -162,6 +164,7 @@ async function buildRosterRows(
   for (const r of team.data) {
     const teamReg = Array.isArray(r.team_registration) ? r.team_registration[0] : r.team_registration;
     const shakha = Array.isArray(teamReg?.shakha) ? teamReg?.shakha[0] : teamReg?.shakha;
+    const meghala = Array.isArray(shakha?.meghala) ? shakha?.meghala[0] : shakha?.meghala;
     const members = teamReg?.team_registration_members ?? [];
     const compInfo = compInfoByFc.get(r.feast_competition_id);
     for (const m of members) {
@@ -171,6 +174,7 @@ async function buildRosterRows(
         name: participant.name,
         houseName: participant.house_name ?? "",
         shakhaName: shakha?.name ?? "—",
+        meghalaName: meghala?.name ?? "",
         competitionName: compInfo?.name ?? "Competition",
         competitionLabel: compInfo?.label ?? "Competition",
         competitionNameEn: compInfo?.nameEn ?? "Competition",

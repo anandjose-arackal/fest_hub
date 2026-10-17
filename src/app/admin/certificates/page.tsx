@@ -13,6 +13,7 @@ import {
 } from "@/lib/certificate-render";
 import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
 import { markItemsPrinted } from "@/actions/handover";
+import { useOrgHierarchy } from "@/hooks/use-feast";
 import type { CertificateField, CertificateFieldType, CertificateRosterRow, CertificateTemplate, Feast } from "@/types";
 
 const A4 = { w: 210, h: 297 };
@@ -27,6 +28,8 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   place_grade: "Place with Grade",
   place_grade_short: "Place & Grade",
   shakha: "Shakha",
+  meghala: "Meghala",
+  shakha_meghala: "Shakha - Meghala",
   competition: "Competition Name",
   competition_en: "Competition Name (English)",
   grade_text: "Grade",
@@ -47,6 +50,8 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "place_grade", label: "Place with Grade", emoji: "🏅", color: "#B45309" },
   { type: "place_grade_short", label: "Place & Grade", emoji: "🎖️", color: "#C2410C" },
   { type: "shakha", label: "Shakha", emoji: "🏫", color: "#0D9488" },
+  { type: "meghala", label: "Meghala", emoji: "🗺️", color: "#0F766E" },
+  { type: "shakha_meghala", label: "Shakha - Meghala", emoji: "📍", color: "#115E59" },
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
   { type: "competition_en", label: "Competition (EN)", emoji: "🌐", color: "#9333EA" },
   { type: "grade_text", label: "Grade", emoji: "🔤", color: "#16A34A" },
@@ -134,6 +139,8 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "place_grade") return "First with A Grade";
   if (field.type === "place_grade_short") return "First & A";
   if (field.type === "shakha") return "Shakha";
+  if (field.type === "meghala") return "Meghala";
+  if (field.type === "shakha_meghala") return "Shakha - Meghala";
   if (field.type === "competition") return "Sub Junior Boys Elocution";
   if (field.type === "competition_en") return "Sub Junior Boys Essay";
   if (field.type === "grade_text") return "A";
@@ -435,6 +442,10 @@ function StepCard({ step, emoji, title, children }: { step: number; emoji: strin
 
 export default function CertificatesPage() {
   const [feasts, setFeasts] = useState<Feast[]>([]);
+  // Meghala is only offered to orgs that actually have that tier — at the
+  // default 'shakha' level every certificate's meghala would print blank.
+  const { hierarchyLevel } = useOrgHierarchy();
+  const hasMeghala = hierarchyLevel !== "shakha";
   const [feastId, setFeastId] = useState("");
   const [template, setTemplate] = useState<CertificateTemplate | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
@@ -827,7 +838,7 @@ export default function CertificatesPage() {
 
       <StepCard step={3} emoji="🏷️" title="Add fields — drag them onto your certificate">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9">
-          {FIELD_TOOLBAR.map((f) => (
+          {FIELD_TOOLBAR.filter((f) => (f.type !== "meghala" && f.type !== "shakha_meghala") || hasMeghala).map((f) => (
             <button
               key={f.type}
               onClick={() => addField(f.type)}
@@ -928,7 +939,7 @@ export default function CertificatesPage() {
                           />
                           <p className="mb-1 mt-1.5 text-[10px] font-medium text-neutral-500">Tap to insert data at the cursor:</p>
                           <div className="flex flex-wrap gap-1">
-                            {PARAGRAPH_TOKENS.map((t) => (
+                            {PARAGRAPH_TOKENS.filter((t) => (t.token !== "meghala" && t.token !== "shakha_meghala") || hasMeghala).map((t) => (
                               <button
                                 key={t.token}
                                 onClick={() => insertParagraphToken(selectedField, t.token)}

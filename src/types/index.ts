@@ -259,7 +259,7 @@ export interface OrgSettings {
   updated_at: string;
 }
 
-export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "place_grade" | "place_grade_short" | "shakha" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text" | "paragraph";
+export type CertificateFieldType = "name" | "house_name" | "name_house" | "place" | "place_grade" | "place_grade_short" | "shakha" | "meghala" | "shakha_meghala" | "grade_text" | "grade_tick" | "competition" | "competition_en" | "image" | "custom_text" | "paragraph";
 
 export interface CertificateField {
   id: string;
@@ -306,6 +306,8 @@ export interface CertificateRosterRow {
   /** Empty string when the participant has no house name set — the field simply doesn't render on that certificate. */
   houseName: string;
   shakhaName: string;
+  /** The shakha's meghala — empty when the org has no Meghala tier or the shakha isn't placed in one; the field then doesn't render. */
+  meghalaName: string;
   competitionName: string;
   /** competitionName prefixed with age category + gender, e.g. "Sub Junior Boys Elocution" — gender omitted when "common". */
   competitionLabel: string;
