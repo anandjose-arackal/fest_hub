@@ -13,6 +13,7 @@
 // report and replied "approved". Exit 2 = blocking errors (no SQL written).
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 
 // ── args ────────────────────────────────────────────────────────────────────
 const args = {};
@@ -70,6 +71,20 @@ const feast = ref.feast;
 if (input.feast && ![feast.id, feast.slug].includes(input.feast) && norm(input.feast) !== norm(feast.name)) {
   console.error(`Input is for feast "${input.feast}" but the reference dump is for "${feast.slug}". Re-run fetch-reference.mjs.`);
   process.exit(1);
+}
+// Optional "new_shakhas": [{ name, meghala }] — shakhas the sheet names that
+// don't exist yet. They get a deterministic uuid, are INSERTed by the SQL
+// (linked to the named meghala), and resolve like any other shakha below.
+const newShakhas = [];
+for (const ns of input.new_shakhas ?? []) {
+  if (ref.shakhas.some((x) => norm(x.name) === norm(ns.name))) continue;
+  const mg = (ref.meghalas ?? []).find((m) => norm(m.name) === norm(ns.meghala));
+  if (!mg) { console.error(`new_shakhas: unknown meghala "${ns.meghala}" for "${ns.name}"`); process.exit(1); }
+  const h = crypto.createHash("md5").update("shakha:" + norm(ns.name)).digest("hex");
+  const id = `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
+  const row = { id, name: ns.name.trim(), meghala_id: mg.id };
+  ref.shakhas.push(row);
+  newShakhas.push(row);
 }
 const categorySlugs = new Map();
 for (const c of ref.categories) { categorySlugs.set(norm(c.slug), c.slug); categorySlugs.set(norm(c.name), c.slug); categorySlugs.set(norm(c.slug.replace(/_/g, " ")), c.slug); }
@@ -235,7 +250,7 @@ function parseScore(src, row) {
     add(errors, `Score "${src.score}"${src.score_max != null ? ` / ${src.score_max}` : ""} is not a number between 0 and the max`, row);
     return null;
   }
-  return Math.round((s / max) * 10000) / 100;
+  return (s / max) * 100; // full precision so raw marks round-trip exactly
 }
 function parsePosition(raw) {
   if (raw == null || raw === "") return null;
@@ -281,7 +296,7 @@ function collectPerson(src, row, fallback = {}) {
       else dob = given;
     }
   }
-  const p = { row, name, house_name: String(src.house_name ?? "").trim().replace(/\s+/g, " ") || null, category, gender, shakha, phone: src.phone ? String(src.phone).trim() : null, dob };
+  const p = { row, name, house_name: String(src.house_name ?? "").trim().replace(/\s+/g, " ") || null, category, gender, shakha, phone: src.phone ? String(src.phone).trim() : null, dob, reg: src.registration_number ? String(src.registration_number).trim() : null };
   p.key = personKeyOf(p);
   if (!parent.has(p.key)) parent.set(p.key, p.key);
   rawPeople.push(p);
@@ -300,7 +315,7 @@ entries.forEach((e, i) => {
   const absent = !!e.absent;
   const grade = parseGrade(e.grade);
   if (e.grade != null && e.grade !== "" && !grade) add(warnings, `Unrecognised grade "${e.grade}" treated as no grade`, row);
-  indiv.push({ person: p, fc, row, participated: isResults ? !absent : !!e.participated, scored: isResults && !absent, grade, position: parsePosition(e.position), score: parseScore(e, row) });
+  indiv.push({ person: p, fc, row, participated: isResults && !e.no_score ? !absent : !!e.participated, scored: isResults && !absent && !e.no_score, grade, position: parsePosition(e.position), score: parseScore(e, row) });
 });
 
 const teams = []; // {fc, shakha, team_name, participated, grade, position, row, members: person[]}
@@ -331,8 +346,8 @@ teamsIn.forEach((t, i) => {
   teams.push({
     fc, shakha, row, members,
     team_name: String(t.team_name ?? "").trim() || shakha.name,
-    participated: isResults ? !absent : !!t.participated,
-    scored: isResults && !absent,
+    participated: isResults && !t.no_score ? !absent : !!t.participated,
+    scored: isResults && !absent && !t.no_score,
     grade: parseGrade(t.grade),
     position: parsePosition(t.position),
     score: parseScore(t, row),
@@ -360,6 +375,8 @@ for (const p of rawPeople) {
     if (p.category !== c.category) add(warnings, `Merged rows for "${c.name}" disagree on category (${c.category} vs ${p.category}) — kept ${c.category}`, p.row);
     if (!c.gender && p.gender) c.gender = p.gender;
     if (!c.phone && p.phone) c.phone = p.phone;
+    if (!c.reg && p.reg) c.reg = p.reg;
+    else if (c.reg && p.reg && c.reg !== p.reg) add(warnings, `Merged rows for "${c.name}" carry different registration numbers (${c.reg} vs ${p.reg}) — kept ${c.reg}`, p.row);
     if (!c.house_name && p.house_name) c.house_name = p.house_name;
     if (!c.dob && p.dob && p.category === c.category) c.dob = p.dob;
     if (c.dob && p.dob && c.dob !== p.dob) add(warnings, `Merged rows for "${c.name}" disagree on DOB (${c.dob} vs ${p.dob}) — kept ${c.dob}`, p.row);
@@ -717,7 +734,7 @@ const valuesBlock = (rows) => rows.map((r, i) => `  ${r.sql}${i === rows.length 
 const describe = (u) => [u.position ? `pos ${u.position}` : null, u.grade ? `grade ${u.grade}` : u.scored ? "no grade" : null, u.score != null && u.scored ? `score ${u.score}%` : null, u.scored ? null : u.participated ? "participated" : "registration only"].filter(Boolean).join(", ");
 
 const personRows = plistFinal.map((p) => ({
-  sql: `(${ord.get(p.key)}, ${q(p.name)}, ${q(p.house_name)}, ${q(p.shakha.id)}, ${q(p.category)}, ${q(p.gender)}, ${q(p.phone)}, ${q(p.dob)}, ${p.existing ? q(p.existing.id) : "null"})`,
+  sql: `(${ord.get(p.key)}, ${q(p.name)}, ${q(p.house_name)}, ${q(p.shakha.id)}, ${q(p.category)}, ${q(p.gender)}, ${q(p.phone)}, ${q(p.dob)}, ${q(p.reg)}, ${p.existing ? q(p.existing.id) : "null"})`,
   comment: `${placeLabel(p.shakha)} · rows ${p.rows.join(", ")}${p.existing ? ` · reuse ${p.existing.registration_number}` : ""}`,
 }));
 const regRows = regList.map((r) => ({
@@ -762,6 +779,7 @@ create temp table _imp_person (
   gender         text,
   phone          text,
   dob            date,              -- real DOB from the sheet, when given; else null (placeholder computed below)
+  reg_number     text,              -- registration number from the sheet; null = generate 'F' || next_reg_number()
   participant_id uuid,              -- pre-set = reviewed/exact link to an existing participant
   is_new         boolean not null default false
 );
@@ -790,7 +808,7 @@ create temp table _imp_team_member (
   primary key (team_ord, person_ord)
 );
 ${personRows.length ? `
-insert into _imp_person (ord, name, house_name, shakha_id, category_slug, gender, phone, dob, participant_id) values
+insert into _imp_person (ord, name, house_name, shakha_id, category_slug, gender, phone, dob, reg_number, participant_id) values
 ${valuesBlock(personRows)}
 ` : ""}${regRows.length ? `
 insert into _imp_reg (person_ord, fc_id, participated, score_pct) values
@@ -802,7 +820,24 @@ ${valuesBlock(teamRows)}
 insert into _imp_team_member (team_ord, person_ord) values
 ${valuesBlock(memberRows)}
 ` : ""}
--- ── Guard: everything must belong to this feast / database ──────────────
+${newShakhas.length ? `-- ── New shakhas (linked to their meghala); reuse one that already exists by name ─
+insert into shakhas (id, name, slug, meghala_id)
+select v.id, v.name, v.slug, v.meghala_id from (values
+${newShakhas.map((n) => `  (${q(n.id)}::uuid, ${q(n.name)}, ${q(n.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))}, ${q(n.meghala_id)}::uuid)`).join(",\n")}
+) v(id, name, slug, meghala_id)
+where not exists (select 1 from shakhas s where lower(s.name) = lower(v.name) or s.slug = v.slug);
+
+-- If a shakha of that name already exists (added by hand), point the rows at it.
+update _imp_person i set shakha_id = s.id from (values
+${newShakhas.map((n) => `  (${q(n.id)}::uuid, ${q(n.name)})`).join(",\n")}
+) v(id, name), shakhas s
+where i.shakha_id = v.id and lower(s.name) = lower(v.name) and s.id <> v.id;
+update _imp_team t set shakha_id = s.id from (values
+${newShakhas.map((n) => `  (${q(n.id)}::uuid, ${q(n.name)})`).join(",\n")}
+) v(id, name), shakhas s
+where t.shakha_id = v.id and lower(s.name) = lower(v.name) and s.id <> v.id;
+
+` : ""}-- ── Guard: everything must belong to this feast / database ──────────────
 do $$
 declare v_bad text;
 begin
@@ -833,7 +868,12 @@ begin
   if v_bad is not null then raise exception 'Already published — unpublish in /admin/results first: %', v_bad; end if;
 end $$;
 
--- ── Publish needs a max_score; default to 100 where unset ───────────────
+${input.set_max_score ? `-- ── Keep the sheet's marks as-is: scores are stored out of ${Number(input.set_max_score)} ──────────
+update feast_competitions set max_score = ${Number(input.set_max_score)}
+where id in (select fc_id from _imp_reg where score_pct is not null
+             union select fc_id from _imp_team where score_pct is not null);
+
+` : ""}-- ── Publish needs a max_score; default to 100 where unset ───────────────
 update feast_competitions set max_score = 100
 where max_score is null
   and id in (select fc_id from _imp_reg where score_pct is not null
@@ -874,11 +914,17 @@ select
     end
   ),
   i.gender, cc.id, i.phone,
-  'F' || next_reg_number(${F})
+  coalesce(i.reg_number, 'F' || next_reg_number(${F}))
 from _imp_person i
 join competition_categories cc on cc.slug = i.category_slug
 where i.is_new
 order by i.ord;
+
+-- People reused from an existing registration take the sheet's number.
+update participants p set registration_number = i.reg_number, updated_at = now()
+from _imp_person i
+where i.participant_id = p.id and not i.is_new and i.reg_number is not null
+  and p.registration_number is distinct from i.reg_number;
 
 -- ── Individual registrations + draft scores ─────────────────────────────
 insert into participant_registrations (participant_id, feast_competition_id, participated)
