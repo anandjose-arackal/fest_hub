@@ -88,7 +88,7 @@ export function MananthavadyPoster({ org, competitionName, categoryLabel, winner
         <div style={{ width: 160, height: 160, borderRadius: "50%", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
           {org.logo_url && <img src={org.logo_url} alt="" crossOrigin="anonymous" style={{ width: "100%", height: "100%", objectFit: "contain" }} />}
         </div>
-        <p style={{ marginTop: 6, fontFamily: MANJARI, fontWeight: 700, fontSize: 57, lineHeight: 1.2, color: BLUE, whiteSpace: "nowrap" }}>{ORG_LINE}</p>
+        <p style={{ marginTop: 6, fontFamily: MANJARI, fontWeight: 700, fontSize: 57, lineHeight: 1.2, color: BLUE, whiteSpace: "nowrap", WebkitTextStroke: "2px currentColor" }}>{ORG_LINE}</p>
       </div>
 
       {/* Diocese + fest heading art, with gold rules either side of its "2026" */}
