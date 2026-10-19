@@ -11,8 +11,10 @@ import { formatCompetitionOptionLabel, genderDisplayWord } from "@/lib/competiti
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { feastPosterHeading } from "@/lib/feast-data";
 import { positionLabel } from "@/lib/result-calculator";
-import { ResultPoster, POSTER_WIDTH, POSTER_HEIGHT, POSTER_THEMES, posterGroupLabel, type PosterData, type PosterTheme, type PosterWinner } from "@/lib/poster-render";
+import { ResultPoster, posterSize, posterThemesFor, posterGroupLabel, type PosterData, type PosterTheme, type PosterWinner } from "@/lib/poster-render";
 import { PhotoCropper } from "@/components/feast/social-poster/photo-cropper";
+import { PHOTO_W, PHOTO_H } from "@/components/feast/social-poster/social-poster";
+import { isMananthavadyOrg } from "@/lib/poster-mananthavady";
 import { getCroppedImageDataUrl } from "@/components/feast/social-poster/crop-image";
 import { toPng } from "html-to-image";
 import type { Competition, CompetitionCategory, Feast, FeastCompetition, OrgSettings } from "@/types";
@@ -48,7 +50,7 @@ function PostersInner() {
   const [loaded, setLoaded] = useState<{ compId: string; rows: WinnerRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Record<string, string>>({});
-  const [theme, setTheme] = useState<PosterTheme>("maroon");
+  const [pickedTheme, setTheme] = useState<PosterTheme>("maroon");
   const [downloading, setDownloading] = useState(false);
   const [posterScale, setPosterScale] = useState(0.3);
   const posterRef = useRef<HTMLDivElement>(null);
@@ -88,6 +90,11 @@ function PostersInner() {
         setCompId((cur) => (cur && rows.some((c) => c.id === cur) ? cur : rows[0]?.id ?? ""));
       });
   }, [feastId]);
+
+  const themes = posterThemesFor(org);
+  // Mananthavady's theme picked, then the org's area changed — fall back to Classic.
+  const theme: PosterTheme = pickedTheme === "mananthavady" && !isMananthavadyOrg(org) ? "maroon" : pickedTheme;
+  const { width: posterW, height: posterH } = posterSize(theme);
 
   const selectedFc = feastComps.find((c) => c.id === compId);
   const isGroup = selectedFc?.competition.type === "group";
@@ -157,11 +164,11 @@ function PostersInner() {
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width;
-      if (w) setPosterScale(w / POSTER_WIDTH);
+      if (w) setPosterScale(w / posterW);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [hasPoster]);
+  }, [hasPoster, posterW]);
 
   function pickPhoto(resultId: string) {
     setPickingFor(resultId);
@@ -187,7 +194,7 @@ function PostersInner() {
     if (!cropTarget || !cropArea) return;
     setCropping(true);
     try {
-      const dataUrl = await getCroppedImageDataUrl(cropTarget.src, cropArea, rotation);
+      const dataUrl = await getCroppedImageDataUrl(cropTarget.src, cropArea, rotation, PHOTO_W / PHOTO_H);
       setPhotos((prev) => ({ ...prev, [cropTarget.resultId]: dataUrl }));
       closeCrop();
     } catch {
@@ -209,7 +216,7 @@ function PostersInner() {
     if (!posterRef.current || !posterData) return;
     setDownloading(true);
     try {
-      const dataUrl = await toPng(posterRef.current, { cacheBust: true, width: POSTER_WIDTH, height: POSTER_HEIGHT });
+      const dataUrl = await toPng(posterRef.current, { cacheBust: true, width: posterW, height: posterH });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `${posterData.competitionName.replace(/\s+/g, "_")}_result.png`;
@@ -355,7 +362,7 @@ function PostersInner() {
           {posterData && (
             <div className="rounded-2xl border border-neutral-200 bg-white p-4 lg:sticky lg:top-4">
               <div className="mb-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-2">
-                {POSTER_THEMES.map((th) => (
+                {themes.map((th) => (
                   <button
                     key={th.id}
                     onClick={() => setTheme(th.id)}
@@ -368,9 +375,9 @@ function PostersInner() {
               <div
                 ref={posterWrapRef}
                 className="mx-auto max-w-sm"
-                style={{ width: "100%", aspectRatio: `${POSTER_WIDTH} / ${POSTER_HEIGHT}`, overflow: "hidden", borderRadius: 16, border: "1px solid #eee", background: "#f4f4f5" }}
+                style={{ width: "100%", aspectRatio: `${posterW} / ${posterH}`, overflow: "hidden", borderRadius: 16, border: "1px solid #eee", background: "#f4f4f5" }}
               >
-                <div style={{ width: POSTER_WIDTH, height: POSTER_HEIGHT, transform: `scale(${posterScale})`, transformOrigin: "top left" }}>
+                <div style={{ width: posterW, height: posterH, transform: `scale(${posterScale})`, transformOrigin: "top left" }}>
                   <ResultPoster ref={posterRef} data={posterData} />
                 </div>
               </div>
