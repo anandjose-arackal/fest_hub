@@ -488,16 +488,28 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
 }
 
 // ── Stage board ────────────────────────────────────────────────────────
-function StageBoardScreen({ feastSlug }: { feastSlug: string }) {
+// The board fits a 2×4 grid; with more stages it pages through them, 8 at a
+// time, as screens of the stage section (the rotation advances the page).
+const STAGES_PER_PAGE = 8;
+
+function StageBoardScreen({ feastSlug, page, onPageCount }: { feastSlug: string; page: number; onPageCount: (n: number) => void }) {
   const { stages, loading, totalCount, completedCount } = useCompetitionStages(feastSlug, { alwaysPoll: true, intervalMs: REFRESH_MS });
   const [flipped, setFlipped] = useState(false);
   const [flipPaused, setFlipPaused] = useState(false);
+  const pageCount = Math.max(1, Math.ceil(stages.length / STAGES_PER_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+
+  useEffect(() => { onPageCount(pageCount); }, [pageCount, onPageCount]);
+
+  // Each page opens on the front face, then flips on the usual cadence.
+  const [shownPage, setShownPage] = useState(safePage);
+  if (shownPage !== safePage) { setShownPage(safePage); setFlipped(false); }
 
   useEffect(() => {
     if (flipPaused) return;
     const id = setInterval(() => setFlipped((f) => !f), FLIP_MS);
     return () => clearInterval(id);
-  }, [flipPaused]);
+  }, [flipPaused, safePage]);
 
   if (loading && stages.length === 0) return <Spinner />;
   if (stages.length === 0) return <EmptyState lead="No schedule" message="The stage schedule hasn't been published yet." />;
@@ -530,7 +542,7 @@ function StageBoardScreen({ feastSlug }: { feastSlug: string }) {
       </section>
 
       <main style={{ position: "absolute", top: 244, left: 56, right: 56, bottom: TICKER_H + 28, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gridTemplateRows: "repeat(4, minmax(0, 1fr))", gap: 16 }}>
-        {stages.slice(0, 8).map((stage) => <StageCard key={stage.key} stage={stage} flipped={flipped} />)}
+        {stages.slice(safePage * STAGES_PER_PAGE, (safePage + 1) * STAGES_PER_PAGE).map((stage) => <StageCard key={stage.key} stage={stage} flipped={flipped} />)}
       </main>
     </>
   );
@@ -597,6 +609,7 @@ function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boole
         {/* Back — every competition still upcoming on this stage */}
         <div style={{ ...face, transform: "rotateY(180deg)", flexDirection: "column", alignItems: "stretch", justifyContent: "center", gap: 10, padding: "16px 28px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span className={isLive ? "fp-medal fp-m-gold" : "fp-medal"} style={{ width: 40, height: 40, fontSize: 20, flex: "none", ...(isLive ? {} : { color: "var(--fp-sub)", border: "2px solid var(--fp-line-2)" }) }}>{stage.stageNumber}</span>
             <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
             <span className="fp-cap" style={{ marginLeft: "auto", fontSize: 13, color: "var(--fp-gold-ink)", flex: "none" }}>Up next · {upcoming.length}</span>
           </div>
@@ -1000,7 +1013,8 @@ function ScreenPageInner() {
 
   // A publish overrides pause: rotation holds while the takeover plays and
   // resumes from the new result afterwards.
-  const rotation = useDashboardRotation(sections, screenData.competitions.length, paused || takeover !== null, enabledSectionKeys, tiers.length);
+  const [stagePageCount, setStagePageCount] = useState(1);
+  const rotation = useDashboardRotation(sections, screenData.competitions.length, paused || takeover !== null, enabledSectionKeys, tiers.length, stagePageCount);
   const { activeSection, screenIdx, subIdx, isRankingsScreen, goToSection, goToScreen } = rotation;
 
   // Keyed on the plain slug string (or null), not the activeSection object —
@@ -1174,15 +1188,16 @@ function ScreenPageInner() {
   else if (activeComp) { eyebrow = "Results declared"; eyebrowTone = "gold"; titleLead = "Competition"; titleGold = "Results"; }
 
   // Every screen in the active section: the ranking tiers, then (in a fest)
-  // each published competition. The stage board is a single screen.
+  // each published competition. The stage board has one screen per page of stages.
   const compCount = screenData.competitions.length;
-  const screenCount = activeSection.kind === "stages" ? 1 : tiers.length + (activeSection.kind === "feast" ? compCount : 0);
+  const isStages = activeSection.kind === "stages";
+  const screenCount = isStages ? stagePageCount : tiers.length + (activeSection.kind === "feast" ? compCount : 0);
   const screenNav: ScreenNav | null = screenCount > 1 ? {
     index: screenIdx,
     count: screenCount,
-    label: activeComp ? "Result" : "Standings",
+    label: isStages ? "Page" : activeComp ? "Result" : "Standings",
     shown: activeComp ? screenIdx - tiers.length + 1 : screenIdx + 1,
-    of: activeComp ? compCount : tiers.length,
+    of: isStages ? stagePageCount : activeComp ? compCount : tiers.length,
     onPrev: () => goToScreen(Math.max(0, screenIdx - 1)),
     onNext: () => goToScreen(Math.min(screenCount - 1, screenIdx + 1)),
     onGo: goToScreen,
@@ -1234,7 +1249,7 @@ function ScreenPageInner() {
         {busy ? (
           <Spinner />
         ) : activeSection.kind === "stages" ? (
-          <StageBoardScreen feastSlug={activeSection.feastSlug} />
+          <StageBoardScreen feastSlug={activeSection.feastSlug} page={screenIdx} onPageCount={setStagePageCount} />
         ) : tier ? (
           <RankingsScreen rows={rankRows} tier={tier} tiers={tiers} onTier={(t) => goToScreen(tiers.indexOf(t))} caption={caption} meta={meta} />
         ) : activeComp ? (

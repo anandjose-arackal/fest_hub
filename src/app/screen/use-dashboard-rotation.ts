@@ -4,6 +4,7 @@ import { sectionKey, type DashboardSection } from "./dashboard-types";
 const ROTATE_MS = 15_000; // dwell time on a rankings/point-table screen
 export const SUB_MS = 8_000; // dwell time on each sub-position within a competition screen
 const SUB_COUNT = 3; // 1st/2nd/3rd or Grade A/B/C
+export const STAGE_PAGE_MS = 14_000; // dwell time on each stage-board page: one front + back card flip
 
 /**
  * Drives the big-screen's slide rotation across a two-level index:
@@ -11,6 +12,7 @@ const SUB_COUNT = 3; // 1st/2nd/3rd or Grade A/B/C
  *   screenIdx  — 0..rankingScreens-1 = rankings (Meghala then Shakha when the
  *                org has a meghala tier, otherwise just Shakha); in a feast
  *                section, rankingScreens..rankingScreens+N-1 = competition N
+ *                In the stage-board section, screenIdx is the page of stage cards.
  *   subIdx     — sub-position cycle (1st/2nd/3rd or Grade A/B/C)
  */
 export function useDashboardRotation(
@@ -18,7 +20,8 @@ export function useDashboardRotation(
   activeCompetitionCount: number,
   paused = false,
   enabledSectionKeys: Set<string> | null = null,
-  rankingScreens = 1
+  rankingScreens = 1,
+  stagePages = 1
 ) {
   const [sectionIdx, setSectionIdxRaw] = useState(0);
   const [screenIdx, setScreenIdxRaw] = useState(0);
@@ -28,10 +31,12 @@ export function useDashboardRotation(
 
   const safeSectionIdx = sections.length ? Math.min(sectionIdx, sections.length - 1) : 0;
   const activeSection: DashboardSection = sections[safeSectionIdx] ?? { kind: "overall" };
+  const isStages = activeSection.kind === "stages";
   const competitionCount = activeSection.kind === "feast" ? activeCompetitionCount : 0;
-  const lastScreenIdx = rankingScreens - 1 + competitionCount;
+  const lastScreenIdx = isStages ? Math.max(stagePages, 1) - 1 : rankingScreens - 1 + competitionCount;
   const safeScreenIdx = Math.min(screenIdx, lastScreenIdx);
-  const isRankingsScreen = safeScreenIdx < rankingScreens;
+  // Stage-board pages advance like ranking screens: no sub-position cycle.
+  const isRankingsScreen = isStages || safeScreenIdx < rankingScreens;
 
   const goToSection = (i: number) => {
     setSectionIdxRaw(i);
@@ -56,7 +61,7 @@ export function useDashboardRotation(
 
   useEffect(() => {
     if (sections.length === 0 || paused) return;
-    const delay = isRankingsScreen ? ROTATE_MS : SUB_MS;
+    const delay = isStages ? STAGE_PAGE_MS : isRankingsScreen ? ROTATE_MS : SUB_MS;
     const id = setTimeout(() => {
       if (isRankingsScreen) {
         if (safeScreenIdx < lastScreenIdx) {
@@ -80,7 +85,7 @@ export function useDashboardRotation(
     }, delay);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionsKey, safeSectionIdx, safeScreenIdx, subIdx, isRankingsScreen, lastScreenIdx, paused, enabledSectionKeys]);
+  }, [sectionsKey, safeSectionIdx, safeScreenIdx, subIdx, isRankingsScreen, isStages, lastScreenIdx, paused, enabledSectionKeys]);
 
   return { sectionIdx: safeSectionIdx, screenIdx: safeScreenIdx, subIdx, activeSection, isRankingsScreen, goToSection, goToScreen };
 }
