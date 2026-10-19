@@ -30,6 +30,11 @@ const MAROON = "#7A1220";
 const GOLD = "#B3832C";
 const INK = "#2B211B";
 
+// The heading reads as a diocese-level contest: "രൂപത" + the fest name, with
+// the English subtitle to match.
+const HEADING_PREFIX = "രൂപത";
+const SUBTITLE_PREFIX = "Diocesan";
+
 const RANK_LABEL: Record<1 | 2 | 3, string> = { 1: "First", 2: "Second", 3: "Third" };
 const RANK_MEDAL: Record<1 | 2 | 3, string> = { 1: "/poster/share/g_medal.png", 2: "/poster/share/s_medal.png", 3: "/poster/share/b_medal.png" };
 
@@ -121,7 +126,9 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
   const [orgLine1, orgLine2] = splitOrgName(org.org_name_local || org.org_name_en || "");
   const org1Size = useFitFontSize(orgLine1, 430, ANEK_CONDENSED, 800, 36, 72, "75%");
   const org2Size = useFitFontSize(orgLine2, 430, ANEK_CONDENSED, 800, 36, 72, "75%");
-  const feastSize = useFitFontSize(feastName, 820, NAYANA, 700, 40, 92);
+  const heading = `${HEADING_PREFIX} ${feastName}`;
+  const subtitle = feastSubtitle ? `${SUBTITLE_PREFIX} ${feastSubtitle}` : null;
+  const feastSize = useFitFontSize(heading, 820, NAYANA, 700, 40, 92);
   const categoryText = categoryLabel.replace(/\s*·\s*/g, " ");
   const categorySize = useFitFontSize(categoryText, 300, SERIF, 700, 26, 44);
   const compSize = useFitFontSize(competitionName, 300, SERIF, 700, 30, 86);
@@ -148,9 +155,9 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
 
         {/* Feast heading under bg_main's divider */}
         <div style={{ position: "absolute", top: 272, left: 0, width: ART_W, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", whiteSpace: "nowrap" }}>
-          <span style={{ fontFamily: NAYANA, fontWeight: 700, fontSize: feastSize, lineHeight: 1.1, color: MAROON }}>{feastName}</span>
-          {feastSubtitle && (
-            <span style={{ marginTop: 2, fontFamily: "var(--font-manrope), sans-serif", fontWeight: 600, fontSize: 21, letterSpacing: 5, color: INK }}>{feastSubtitle.toUpperCase()}</span>
+          <span style={{ fontFamily: NAYANA, fontWeight: 700, fontSize: feastSize, lineHeight: 1.1, color: MAROON }}>{heading}</span>
+          {subtitle && (
+            <span style={{ marginTop: 2, fontFamily: "var(--font-manrope), sans-serif", fontWeight: 600, fontSize: 21, letterSpacing: 5, color: INK }}>{subtitle.toUpperCase()}</span>
           )}
         </div>
 
