@@ -12,12 +12,15 @@ import { ScaledPosterPreview } from "./scaled-poster-preview";
 
 export interface SocialPosterWinner {
   rank: 1 | 2 | 3;
+  grade: "A" | "B" | "C" | null;
   winnerName: string;
   houseName: string | null;
   shakhaName: string;
+  meghalaName: string | null;
   competitionName: string;
   categoryLabel: string;
   feastName: string;
+  feastSubtitle: string | null;
 }
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -113,12 +116,14 @@ export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterW
                 <SocialPoster
                   org={org}
                   rank={winner.rank}
+                  grade={winner.grade}
                   winnerName={winner.winnerName}
-                  houseName={winner.houseName}
                   shakhaName={winner.shakhaName}
+                  meghalaName={winner.meghalaName}
                   competitionName={winner.competitionName}
                   categoryLabel={winner.categoryLabel}
                   feastName={winner.feastName}
+                  feastSubtitle={winner.feastSubtitle}
                   photoSrc={gen.photoSrc}
                 />
               </ScaledPosterPreview>

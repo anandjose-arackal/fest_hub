@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Award, Clock, Trophy } from "lucide-react";
 import { getLatestResult, type LatestResult } from "@/actions/results";
-import { feastPosterHeading } from "@/lib/feast-data";
+import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { catStyle, mix, theme } from "./feast-shared";
 import { AWARD, AwardCard, competitionCategoryLabel, mapResultRow, sortResults, timeAgo } from "./feast-shared-results";
 import { isMedalPos } from "./feast-ui";
@@ -58,12 +58,15 @@ export function LatestResultWidget() {
           onPoster={(row) =>
             setPoster({
               rank: row.position as 1 | 2 | 3,
+              grade: row.grade,
               winnerName: row.name,
               houseName: row.houseName,
               shakhaName: row.shakha,
+              meghalaName: row.meghalaName ?? null,
               competitionName: data.competitionName,
               categoryLabel: label,
               feastName: feastPosterHeading({ type: data.feastType, name: data.feastName }),
+              feastSubtitle: feastPosterSubtitle({ type: data.feastType }),
             })
           }
           header={

@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import type { Area, Point } from "react-easy-crop";
 import { getCroppedImageDataUrl } from "./crop-image";
 import { downloadDataUrl, exportPosterNode, posterFilename } from "./export-poster";
+import { PHOTO_W, PHOTO_H, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT } from "./social-poster";
 
 export type PosterStep = "upload" | "crop" | "preview";
 
@@ -46,7 +47,7 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     setIsCropping(true);
     setError(null);
     try {
-      const dataUrl = await getCroppedImageDataUrl(rawImageSrc, croppedAreaPixels, rotation);
+      const dataUrl = await getCroppedImageDataUrl(rawImageSrc, croppedAreaPixels, rotation, PHOTO_W / PHOTO_H);
       setPhotoSrc(dataUrl);
       setStep("preview");
     } catch {
@@ -78,7 +79,7 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     setIsExporting(true);
     setError(null);
     try {
-      const dataUrl = await exportPosterNode(posterRef.current);
+      const dataUrl = await exportPosterNode(posterRef.current, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT);
       downloadDataUrl(dataUrl, posterFilename(competitionName, winnerName));
     } catch {
       setError("Couldn't generate the poster. Please try again.");

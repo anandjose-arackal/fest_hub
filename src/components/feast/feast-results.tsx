@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ChevronRight, Trophy, Search, BookOpen, Clock, Users } from "lucide-react";
 import { showsResults, useFeast, useFeasts, type FeastCompetitionUI } from "@/hooks/use-feast";
 import { FeastTopBar, catStyle, mix, theme } from "./feast-shared";
-import { feastPosterHeading } from "@/lib/feast-data";
+import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { CompetitionResults, competitionCategoryLabel, genderLabel, loadCompetitionResults, type PublicResultRow } from "./feast-shared-results";
 import { Chip, Eyebrow, Medal } from "./feast-ui";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
@@ -154,12 +154,15 @@ function FeastContent({ slug, festChips, onGeneratePoster }: { slug: string; fes
   const handlePoster = (comp: FeastCompetitionUI) => (row: PublicResultRow) =>
     onGeneratePoster({
       rank: row.position as 1 | 2 | 3,
+      grade: row.grade,
       winnerName: row.name,
       houseName: row.houseName,
       shakhaName: row.shakha,
+      meghalaName: row.meghalaName ?? null,
       competitionName: comp.name,
       categoryLabel: competitionCategoryLabel(comp),
       feastName: feast ? feastPosterHeading(feast) : "",
+      feastSubtitle: feast ? feastPosterSubtitle(feast) : null,
     });
 
   const groups = ([
