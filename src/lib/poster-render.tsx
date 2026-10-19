@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useState } from "react";
 import type { OrgSettings } from "@/types";
+import { MananthavadyPoster, MANANTHAVADY_POSTER_HEIGHT, MANANTHAVADY_POSTER_WIDTH, isMananthavadyOrg } from "@/lib/poster-mananthavady";
 
 // 9:16 result-announcement poster (1080×1920, the export resolution — the
 // on-screen preview scales this same node down via CSS transform rather than
@@ -9,14 +10,27 @@ import type { OrgSettings } from "@/types";
 export const POSTER_WIDTH = 1080;
 export const POSTER_HEIGHT = 1920;
 
-export type PosterTheme = "maroon" | "blue" | "purple" | "pink";
+export type PosterTheme = "maroon" | "blue" | "purple" | "pink" | "mananthavady";
+type GenericTheme = Exclude<PosterTheme, "mananthavady">;
 
-export const POSTER_THEMES: { id: PosterTheme; label: string }[] = [
+const POSTER_THEMES: { id: PosterTheme; label: string }[] = [
   { id: "maroon", label: "Classic (Maroon)" },
   { id: "blue", label: "Navy" },
   { id: "purple", label: "Purple" },
   { id: "pink", label: "Pink" },
+  { id: "mananthavady", label: "Mananthavady" },
 ];
+
+// The Mananthavady theme's heading is baked diocese art, so it's only
+// offered when the org's English area name is Mananthavady.
+export function posterThemesFor(org: OrgSettings | null): { id: PosterTheme; label: string }[] {
+  return POSTER_THEMES.filter((t) => t.id !== "mananthavady" || isMananthavadyOrg(org));
+}
+
+// Every theme exports at 1080×1920 except Mananthavady's 4:5 layout.
+export function posterSize(theme: PosterTheme): { width: number; height: number } {
+  return theme === "mananthavady" ? { width: MANANTHAVADY_POSTER_WIDTH, height: MANANTHAVADY_POSTER_HEIGHT } : { width: POSTER_WIDTH, height: POSTER_HEIGHT };
+}
 
 interface DecorLayer {
   src: string;
@@ -47,7 +61,7 @@ const CONGRATULATION_DECOR: DecorLayer = {
 // Pre-cut decorative pieces sliced from each reference poster design, served
 // from /public/poster/ (see AGENTS.md's asset convention — these are static
 // brand art, not admin-configurable data, unlike org.* below).
-const THEME_STYLE: Record<PosterTheme, ThemeStyle> = {
+const THEME_STYLE: Record<GenericTheme, ThemeStyle> = {
   maroon: {
     headingColor: "#7A1220",
     bannerBorder: "#D4AF37",
@@ -170,7 +184,7 @@ const PLACE_LABEL: Record<1 | 2 | 3, string> = {
 // state until the one real answer is known. Canvas measureText was tried
 // first but Malayalam conjunct/virama shaping renders narrower there than
 // in real DOM text layout, so it isn't reliable for this font.
-function useFitFontSize(text: string, maxWidth: number, family: string, weight: number, min: number, max: number): number {
+export function useFitFontSize(text: string, maxWidth: number, family: string, weight: number, min: number, max: number): number {
   const [size, setSize] = useState(max);
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +219,18 @@ function useFitFontSize(text: string, maxWidth: number, family: string, weight: 
 }
 
 export const ResultPoster = forwardRef<HTMLDivElement, { data: PosterData }>(function ResultPoster({ data }, ref) {
-  const { org, feastName, competitionName, categoryLabel, winners, theme } = data;
+  if (data.theme === "mananthavady") {
+    return (
+      <div ref={ref}>
+        <MananthavadyPoster org={data.org} competitionName={data.competitionName} categoryLabel={data.categoryLabel} winners={data.winners} />
+      </div>
+    );
+  }
+  return <GenericPoster ref={ref} data={data} theme={data.theme} />;
+});
+
+const GenericPoster = forwardRef<HTMLDivElement, { data: PosterData; theme: GenericTheme }>(function GenericPoster({ data, theme }, ref) {
+  const { org, feastName, competitionName, categoryLabel, winners } = data;
   const t = THEME_STYLE[theme];
   const byPlace = (p: 1 | 2 | 3) => winners.filter((w) => w.place === p);
   // Tied places stack every winner inside that place's card; past the usual
