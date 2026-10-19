@@ -420,11 +420,14 @@ export default function ResultsPage() {
 
   // Resolves true once the typed scores are saved (or there was nothing to
   // save) — the unsaved-scores dialog only moves on after that.
-  async function handleSaveDraft(): Promise<boolean> {
+  async function handleSaveDraft(announceEmpty = false): Promise<boolean> {
     const scores = entries
       .filter((e) => typedScores[e.regId] != null && typedScores[e.regId] !== "")
       .map((e) => ({ registrationId: e.regId, score: Number(typedScores[e.regId]) }));
-    if (scores.length === 0) return true;
+    if (scores.length === 0) {
+      if (announceEmpty) showBanner("No scores entered yet — type a score first, then save.");
+      return true;
+    }
     if (busy) return false;
     setBusyAction("save");
     try {
@@ -801,7 +804,7 @@ export default function ResultsPage() {
         <h1 className="text-xl font-semibold text-neutral-800">Results</h1>
       </div>
 
-      {banner && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{banner}</p>}
+      {banner && <p role="alert" className="fixed left-1/2 top-4 z-[80] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 shadow-lg">{banner}</p>}
 
       {successPulse && (
         <div className="pointer-events-none fixed inset-0 z-[70] flex items-center justify-center">
@@ -1082,7 +1085,7 @@ export default function ResultsPage() {
       )}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <button onClick={handleSaveDraft} disabled={busy || isPublished} aria-busy={busyAction === "save"} className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold disabled:opacity-50">
+        <button onClick={() => handleSaveDraft(true)} disabled={busy || isPublished} aria-busy={busyAction === "save"} className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-semibold disabled:opacity-50">
           {busyAction === "save" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
           {busyAction === "save" ? "Saving…" : "Save Draft"}
         </button>

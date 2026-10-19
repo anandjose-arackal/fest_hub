@@ -30,10 +30,8 @@ const MAROON = "#7A1220";
 const GOLD = "#B3832C";
 const INK = "#2B211B";
 
-// The heading reads as a diocese-level contest: "രൂപത" + the fest name, with
-// the English subtitle to match.
+// The heading reads as a diocese-level contest: "രൂപത" + the fest name.
 const HEADING_PREFIX = "രൂപത";
-const SUBTITLE_PREFIX = "Diocesan";
 
 const RANK_LABEL: Record<1 | 2 | 3, string> = { 1: "First", 2: "Second", 3: "Third" };
 const RANK_MEDAL: Record<1 | 2 | 3, string> = { 1: "/poster/share/g_medal.png", 2: "/poster/share/s_medal.png", 3: "/poster/share/b_medal.png" };
@@ -127,8 +125,7 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
   const org1Size = useFitFontSize(orgLine1, 430, ANEK_CONDENSED, 800, 36, 72, "75%");
   const org2Size = useFitFontSize(orgLine2, 430, ANEK_CONDENSED, 800, 36, 72, "75%");
   const heading = `${HEADING_PREFIX} ${feastName}`;
-  const subtitle = feastSubtitle ? `${SUBTITLE_PREFIX} ${feastSubtitle}` : null;
-  const feastSize = useFitFontSize(heading, 820, NAYANA, 700, 40, 92);
+  const feastSize = useFitFontSize(heading, 1000, NAYANA, 700, 78, 185);
   const categoryText = categoryLabel.replace(/\s*·\s*/g, " ");
   const categorySize = useFitFontSize(categoryText, 300, SERIF, 700, 26, 44);
   const compSize = useFitFontSize(competitionName, 300, SERIF, 700, 30, 86);
@@ -154,17 +151,14 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
         </div>
 
         {/* Feast heading under bg_main's divider */}
-        <div style={{ position: "absolute", top: 272, left: 0, width: ART_W, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", whiteSpace: "nowrap" }}>
+        <div style={{ position: "absolute", top: 250, left: 0, width: ART_W, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", whiteSpace: "nowrap" }}>
           <span style={{ fontFamily: NAYANA, fontWeight: 700, fontSize: feastSize, lineHeight: 1.1, color: MAROON }}>{heading}</span>
-          {subtitle && (
-            <span style={{ marginTop: 2, fontFamily: "var(--font-manrope), sans-serif", fontWeight: 600, fontSize: 21, letterSpacing: 5, color: INK }}>{subtitle.toUpperCase()}</span>
-          )}
         </div>
 
         {/* Category + competition on the torn paper */}
         <div style={{ position: "absolute", top: 470, left: 30, width: 320, height: 290, transform: "rotate(-6deg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", fontFamily: SERIF, fontWeight: 700, color: MAROON, whiteSpace: "nowrap" }}>
           <Feather size={58} color="#A8773A" strokeWidth={1.6} aria-hidden="true" style={{ marginBottom: 2 }} />
-          {categoryText && <span style={{ fontSize: categorySize, lineHeight: 1.15 }}>{categoryText}</span>}
+          {categoryText && <span style={{ fontSize: categorySize, fontWeight: 700, lineHeight: 1.15, WebkitTextStroke: "1px currentColor" }}>{categoryText}</span>}
           <span style={{ fontSize: compSize, lineHeight: 1.1 }}>{competitionName}</span>
         </div>
 
@@ -193,8 +187,8 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
               <span style={{ width: 11, height: 11, transform: "rotate(45deg)", background: GOLD }} />
               <span style={{ flex: 1, height: 2, background: `linear-gradient(90deg, ${GOLD}, transparent)` }} />
             </div>
-            <span style={{ fontSize: 27, lineHeight: 1.25, color: INK }}>{withSuffix(shakhaName, "Shakha")}</span>
-            {meghalaName && <span style={{ fontSize: 23, lineHeight: 1.25, color: INK }}>{withSuffix(meghalaName, "Meghala")}</span>}
+            <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(shakhaName, "Shakha")}</span>
+            {meghalaName && <span style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(meghalaName, "Meghala")}</span>}
           </div>
         </div>
 
