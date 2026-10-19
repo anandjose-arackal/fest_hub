@@ -11,7 +11,7 @@ import { useAuth } from "@/lib/auth-context";
 import { GlowBtn, FeastTopBar, LoginSheet, catStyle, mix, theme } from "./feast-shared";
 import { CompetitionResults, competitionCategoryLabel, loadCompetitionResults, type PublicResultRow } from "./feast-shared-results";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
-import { feastPosterHeading } from "@/lib/feast-data";
+import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { Chip } from "./feast-ui";
 
 const CAT_CONFIG: { slug: string; label: string }[] = [
@@ -323,12 +323,15 @@ export function FeastDetails({ slug }: { slug: string }) {
                 onPoster={(row) =>
                   setPosterWinner({
                     rank: row.position as 1 | 2 | 3,
+                    grade: row.grade,
                     winnerName: row.name,
                     houseName: row.houseName,
                     shakhaName: row.shakha,
+                    meghalaName: row.meghalaName ?? null,
                     competitionName: c.name,
                     categoryLabel: competitionCategoryLabel(c),
                     feastName: feastPosterHeading(feast),
+                    feastSubtitle: feastPosterSubtitle(feast),
                   })
                 }
               />

@@ -22,6 +22,17 @@ export function feastPosterHeading(feast: { type: string; name: string }): strin
   return FEAST_TYPE_POSTER_LABEL[feast.type] ?? feast.name;
 }
 
+// English line under the heading on the share-your-result poster; a type
+// without an entry gets no subtitle.
+export const FEAST_TYPE_POSTER_SUBTITLE: Record<string, string> = {
+  literature: "Literary Competition",
+  arts: "Arts Competition",
+};
+
+export function feastPosterSubtitle(feast: { type: string }): string | null {
+  return FEAST_TYPE_POSTER_SUBTITLE[feast.type] ?? null;
+}
+
 // "F1405" — no feast-specific prefix (an earlier "F5848-1405" format carried
 // a slice of the feast UUID). registration_number is unique across every
 // feast, so next_reg_number() hands out n from one counter shared by all

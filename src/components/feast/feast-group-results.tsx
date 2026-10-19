@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { getGroupResults, type GroupLevel, type GroupResultCompetition, type GroupResultEntry } from "@/actions/results";
-import { feastPosterHeading } from "@/lib/feast-data";
+import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { CATEGORY_LABELS, catStyle, mix, theme } from "./feast-shared";
 import { ResultRow, competitionCategoryLabel, type PublicResultRow } from "./feast-shared-results";
 import { GradeBadge, MedalCounts } from "./feast-ui";
@@ -158,12 +158,15 @@ export function GroupResults({ feast, level, group }: {
                           onGeneratePoster={(row) =>
                             setPoster({
                               rank: row.position as 1 | 2 | 3,
+                              grade: row.grade,
                               winnerName: row.name,
                               houseName: row.houseName,
                               shakhaName: row.shakha,
+                              meghalaName: row.meghalaName ?? null,
                               competitionName: c.name,
                               categoryLabel: label,
                               feastName: feastPosterHeading(feast),
+                              feastSubtitle: feastPosterSubtitle(feast),
                             })
                           }
                         />

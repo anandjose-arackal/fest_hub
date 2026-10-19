@@ -3,6 +3,7 @@
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
 import { RotateCcw, RotateCw } from "lucide-react";
+import { PHOTO_W, PHOTO_H } from "./social-poster";
 
 export interface PhotoCropperProps {
   image: string;
@@ -24,8 +25,7 @@ export function PhotoCropper({ image, crop, zoom, rotation, onCropChange, onZoom
           crop={crop}
           zoom={zoom}
           rotation={rotation}
-          aspect={1}
-          cropShape="round"
+          aspect={PHOTO_W / PHOTO_H}
           showGrid={false}
           onCropChange={onCropChange}
           onZoomChange={onZoomChange}

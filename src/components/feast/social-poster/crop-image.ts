@@ -30,9 +30,10 @@ function rotatedBoundingBox(width: number, height: number, rotationDeg: number) 
 }
 
 // Rotates the source image onto an intermediate canvas, then crops the
-// requested pixel region out of it and resizes down to a fixed square —
-// large enough to stay sharp inside the poster's photo circle.
-export async function getCroppedImageDataUrl(imageSrc: string, croppedAreaPixels: CroppedAreaPixels, rotationDeg = 0): Promise<string> {
+// requested pixel region out of it and resizes to a fixed width (height from
+// `aspect`, width / height) — large enough to stay sharp inside the poster's
+// photo frame.
+export async function getCroppedImageDataUrl(imageSrc: string, croppedAreaPixels: CroppedAreaPixels, rotationDeg = 0, aspect = 1): Promise<string> {
   const image = await loadImage(imageSrc);
   const box = rotatedBoundingBox(image.width, image.height, rotationDeg);
 
@@ -49,7 +50,7 @@ export async function getCroppedImageDataUrl(imageSrc: string, croppedAreaPixels
 
   const outputCanvas = document.createElement("canvas");
   outputCanvas.width = OUTPUT_SIZE;
-  outputCanvas.height = OUTPUT_SIZE;
+  outputCanvas.height = Math.round(OUTPUT_SIZE / aspect);
   const outputCtx = outputCanvas.getContext("2d");
   if (!outputCtx) throw new Error("2D canvas context unavailable");
 
@@ -61,8 +62,8 @@ export async function getCroppedImageDataUrl(imageSrc: string, croppedAreaPixels
     croppedAreaPixels.height,
     0,
     0,
-    OUTPUT_SIZE,
-    OUTPUT_SIZE
+    outputCanvas.width,
+    outputCanvas.height
   );
 
   return outputCanvas.toDataURL("image/png");
