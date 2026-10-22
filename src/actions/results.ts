@@ -475,8 +475,26 @@ export async function getScoresForCompetitions(feastCompetitionIds: string[]): P
   return out;
 }
 
+// participants.photo_url comes with migration 018. A database that hasn't
+// run it yet rejects any select naming the column, which would blank every
+// result list — so photo reads retry once without it.
+function missingPhotoColumn(error: { message: string } | string | null | undefined): boolean {
+  const message = typeof error === "string" ? error : error?.message;
+  return !!message && message.includes("photo_url");
+}
+
 const cachedPublishedResults = unstable_cache(
   async (feastCompetitionId: string) => {
+    const query = () =>
+      getSupabaseAdmin()
+        .from("competition_results")
+        .select(
+          "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(name, meghala:meghalas(name))))"
+        )
+        .eq("feast_competition_id", feastCompetitionId)
+        .not("published_at", "is", null);
+    const first = await query();
+    if (!missingPhotoColumn(first.error)) return first.data ?? [];
     const { data } = await getSupabaseAdmin()
       .from("competition_results")
       .select(
@@ -484,9 +502,12 @@ const cachedPublishedResults = unstable_cache(
       )
       .eq("feast_competition_id", feastCompetitionId)
       .not("published_at", "is", null);
-    return data ?? [];
+    // Same rows minus photo_url; callers already treat it as optional.
+    return (data ?? []) as unknown as NonNullable<typeof first.data>;
   },
-  ["fp-published-results"],
+  // Bump when the select's shape changes, so cached rows without the new
+  // fields aren't served.
+  ["fp-published-results-v2"],
   { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.standard },
 );
 
@@ -1110,11 +1131,14 @@ async function readGroupResults(feastSlug: string, level: GroupLevel, groupId: s
 
 // ── /screen big-display data ──────────────────────────────────────────────
 // For a team entry `name` is the team name and `houseName` its members.
-export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; }
+// `photoUrl` is the registration photo (individual entries only).
+export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; photoUrl: string | null; }
 export interface ScreenPosition extends ScreenAchiever { place: 1 | 2 | 3; }
 export interface ScreenCompetitionResult {
   competitionId: string;
   competitionName: string;
+  /** competitions.name_en — Angel matches English questions on it. */
+  competitionNameEn: string | null;
   categoryName: string;
   categorySlug: string;
   gender: string | null;
@@ -1134,8 +1158,9 @@ export async function getScreenData(feastSlug: string): Promise<{ data?: ScreenD
 const cachedScreenData = unstable_cache(
   async (feastSlug: string) => readScreenData(feastSlug),
   // v3: entries carry `gender` and `isTeam`, and team results are included;
-  // the bump keeps older cached shapes out.
-  ["fp-screen-data-v3"],
+  // v4: entries carry `photoUrl`; v5: `competitionNameEn`. The bump keeps
+  // older cached shapes out.
+  ["fp-screen-data-v5"],
   { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.live },
 );
 
@@ -1143,7 +1168,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
   const admin = getSupabaseAdmin();
   const { data: fcs, error: fcErr } = await admin
     .from("feast_competitions")
-    .select("id, feast:feasts!inner(slug), competition:competitions(name, gender, type, competition_category:competition_categories(name, slug))")
+    .select("id, feast:feasts!inner(slug), competition:competitions(name, name_en, gender, type, competition_category:competition_categories(name, slug))")
     .eq("feast.slug", feastSlug)
     .eq("result_status", "published")
     .order("display_order");
@@ -1152,7 +1177,18 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
 
   const one = <T,>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : x ?? undefined);
   const ids = fcs.map((f) => f.id);
-  const [individual, team] = await Promise.all([
+  const readIndividual = () =>
+    fetchAllIn(ids, (chunk, from, to) =>
+      admin
+        .from("competition_results")
+        .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(name, meghala:meghalas(name))))")
+        .in("feast_competition_id", chunk)
+        .not("published_at", "is", null)
+        .order("id")
+        .range(from, to)
+    );
+  // Without migration 018 there's no photo_url: read the same rows without it.
+  const readIndividualNoPhoto = () =>
     fetchAllIn(ids, (chunk, from, to) =>
       admin
         .from("competition_results")
@@ -1161,7 +1197,9 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
         .not("published_at", "is", null)
         .order("id")
         .range(from, to)
-    ),
+    ) as unknown as ReturnType<typeof readIndividual>;
+  const [firstIndividual, team] = await Promise.all([
+    readIndividual(),
     fetchAllIn(ids, (chunk, from, to) =>
       admin
         .from("team_results")
@@ -1172,6 +1210,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
         .range(from, to)
     ),
   ]);
+  const individual = missingPhotoColumn(firstIndividual.error) ? await readIndividualNoPhoto() : firstIndividual;
   if (individual.error) return { error: individual.error };
   if (team.error) return { error: team.error };
 
@@ -1185,7 +1224,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     const shakha = one(participant.shakha);
     rows.push({
       fcId: r.feast_competition_id, grade: r.grade, position: r.position,
-      entry: { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null },
+      entry: { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null, photoUrl: participant.photo_url ?? null },
     });
   }
   for (const r of team.data) {
@@ -1195,7 +1234,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     const members = (reg.team_registration_members ?? []).map((m) => one(m.participant)?.name).filter(Boolean).join(", ");
     rows.push({
       fcId: r.feast_competition_id, grade: r.grade, position: r.position,
-      entry: { name: reg.team_name, houseName: members || null, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null },
+      entry: { name: reg.team_name, houseName: members || null, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null, photoUrl: null },
     });
   }
 
@@ -1220,6 +1259,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     competitions.push({
       competitionId: fc.id,
       competitionName: competition?.name ?? "Competition",
+      competitionNameEn: competition?.name_en ?? null,
       categoryName: category?.name ?? "",
       categorySlug: category?.slug ?? "",
       gender: competition?.gender ?? null,

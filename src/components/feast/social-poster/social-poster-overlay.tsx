@@ -4,6 +4,7 @@ import { useCallback, useState, type DragEvent } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Upload, X, Download } from "lucide-react";
 import { GlowBtn } from "../feast-shared";
+import { WhatsAppIcon } from "../whatsapp-icon";
 import { useOrgSettings } from "@/hooks/use-feast";
 import { SocialPoster, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT } from "./social-poster";
 import { PhotoCropper } from "./photo-cropper";
@@ -24,6 +25,22 @@ export interface SocialPosterWinner {
 }
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
+
+const PLACE_WORD: Record<1 | 2 | 3, string> = { 1: "First", 2: "Second", 3: "Third" };
+
+// The message that travels with the poster image: who, what, where, and a
+// link back to the results.
+function shareText(w: SocialPosterWinner): string {
+  const where = [w.shakhaName, w.meghalaName].filter(Boolean).join(", ");
+  const lines = [
+    `🏆 ${w.winnerName} won ${PLACE_WORD[w.rank]} place${w.grade ? ` with Grade ${w.grade}` : ""}`,
+    `${w.competitionName}${w.categoryLabel ? ` (${w.categoryLabel})` : ""}`,
+    where,
+    w.feastName,
+    typeof window !== "undefined" ? `Results: ${window.location.origin}/results` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
 
 export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterWinner; onClose: () => void }) {
   const gen = useSocialPosterGenerator(winner.competitionName, winner.winnerName);
@@ -129,6 +146,7 @@ export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterW
               </ScaledPosterPreview>
 
               {gen.error && <p className="mt-3 text-center text-[12.5px]" style={{ color: "#FCA5A5" }}>{gen.error}</p>}
+              {gen.shareNote && <p role="status" className="mt-3 text-center text-[12.5px]" style={{ color: "#86EFAC" }}>{gen.shareNote}</p>}
             </div>
           )}
         </div>
@@ -152,13 +170,26 @@ export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterW
               Cancel
             </GlowBtn>
           ) : org ? (
-            <div className="flex gap-2.5">
-              <GlowBtn variant="ghost" className="flex-1" onClick={gen.openPicker} style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.18)" }}>
-                {gen.photoSrc ? "Change Photo" : "Add Photo"}
-              </GlowBtn>
-              <GlowBtn variant="gold" className="flex-1" icon={Download} loading={gen.isExporting} onClick={gen.download}>
-                Download
-              </GlowBtn>
+            <div className="flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => gen.shareToWhatsApp(shareText(winner))}
+                disabled={gen.isSharing}
+                aria-busy={gen.isSharing}
+                className="flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-[16px] text-[15.5px] font-extrabold text-white transition-transform active:scale-[0.98] disabled:opacity-70"
+                style={{ background: "linear-gradient(135deg, #25D366, #128C7E)", boxShadow: "0 10px 26px rgba(37,211,102,0.35)" }}
+              >
+                {gen.isSharing ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <WhatsAppIcon size={22} />}
+                {gen.isSharing ? "Preparing poster…" : "Share on WhatsApp"}
+              </button>
+              <div className="flex gap-2.5">
+                <GlowBtn variant="ghost" className="flex-1" onClick={gen.openPicker} style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.18)" }}>
+                  {gen.photoSrc ? "Change Photo" : "Add Photo"}
+                </GlowBtn>
+                <GlowBtn variant="ghost" className="flex-1" icon={Download} loading={gen.isExporting} onClick={gen.download} style={{ background: "rgba(255,255,255,0.1)", color: "#fff", border: "1px solid rgba(255,255,255,0.18)" }}>
+                  Download
+                </GlowBtn>
+              </div>
             </div>
           ) : null}
         </div>

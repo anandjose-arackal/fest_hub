@@ -77,11 +77,11 @@ export function GradeBadge({ grade, size = 32, variant = "surface" }: { grade: "
   const award = variant === "award";
   const style: React.CSSProperties =
     grade === "A"
-      ? { background: award ? "#4B31B3" : "var(--fp-ga-bg)", color: award ? "#FFE08A" : "var(--fp-ga-fg)" }
+      ? { background: award ? "var(--fp-award-ga-bg, #4B31B3)" : "var(--fp-ga-bg)", color: award ? "var(--fp-award-ga-fg, #FFE08A)" : "var(--fp-ga-fg)" }
       : grade === "B"
-        ? { background: award ? "#E6E0FF" : "var(--fp-gb-bg)", color: award ? "#4B31B3" : "var(--fp-gb-fg)" }
+        ? { background: award ? "var(--fp-award-gb-bg, #E6E0FF)" : "var(--fp-gb-bg)", color: award ? "var(--fp-award-gb-fg, #4B31B3)" : "var(--fp-gb-fg)" }
         : grade === "C"
-          ? { border: `1.5px solid ${award ? "#4B31B3" : "var(--fp-gc-line)"}`, color: award ? "#4B31B3" : "var(--fp-gc-fg)" }
+          ? { border: `1.5px solid ${award ? "var(--fp-award-gc, #4B31B3)" : "var(--fp-gc-line)"}`, color: award ? "var(--fp-award-gc, #4B31B3)" : "var(--fp-gc-fg)" }
           : { background: theme.surface3, color: theme.faint };
   return (
     <span

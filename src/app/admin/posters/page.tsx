@@ -25,6 +25,23 @@ type FCRow = FeastCompetition & { competition: Competition & { competition_categ
 // key — tied winners share a place, never a result id).
 interface WinnerRow extends PosterWinner {
   resultId: string;
+  // Photo saved at registration (participants.photo_url, S3) — prefilled
+  // into `photos` as a data: URL once loaded.
+  storedPhotoUrl?: string | null;
+}
+
+// html-to-image re-fetches every <img> with a cache-bust query; a data: URL
+// sidesteps that (and S3's CORS on the capture) entirely.
+async function urlToDataUrl(url: string): Promise<string> {
+  const res = await fetch(url, { mode: "cors" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 const PLACE_EMOJI: Record<1 | 2 | 3, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
@@ -34,9 +51,11 @@ function one<T>(x: T | T[] | null | undefined): T | null {
 }
 
 // Result-announcement poster for one published item, with optional winner
-// photos. Photos are cropped in the browser to a data: URL (a blob: URL
-// wouldn't survive html-to-image's cache-busting query string) and live only
-// in this page's state — nothing is uploaded, and leaving the page drops them.
+// photos. A winner's registration photo (participants.photo_url) is filled in
+// automatically; any photo can be replaced here by cropping one in the
+// browser to a data: URL (a blob: URL wouldn't survive html-to-image's
+// cache-busting query string). Replacements live only in this page's state —
+// they aren't uploaded, and leaving the page drops them.
 function PostersInner() {
   const searchParams = useSearchParams();
   const [org, setOrg] = useState<OrgSettings | null>(null);
@@ -123,7 +142,7 @@ function PostersInner() {
             const p = one(reg?.participant);
             const shakha = one(p?.shakha);
             const meghala = one(shakha?.meghala);
-            return [{ resultId: r.id, place: r.position as 1 | 2 | 3, name: p?.name ?? "—", houseName: p?.house_name ?? "", shakhaName: posterGroupLabel(hierarchyLevel, shakha?.name ?? "—", meghala?.name) }];
+            return [{ resultId: r.id, place: r.position as 1 | 2 | 3, name: p?.name ?? "—", houseName: p?.house_name ?? "", shakhaName: posterGroupLabel(hierarchyLevel, shakha?.name ?? "—", meghala?.name), storedPhotoUrl: p?.photo_url ?? null }];
           });
         }
         rows.sort((a, b) => a.place - b.place || a.name.localeCompare(b.name));
@@ -132,6 +151,15 @@ function PostersInner() {
         if (!cancelled) setError(err instanceof Error ? `Couldn't load results: ${err.message}` : "Couldn't load results.");
       }
       if (!cancelled) setLoaded({ compId, rows });
+      // Registration photos, unless one was already picked/removed here.
+      for (const row of rows) {
+        if (!row.storedPhotoUrl) continue;
+        urlToDataUrl(row.storedPhotoUrl)
+          .then((dataUrl) => {
+            if (!cancelled) setPhotos((prev) => (row.resultId in prev ? prev : { ...prev, [row.resultId]: dataUrl }));
+          })
+          .catch((err) => console.warn("[posters] couldn't load photo for", row.name, err));
+      }
     })();
     return () => {
       cancelled = true;
@@ -150,7 +178,7 @@ function PostersInner() {
       feastName: feast ? feastPosterHeading(feast) : "",
       competitionName: selectedFc.competition.name,
       categoryLabel: [categoryName, genderDisplayWord(selectedFc.competition.gender, categoryName, true)].filter(Boolean).join(" · "),
-      winners: winners.map((w) => ({ ...w, photoUrl: photos[w.resultId] ?? null })),
+      winners: winners.map((w) => ({ ...w, photoUrl: photos[w.resultId] || null })),
       theme,
     };
   }, [org, selectedFc, winners, feasts, feastId, photos, theme]);
@@ -204,12 +232,10 @@ function PostersInner() {
     }
   }
 
+  // Kept as "" rather than deleted, so a registration photo that's still
+  // loading doesn't fill the slot back in.
   function removePhoto(resultId: string) {
-    setPhotos((prev) => {
-      const next = { ...prev };
-      delete next[resultId];
-      return next;
-    });
+    setPhotos((prev) => ({ ...prev, [resultId]: "" }));
   }
 
   async function downloadPoster() {
@@ -265,7 +291,7 @@ function PostersInner() {
         </span>
         <div>
           <h1 className="text-xl font-semibold text-neutral-800">Result Poster</h1>
-          <p className="text-xs text-neutral-500">Photos are optional and stay on this device — they&apos;re never uploaded.</p>
+          <p className="text-xs text-neutral-500">Registration photos fill in automatically. Photos you change here stay on this device and aren&apos;t uploaded.</p>
         </div>
       </div>
 

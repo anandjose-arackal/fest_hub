@@ -10,6 +10,9 @@ import { DEFAULT_MAX_PER_SHAKHA, formatRegNumber } from "@/lib/feast-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompStatus } from "@/types";
 import { requireRole } from "@/lib/require-role";
+import { checkPhotoUrl } from "@/lib/s3";
+
+const BAD_PHOTO = "That photo link isn't one of ours — please upload the photo again.";
 
 // ── shared helper ───────────────────────────────────────────────────────
 // Returns the subset of feastCompetitionIds that are already at/over cap for
@@ -54,6 +57,8 @@ export interface RegInput {
   // Team events to add this person to (their scope's team, created on its
   // first registration — see lib/scope-teams).
   teamCompetitionIds?: string[];
+  // S3 URL from createPhotoUploadUrl (src/actions/photos.ts), if one was taken.
+  photoUrl?: string | null;
 }
 export type RegOutput = { regNo: string };
 export type RegError = { error: string };
@@ -69,6 +74,8 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     // (feast-details.tsx's canRegister) — enforce the same here.
     const auth = await requireRole("registration.write");
     if ("error" in auth) return { error: auth.error };
+    const photo = checkPhotoUrl(input.photoUrl);
+    if (!photo.ok) return { error: BAD_PHOTO };
 
     const { data: feast, error: feastErr } = await supabase
       .from("feasts")
@@ -110,6 +117,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,
         registration_number: regNo,
+        photo_url: photo.value ?? null,
       })
       .select("id")
       .single();
@@ -153,6 +161,7 @@ export interface AdminRegInput {
   // Team events to add this person to — same scope teams as the portal's
   // registerParticipant (see lib/scope-teams).
   teamCompetitionIds?: string[];
+  photoUrl?: string | null;
 }
 
 export async function createParticipantAdmin(
@@ -160,6 +169,8 @@ export async function createParticipantAdmin(
 ): Promise<{ error?: string; regNo?: string; participantId?: string; registrationIds?: Record<string, string> }> {
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
+  const photo = checkPhotoUrl(input.photoUrl);
+  if (!photo.ok) return { error: BAD_PHOTO };
   try {
     const admin = getSupabaseAdmin();
 
@@ -196,6 +207,7 @@ export async function createParticipantAdmin(
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,
         registration_number: regNo,
+        photo_url: photo.value ?? null,
       })
       .select("id")
       .single();
@@ -280,11 +292,15 @@ export interface UpdateInput {
   // Team events this participant should be on. Omitted = leave their teams
   // as they are (the admin Participants page manages teams separately).
   teamCompetitionIds?: string[];
+  // Omitted = keep the current photo; null = remove it.
+  photoUrl?: string | null;
 }
 
 export async function updateParticipant(input: UpdateInput): Promise<{ error?: string }> {
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
+  const photo = checkPhotoUrl(input.photoUrl);
+  if (!photo.ok) return { error: BAD_PHOTO };
   try {
     const admin = getSupabaseAdmin();
 
@@ -364,6 +380,7 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
         gender: input.gender,
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,
+        ...(photo.value !== undefined ? { photo_url: photo.value } : {}),
       })
       .eq("id", input.participantId);
     if (updateErr) return { error: updateErr.message };

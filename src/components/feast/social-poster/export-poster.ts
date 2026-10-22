@@ -21,6 +21,11 @@ export async function exportPosterNode(node: HTMLElement, width: number, height:
   return toPng(node, { width, height, pixelRatio: 1, cacheBust: true, backgroundColor: "#FFFFFF" });
 }
 
+export async function dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
+  const blob = await (await fetch(dataUrl)).blob();
+  return new File([blob], filename, { type: blob.type || "image/png" });
+}
+
 export function downloadDataUrl(dataUrl: string, filename: string): void {
   const link = document.createElement("a");
   link.href = dataUrl;

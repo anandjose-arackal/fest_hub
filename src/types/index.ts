@@ -150,6 +150,7 @@ export interface Participant {
   competition_category_id: string | null;
   phone: string | null;
   registration_number: string | null;
+  photo_url?: string | null;
   created_at: string;
   updated_at: string;
   shakha?: Shakha | null;
@@ -242,7 +243,7 @@ export interface ShakhaFeastStanding {
   shakha?: Shakha;
 }
 
-export type PortalTheme = "violet" | "ocean" | "sunset" | "aurora" | "carnival" | "amethyst" | "golden" | "plum" | "midnight" | "emerald" | "championship" | "burgundy";
+export type PortalTheme = "violet" | "ocean" | "sunset" | "aurora" | "carnival" | "amethyst" | "golden" | "plum" | "midnight" | "emerald" | "championship" | "burgundy" | "nebula";
 
 export interface OrgSettings {
   id: true;

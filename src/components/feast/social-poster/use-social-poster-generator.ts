@@ -3,7 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { Area, Point } from "react-easy-crop";
 import { getCroppedImageDataUrl } from "./crop-image";
-import { downloadDataUrl, exportPosterNode, posterFilename } from "./export-poster";
+import { dataUrlToFile, downloadDataUrl, exportPosterNode, posterFilename } from "./export-poster";
 import { PHOTO_W, PHOTO_H, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT } from "./social-poster";
 
 export type PosterStep = "upload" | "crop" | "preview";
@@ -21,6 +21,7 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
   const [photoSrc, setPhotoSrc] = useState<string | null>(null);
   const [isCropping, setIsCropping] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const posterRef = useRef<HTMLDivElement>(null);
 
@@ -88,6 +89,40 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     }
   }, [competitionName, winnerName]);
 
+  // Share the poster with its details. Phones (Web Share with files) open
+  // the share sheet with the image attached — WhatsApp is one tap from
+  // there. Elsewhere a browser can't hand an image to WhatsApp, so the
+  // poster downloads and WhatsApp opens with the details typed in, ready
+  // for the image to be attached.
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const shareToWhatsApp = useCallback(async (text: string) => {
+    if (!posterRef.current) return;
+    setIsSharing(true);
+    setError(null);
+    setShareNote(null);
+    try {
+      const dataUrl = await exportPosterNode(posterRef.current, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT);
+      const filename = posterFilename(competitionName, winnerName);
+      const file = await dataUrlToFile(dataUrl, filename);
+      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], text });
+        } catch (err) {
+          // Closing the share sheet isn't a failure.
+          if (!(err instanceof DOMException && err.name === "AbortError")) throw err;
+        }
+      } else {
+        downloadDataUrl(dataUrl, filename);
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+        setShareNote("Poster downloaded. Attach it in the WhatsApp chat that just opened.");
+      }
+    } catch {
+      setError("Couldn't share the poster. Download it and send it from WhatsApp.");
+    } finally {
+      setIsSharing(false);
+    }
+  }, [competitionName, winnerName]);
+
   return {
     step,
     rawImageSrc,
@@ -97,6 +132,8 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     photoSrc,
     isCropping,
     isExporting,
+    isSharing,
+    shareNote,
     error,
     posterRef,
     setCrop,
@@ -108,5 +145,6 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     openPicker,
     backToPreview,
     download,
+    shareToWhatsApp,
   };
 }

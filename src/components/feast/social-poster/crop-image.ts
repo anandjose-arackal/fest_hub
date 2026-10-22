@@ -1,3 +1,6 @@
+import { compressCanvas } from "@/lib/compress-image";
+import { MAX_PHOTO_BYTES } from "@/lib/photo-url";
+
 export interface CroppedAreaPixels {
   x: number;
   y: number;
@@ -34,6 +37,18 @@ function rotatedBoundingBox(width: number, height: number, rotationDeg: number) 
 // `aspect`, width / height) — large enough to stay sharp inside the poster's
 // photo frame.
 export async function getCroppedImageDataUrl(imageSrc: string, croppedAreaPixels: CroppedAreaPixels, rotationDeg = 0, aspect = 1): Promise<string> {
+  const canvas = await renderCroppedCanvas(imageSrc, croppedAreaPixels, rotationDeg, aspect);
+  return canvas.toDataURL("image/png");
+}
+
+// Same crop as a compressed JPEG, for uploading (participant photos):
+// see compressCanvas for how it's kept under the size limit.
+export async function getCroppedImageBlob(imageSrc: string, croppedAreaPixels: CroppedAreaPixels, rotationDeg = 0, aspect = 1, maxBytes = MAX_PHOTO_BYTES): Promise<Blob> {
+  const canvas = await renderCroppedCanvas(imageSrc, croppedAreaPixels, rotationDeg, aspect);
+  return compressCanvas(canvas, maxBytes);
+}
+
+async function renderCroppedCanvas(imageSrc: string, croppedAreaPixels: CroppedAreaPixels, rotationDeg: number, aspect: number): Promise<HTMLCanvasElement> {
   const image = await loadImage(imageSrc);
   const box = rotatedBoundingBox(image.width, image.height, rotationDeg);
 
@@ -66,5 +81,5 @@ export async function getCroppedImageDataUrl(imageSrc: string, croppedAreaPixels
     outputCanvas.height
   );
 
-  return outputCanvas.toDataURL("image/png");
+  return outputCanvas;
 }

@@ -143,7 +143,7 @@ async function main() {
     } else {
       const { data: rows, error } = await supabase
         .from("competition_results")
-        .select("position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(id, name)))")
+        .select("position, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(id, name)))")
         .eq("feast_competition_id", fc.id)
         .in("position", [1, 2, 3]);
       if (error) {
@@ -154,7 +154,8 @@ async function main() {
         const reg = one(r.participant_registration);
         const p = one(reg?.participant);
         const shakha = one(p?.shakha);
-        return { place: r.position, name: p?.name ?? "—", houseName: p?.house_name ?? "", shakhaName: groupLabelFor(shakha?.id, shakha?.name) };
+        // Registration photo (S3 URL) — Playwright loads it like any page image.
+        return { place: r.position, name: p?.name ?? "—", houseName: p?.house_name ?? "", shakhaName: groupLabelFor(shakha?.id, shakha?.name), photoUrl: p?.photo_url ?? null };
       });
     }
 

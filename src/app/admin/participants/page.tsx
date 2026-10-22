@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchAll } from "@/lib/fetch-all";
 import { countScopeRegistrations, loadScopeTeams, resolveCapScope } from "@/lib/reg-cap-scope";
 import { createParticipantAdmin, updateParticipant, deleteParticipant } from "@/actions/feast";
+import { ParticipantPhotoField } from "@/components/feast/participant-photo-field";
 import { registerTeam, updateTeam, deleteTeam } from "@/actions/team";
 import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
@@ -19,6 +20,17 @@ import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 // `events` = individual registrations + teams the participant is a member of.
 type ParticipantRow = Participant & { shakha: Shakha | null; events: number; teamEvents: number };
+
+// Round thumbnail of the participant photo, or initials when there's none.
+function PhotoThumb({ url, name, size = 32 }: { url?: string | null; name: string; size?: number }) {
+  const initials = name.trim().split(/s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+  return url ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={url} alt="" loading="lazy" className="shrink-0 rounded-full object-cover" style={{ width: size, height: size, border: "2px solid #c4b5fd" }} />
+  ) : (
+    <span aria-hidden="true" className="flex shrink-0 items-center justify-center rounded-full text-[11px] font-black" style={{ width: size, height: size, background: "#ede9fe", color: "#7C3AED" }}>{initials}</span>
+  );
+}
 
 // "Which columns print" for the Participants/Teams PDF exports — same pattern
 // as /admin/results' ResultColumns, shakha always shown, meghala/diocese
@@ -335,6 +347,8 @@ export default function ParticipantsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ shakhaId: "", name: "", houseName: "", dob: "", gender: "", phone: "" });
   const [selectedComps, setSelectedComps] = useState<string[]>([]);
+  const [panelPhoto, setPanelPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   // Team events picked in this panel; on edit, the ones they were already
   // on (null until loaded, so an early save leaves their teams alone).
   const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
@@ -488,6 +502,7 @@ export default function ParticipantsPage() {
     setEditId(null);
     setForm({ shakhaId: "", name: "", houseName: "", dob: "", gender: "", phone: "" });
     setSelectedComps([]);
+    setPanelPhoto(null);
     setSelectedTeams([]);
     setPanelOnTeams([]);
     setPanelError(null);
@@ -506,6 +521,7 @@ export default function ParticipantsPage() {
       phone: p.phone ?? "",
     });
     setSelectedComps(participantRegs[p.id] ?? []);
+    setPanelPhoto(p.photo_url ?? null);
     setSelectedTeams([]);
     setPanelOnTeams(null);
     supabase
@@ -621,6 +637,7 @@ export default function ParticipantsPage() {
           feastCompetitionIds: selectedComps,
           // Until their current teams have loaded, leave them as they are.
           teamCompetitionIds: panelOnTeams === null ? undefined : teamIds,
+          photoUrl: panelPhoto,
         })
       : await createParticipantAdmin({
           feastId,
@@ -632,6 +649,7 @@ export default function ParticipantsPage() {
           phone: form.phone,
           feastCompetitionIds: selectedComps,
           teamCompetitionIds: teamIds,
+          photoUrl: selectedComps.length > 0 ? panelPhoto : null,
         });
     setSaving(false);
     if (result.error) {
@@ -1062,7 +1080,12 @@ export default function ParticipantsPage() {
                       onMouseLeave={(ev) => (ev.currentTarget.style.background = isEven ? "#fff" : "#f8f7ff")}
                     >
                       <td className="whitespace-nowrap px-3 py-3"><RegNoBadge regNo={p.registration_number} /></td>
-                      <td className="px-3 py-3"><p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{p.name}</p></td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <PhotoThumb url={p.photo_url} name={p.name} />
+                          <p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{p.name}</p>
+                        </div>
+                      </td>
                       <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{p.house_name || "—"}</span></td>
                       <td className="whitespace-nowrap px-3 py-3">
                         {meghalaName && <span className="block text-[13px] font-black" style={{ color: "#374151" }}>{meghalaName}</span>}
@@ -1094,6 +1117,7 @@ export default function ParticipantsPage() {
                 <div key={p.id} className="overflow-hidden rounded-xl bg-white" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
                   <div className="px-3.5 py-3">
                     <div className="flex items-start justify-between gap-2">
+                      <PhotoThumb url={p.photo_url} name={p.name} size={40} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[15px] font-black leading-tight" style={{ color: "#1e1b4b" }}>{p.name}</p>
                         {p.house_name && <p className="mt-0.5 text-[12px] font-black" style={{ color: "#5B21B6" }}>{p.house_name}</p>}
@@ -1342,6 +1366,14 @@ export default function ParticipantsPage() {
                 </div>
               </section>
 
+              {/* Photo — individual events only (posters, /screen) */}
+              {(selectedComps.length > 0 || panelPhoto) && (
+                <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+                  <h3 className="reg-label mb-3">Photo</h3>
+                  <ParticipantPhotoField feastId={feastId} value={panelPhoto} onChange={setPanelPhoto} onBusyChange={setPhotoBusy} personName={form.name} variant="admin" />
+                </section>
+              )}
+
               {/* Team events */}
               {eligibleTeamComps.length > 0 && (
                 <section className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -1399,7 +1431,7 @@ export default function ParticipantsPage() {
                 <button
                   type="button"
                   onClick={handleSaveParticipant}
-                  disabled={saving}
+                  disabled={saving || photoBusy}
                   aria-busy={saving}
                   className="flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-70"
                   style={{ background: "linear-gradient(135deg,#7C3AED,#A855F7)" }}

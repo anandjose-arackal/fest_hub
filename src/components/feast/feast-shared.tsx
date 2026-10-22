@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
@@ -8,9 +9,11 @@ import {
   ArrowLeft, ArrowRight, Trophy, Sparkles, Medal, Search, Home,
   Loader2, PenTool, Palette, Zap, HelpCircle, Code2, Globe, LogOut, LogIn, Eye, EyeOff, type LucideIcon,
 } from "lucide-react";
-import { useFeasts } from "@/hooks/use-feast";
+import { useFeasts, useOrgSettings } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
-import { HelpSheet } from "./feast-help";
+// Angel loads on the client only, after the page — its code and data stay
+// out of the first paint.
+const AngelChat = dynamic(() => import("./angel/angel-chat"), { ssr: false });
 
 // FeastUI.icon (from use-feast.ts's FEAST_TYPE_CONFIG) is a Lucide icon
 // *name*, not an emoji — this resolves it to the actual component.
@@ -138,16 +141,18 @@ export function GlassPanel({
   children: React.ReactNode;
 } & React.HTMLAttributes<HTMLDivElement>) {
   // Championship surfaces: solid-ish theme surface + hairline, shadow only
-  // on the strong variant (forms, summaries) so stacked cards stay calm.
+  // on the strong variant (forms, summaries) so stacked cards stay calm. A
+  // glass theme (Nebula Glass) swaps in a frosted fill with a gradient edge
+  // through --fp-panel-bg* / --fp-panel-line and adds --fp-card-glow.
   const base: React.CSSProperties = {
     backdropFilter: "blur(16px) saturate(160%)",
-    background: strong ? theme.surface2 : theme.surface,
-    border: `1px solid ${theme.line}`,
+    background: strong ? "var(--fp-panel-bg-strong, var(--fp-surface-2))" : "var(--fp-panel-bg, var(--fp-surface))",
+    border: `1px solid var(--fp-panel-line, ${theme.line})`,
   };
-  const boxShadow = glow ? `0 12px 32px ${mix(glow, 22)}` : strong ? theme.shadow : undefined;
+  const boxShadow = glow ? `0 12px 32px ${mix(glow, 22)}` : strong ? `${theme.shadow}, var(--fp-card-glow, 0 0 #0000)` : "var(--fp-card-glow, none)";
   return (
     <div
-      className={`${pressable ? "transition-transform hover:-translate-y-[3px] active:scale-[0.985]" : ""} ${className ?? ""}`}
+      className={`fp-glass-edge ${pressable ? "transition-transform hover:-translate-y-[3px] active:scale-[0.985]" : ""} ${className ?? ""}`}
       style={{ ...base, borderRadius: 22, boxShadow, ...style }}
       {...rest}
     >
@@ -563,9 +568,9 @@ const CREDIT_LINKS: { href: string; label: string; icon: LucideIcon }[] = [
 // just to read "how do I register / find my registration number" etc.
 export function HelpButton() {
   const { session } = useAuth();
-  const [helpOpen, setHelpOpen] = useState(false);
+  const pathname = usePathname();
 
-  if (session) return null;
+  if (session || pathname === "/help") return null;
 
   return (
     <>
@@ -575,15 +580,14 @@ export function HelpButton() {
           avoid overlap, which broke at some viewports. Top-left has nothing
           fixed there at any breakpoint (FeastSideNav is vertically centered,
           not top-anchored, and hidden below lg anyway). */}
-      <button
-        onClick={() => setHelpOpen(true)}
+      <Link
+        href="/help"
         className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-full text-white transition-transform active:scale-95 sm:left-6 sm:top-5"
         style={{ background: "var(--fp-nav-on)", color: "var(--fp-nav-on-fg)", boxShadow: "0 8px 20px rgba(var(--fp-primary-rgb),0.3)" }}
         aria-label="Help"
       >
         <HelpCircle className="h-[18px] w-[18px]" />
-      </button>
-      {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
+      </Link>
     </>
   );
 }
@@ -591,7 +595,6 @@ export function HelpButton() {
 export function ProfileMenu() {
   const { session, profile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -633,13 +636,14 @@ export function ProfileMenu() {
           </div>
           <div className="my-1 h-px" style={{ background: theme.hairline }} />
 
-          <button
-            onClick={() => { setOpen(false); setHelpOpen(true); }}
+          <Link
+            href="/help"
+            onClick={() => setOpen(false)}
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px] font-medium"
             style={{ color: theme.text }}
           >
             <HelpCircle className="h-4 w-4" /> Help
-          </button>
+          </Link>
 
           {CREDIT_LINKS.map((c) => (
             <a
@@ -669,7 +673,6 @@ export function ProfileMenu() {
           </button>
         </div>
       )}
-      {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
@@ -745,10 +748,29 @@ export function LoginSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
+// The org's logo as a large watermark fixed behind the page, so the glass
+// panels pick up its colours. Only themes that set --fp-logo-backdrop
+// (Nebula Glass) show it; centred on the content area, right of the side nav
+// on wide screens.
+function LogoBackdrop() {
+  const org = useOrgSettings();
+  if (!org?.logo_url) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={org.logo_url}
+      alt=""
+      aria-hidden="true"
+      className="fp-logo-backdrop fixed top-1/2 left-1/2 w-[82vw] max-w-none -translate-x-1/2 -translate-y-1/2 sm:w-[min(80vw,80vh)] lg:left-[calc(50%+7rem)] lg:w-[min(70vw,88vh)]"
+    />
+  );
+}
+
 // ── Shell — full-bleed page wrapper every screen renders inside ─────────
 export function FeastShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="fp-shell relative min-h-dvh w-full overflow-hidden" style={{ background: theme.pageBg, color: theme.text, fontFamily: theme.ui }}>
+      <LogoBackdrop />
       <Blobs />
       <FeastSideNav />
       <ProfileMenu />
@@ -759,6 +781,7 @@ export function FeastShell({ children }: { children: React.ReactNode }) {
         </div>
       </main>
       <FeastNav />
+      <AngelChat />
     </div>
   );
 }
