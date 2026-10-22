@@ -4,7 +4,8 @@
 // Results screen — one implementation instead of the source app's two
 // near-duplicate copies.
 
-import { Award, Camera, Church, Loader2 } from "lucide-react";
+import { Award, Church, Loader2 } from "lucide-react";
+import { WhatsAppIcon } from "./whatsapp-icon";
 import { getPublishedResults } from "@/actions/results";
 import { getPublishedTeamResults } from "@/actions/team-results";
 import { CATEGORY_LABELS, theme } from "./feast-shared";
@@ -79,10 +80,11 @@ export function ResultRow({ row, onGeneratePoster, delay }: { row: PublicResultR
           type="button"
           onClick={() => onGeneratePoster(row)}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-          style={{ background: theme.surface, border: `1px solid ${theme.line2}`, color: "var(--fp-link)" }}
-          aria-label={`Make a winner poster for ${row.name}`}
+          style={{ background: "rgba(37,211,102,0.14)", border: "1px solid rgba(37,211,102,0.45)", color: "#25D366" }}
+          aria-label={`Share ${row.name}'s result on WhatsApp`}
+          title="Share on WhatsApp"
         >
-          <Camera className="h-[16px] w-[16px]" />
+          <WhatsAppIcon size={18} />
         </button>
       )}
       <GradeBadge grade={row.grade} size={34} />
@@ -157,9 +159,19 @@ export async function loadCompetitionResults(comp: { id: string; cat: string }):
   return sortResults(rows.map((r) => mapResultRow(r as unknown as Record<string, unknown>, isTeam)));
 }
 
-// Always-light "certificate" palette for the award card — it stays white in
-// every theme, like the poster.
-export const AWARD = { ink: "#1E1B4B", sub: "#5F5B8A", link: "#4B31B3", goldInk: "#9A6300", line: "#E4DEFA", soft: "#F4F1FD" };
+// "Certificate" palette for the award card — always light in every theme,
+// like the poster. A theme can re-point the --fp-award-* variables (Nebula
+// Glass makes the board pastel orchid).
+export const AWARD = {
+  ink: "var(--fp-award-ink, #1E1B4B)",
+  sub: "var(--fp-award-sub, #5F5B8A)",
+  link: "var(--fp-award-link, #4B31B3)",
+  goldInk: "var(--fp-award-gold-ink, #9A6300)",
+  line: "var(--fp-award-line, #E4DEFA)",
+  soft: "var(--fp-award-soft, #F4F1FD)",
+  // Chip buttons (the poster button on each row).
+  chip: "var(--fp-award-chip, rgba(255,255,255,.75))",
+};
 
 export function timeAgo(iso: string): string {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -173,6 +185,29 @@ export function timeAgo(iso: string): string {
 // The placed entries (1st–3rd) on the white award card. `header` and
 // `footer` let the dashboard's "Latest result" add the item's title and a
 // link; inside a results list the card only needs its "Final results" line.
+// 1st / 2nd / 3rd rows: pastel gold, silver and bronze in every theme, with
+// the light certificate palette re-applied inside the row (text, grade
+// badges, poster chip) so it reads on the pastel even when a glass theme
+// has turned the card itself dark.
+export const PLACE_PASTEL: Record<1 | 2 | 3, { bg: string; line: string; glow?: string }> = {
+  1: { bg: "linear-gradient(120deg, #FFF5D6 0%, #FCE29B 100%)", line: "#EBC45E", glow: "0 10px 24px rgba(245,197,66,.28)" },
+  2: { bg: "linear-gradient(120deg, #F2F7FC 0%, #C2D0E2 100%)", line: "#8DA2BE", glow: "0 8px 20px rgba(110,130,160,.22)" },
+  3: { bg: "linear-gradient(120deg, #FDEDE1 0%, #F4D0B4 100%)", line: "#DDAB86" },
+};
+export const LIGHT_AWARD_VARS = {
+  "--fp-award-ink": "#1E1B4B",
+  "--fp-award-sub": "#55517E",
+  "--fp-award-link": "#4B31B3",
+  "--fp-award-gold-ink": "#8A5800",
+  "--fp-award-line": "rgba(30,27,75,.14)",
+  "--fp-award-chip": "rgba(255,255,255,.75)",
+  "--fp-award-ga-bg": "#4B31B3",
+  "--fp-award-ga-fg": "#FFE08A",
+  "--fp-award-gb-bg": "#E6E0FF",
+  "--fp-award-gb-fg": "#4B31B3",
+  "--fp-award-gc": "#4B31B3",
+} as React.CSSProperties;
+
 export function AwardCard({ rows, accentColor, onPoster, header, footer }: {
   rows: PublicResultRow[];
   accentColor: string;
@@ -181,7 +216,7 @@ export function AwardCard({ rows, accentColor, onPoster, header, footer }: {
   footer?: React.ReactNode;
 }) {
   return (
-    <article className="overflow-hidden rounded-[24px]" style={{ background: "var(--fp-award-bg)", color: AWARD.ink, boxShadow: "var(--fp-award-shadow)" }}>
+    <article className="overflow-hidden rounded-[24px]" style={{ background: "var(--fp-award-bg)", color: AWARD.ink, boxShadow: "var(--fp-award-shadow)", backdropFilter: "blur(var(--fp-panel-blur)) saturate(150%)", WebkitBackdropFilter: "blur(var(--fp-panel-blur)) saturate(150%)" }}>
       <div aria-hidden="true" className="h-[5px]" style={{ background: `linear-gradient(90deg, ${accentColor}, #F5C542)` }} />
       {header ?? (
         <div className="flex items-center gap-1.5 px-4 pb-1 pt-3.5 text-[11px] font-extrabold uppercase tracking-[0.14em]" style={{ color: AWARD.link }}>
@@ -200,9 +235,10 @@ export function AwardCard({ rows, accentColor, onPoster, header, footer }: {
               style={{
                 animationDelay: `${0.1 + Math.min(i, 4) * 0.08}s`,
                 padding: first ? "16px 12px" : "12px 12px 12px 14px",
-                background: first ? "linear-gradient(120deg, #FFF6DA 0%, #FDE9A9 100%)" : AWARD.soft,
-                border: `1px solid ${first ? "#F2D27A" : AWARD.line}`,
-                boxShadow: first ? "0 10px 24px rgba(245,197,66,.28)" : undefined,
+                ...(pos ? LIGHT_AWARD_VARS : {}),
+                background: pos ? PLACE_PASTEL[pos].bg : AWARD.soft,
+                border: `1px solid ${pos ? PLACE_PASTEL[pos].line : AWARD.line}`,
+                boxShadow: pos ? PLACE_PASTEL[pos].glow : undefined,
               }}
             >
               {first && (
@@ -224,15 +260,16 @@ export function AwardCard({ rows, accentColor, onPoster, header, footer }: {
                   type="button"
                   onClick={() => onPoster(w)}
                   className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
-                  style={{ background: "rgba(255,255,255,.75)", border: `1px solid ${AWARD.line}`, color: AWARD.link }}
-                  aria-label={`Make a winner poster for ${w.name}`}
+                  style={{ background: "#FFFFFF", border: "1px solid rgba(37,211,102,0.55)", color: "#1FAF55", boxShadow: "0 4px 12px rgba(37,211,102,0.22)" }}
+                  aria-label={`Share ${w.name}'s result on WhatsApp`}
+                  title="Share on WhatsApp"
                 >
-                  <Camera className="h-4 w-4" />
+                  <WhatsAppIcon size={19} />
                 </button>
               )}
               <span className="relative flex flex-col items-center gap-[5px]">
                 <GradeBadge grade={w.grade} size={first ? 44 : 36} variant="award" />
-                <span className="text-[9.5px] font-extrabold uppercase tracking-[0.14em]" style={{ color: "#625E8A" }}>Grade</span>
+                <span className="text-[9.5px] font-extrabold uppercase tracking-[0.14em]" style={{ color: AWARD.sub }}>Grade</span>
               </span>
             </li>
           );

@@ -73,6 +73,7 @@ Migrations live in [`supabase/migrations/`](./supabase/migrations/), numbered in
 | `003_feast_competitions.sql` *(optional)* | Creates two draft feasts — കലാ മത്സരം (arts) and സാഹിത്യ മത്സരം (literature) — and attaches `002`'s catalogs to them; configure them in `/admin/feasts`, or skip this file entirely |
 | `004`–`006` *(optional)* | One organization's shakha/meghala seed data — skip for any other org |
 | `007_shared_reg_number_counter.sql` | Registration numbers as `F1405` from one counter shared by every feast (replaces the per-feast `F5848-1405` counter) |
+| `018_participant_photo.sql` | `participants.photo_url` — the registration photo (see [Participant photos](#participant-photos-aws-s3)). Run it **before** deploying code that reads photos. |
 
 **Option A — Supabase SQL Editor (simplest, no CLI needed):**
 
@@ -126,6 +127,31 @@ From there, sign in at `/admin/login` and use the admin panel to:
 6. Once live, visit `https://<your-domain>/setup` to create your first admin on the production database (skip this if you already ran `/setup` locally against the same Supabase project — one profile is enough to lock the route).
 
 If you later attach a custom domain in Vercel, update `NEXT_PUBLIC_SITE_URL` to match and redeploy.
+
+---
+
+## Participant photos (AWS S3)
+
+Registrations for individual events (Feast Portal and admin) ask for a photo. It's cropped to the poster's portrait frame, compressed in the browser to a JPEG under 4MB, and uploaded straight to S3 with a short-lived presigned PUT (`src/actions/photos.ts`). The public URL is stored on `participants.photo_url` and shown on winner posters and the `/screen` results spotlight. Without the AWS variables the photo step reports that upload isn't set up; registration still works.
+
+1. Create an S3 bucket (e.g. `fest-hub-photos`) in your region.
+2. Let the photos be read publicly — they're stored under random, unguessable keys. With "Block public access" off for bucket policies, add:
+   ```json
+   { "Version": "2012-10-17", "Statement": [{ "Effect": "Allow", "Principal": "*", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::fest-hub-photos/participants/*" }] }
+   ```
+3. CORS — the browser uploads (PUT) and the poster page reads photos back (GET):
+   ```json
+   [{ "AllowedOrigins": ["https://your-domain", "http://localhost:3000"], "AllowedMethods": ["PUT", "GET"], "AllowedHeaders": ["content-type"], "MaxAgeSeconds": 3000 }]
+   ```
+4. An IAM user (or role) limited to `s3:PutObject` on `arn:aws:s3:::fest-hub-photos/participants/*`, and its keys in the environment:
+   ```bash
+   AWS_REGION=ap-south-1
+   AWS_S3_BUCKET=fest-hub-photos
+   AWS_ACCESS_KEY_ID=...
+   AWS_SECRET_ACCESS_KEY=...
+   # optional, if served through CloudFront / a custom domain (no trailing slash):
+   AWS_S3_PUBLIC_BASE_URL=
+   ```
 
 ---
 

@@ -2,8 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Nayana — Malayalam display font used only by the result poster's feast-name
-   heading (see poster-render.tsx); the rest of the app keeps Anek/Baloo. */
+/* Nayana — Malayalam display font for the result poster's feast-name
+   heading (see poster-render.tsx) and the portal's app name (.fp-app-name). */
 @font-face {
   font-family: "Nayana";
   src: url("/font/FN-Nayana-Regular.otf") format("opentype");
@@ -509,6 +509,35 @@
   --fp-nav-bg: rgba(52, 12, 26, 0.9);
 }
 
+/* nebula — "Nebula Glass": a futuristic neon-glass dark theme. Deep space
+   indigo with a starfield, frosted glass panels with glowing neon edges, and a
+   magenta → electric-blue brand pair; gold still marks every winner. Its page
+   background, starfield and neon overrides are in the "Nebula Glass only"
+   block below. */
+[data-fp-theme="nebula"] {
+  --fp-ink: #F4F1FF;
+  --fp-sub: #E4E0FA;
+  --fp-faint: #B8B2E2;
+  --fp-gold: #F5C542;
+  --fp-gold-rgb: 245, 197, 66;
+  --fp-primary: #B44CFF;
+  --fp-primary-rgb: 180, 76, 255;
+  --fp-primary-dark: #5A1FB8;
+  --fp-primary-light: #E08BFF;
+  --fp-primary-light-rgb: 224, 139, 255;
+  --fp-accent: #FF3FB4;
+  --fp-accent-rgb: 255, 63, 180;
+  --fp-cyan: #38BDF8;
+  --fp-fill: #150B36;
+  --fp-bg-1: #1E0E4D;
+  --fp-bg-2: #0E0726;
+  --fp-bg-3: #050312;
+  --fp-glass: rgba(24, 14, 60, 0.8);
+  --fp-glass-strong: rgba(30, 18, 72, 0.88);
+  --fp-glass-border: rgba(214, 170, 255, 0.22);
+  --fp-nav-bg: rgba(18, 9, 46, 0.78);
+}
+
 /* Competition card "view results" arrow — gentle downward nudge */
 @keyframes resultsNudge {
   0%, 100% { transform: translateY(-1px); }
@@ -627,6 +656,10 @@
   --fp-muted-bg: rgba(107, 114, 128, 0.14);
   --fp-muted-fg: #3F4753;
   --fp-pass-bg: linear-gradient(140deg, var(--fp-primary) 0%, var(--fp-primary-light) 45%, var(--fp-accent) 100%);
+  /* /screen panels: frosted blur and an edge glow. Off for every theme but
+     Nebula Glass, which turns both on. */
+  --fp-panel-blur: 0px;
+  --fp-panel-glow: none;
 }
 
 /* Dark themes: surfaces are dark glass, so the light-surface assumptions above
@@ -634,7 +667,8 @@
 [data-fp-theme="midnight"],
 [data-fp-theme="emerald"],
 [data-fp-theme="championship"],
-[data-fp-theme="burgundy"] {
+[data-fp-theme="burgundy"],
+[data-fp-theme="nebula"] {
   --fp-surface-3: rgba(255, 255, 255, 0.05);
   --fp-line: rgba(255, 255, 255, 0.08);
   --fp-line-2: rgba(255, 255, 255, 0.14);
@@ -778,6 +812,167 @@
   --fp-cat-s-hi: var(--fp-cat-s);
 }
 
+/* Nebula Glass only: starfield over two nebula glows (magenta top-right,
+   electric blue bottom-left), neon magenta → violet → blue for active chips,
+   buttons and the highlight text, and glowing panel edges. Gold stays the
+   winner colour (medals, 1st place, the gold CTA). */
+[data-fp-theme="nebula"] {
+  --fp-page-bg:
+    radial-gradient(1.5px 1.5px at 12% 18%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 27% 64%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 41% 9%, rgba(224, 139, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 58% 41%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(2px 2px at 69% 82%, rgba(56, 189, 248, 0.8), transparent),
+    radial-gradient(1px 1px at 83% 27%, rgba(255, 255, 255, 0.75), transparent),
+    radial-gradient(1.5px 1.5px at 92% 58%, rgba(255, 63, 180, 0.8), transparent),
+    radial-gradient(1px 1px at 6% 86%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 36% 92%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1.5px 1.5px at 76% 6%, rgba(255, 255, 255, 0.8), transparent),
+    linear-gradient(118deg, transparent 0 57%, rgba(255, 79, 216, 0.24) 60%, rgba(124, 92, 255, 0.1) 62%, transparent 65%),
+    linear-gradient(124deg, transparent 0 67%, rgba(56, 189, 248, 0.2) 69.5%, transparent 72%),
+    linear-gradient(112deg, transparent 0 20%, rgba(155, 92, 255, 0.12) 22%, transparent 24.5%),
+    radial-gradient(30% 26% at 68% 56%, rgba(155, 92, 255, 0.26) 0%, rgba(155, 92, 255, 0) 100%),
+    radial-gradient(26% 22% at 22% 36%, rgba(255, 63, 180, 0.2) 0%, rgba(255, 63, 180, 0) 100%),
+    radial-gradient(55% 38% at 92% 0%, rgba(214, 64, 255, 0.42) 0%, rgba(214, 64, 255, 0) 100%),
+    radial-gradient(50% 40% at 0% 100%, rgba(56, 120, 248, 0.34) 0%, rgba(56, 120, 248, 0) 100%),
+    radial-gradient(70% 45% at 50% 108%, rgba(255, 63, 180, 0.22) 0%, rgba(255, 63, 180, 0) 100%),
+    linear-gradient(165deg, #1E0E4D 0%, #0E0726 48%, #050312 100%);
+  --fp-base: #070418;
+  --fp-bar: rgba(14, 7, 38, 0.86);
+  --fp-line: rgba(214, 170, 255, 0.12);
+  --fp-line-2: rgba(214, 170, 255, 0.24);
+  --fp-hl: linear-gradient(100deg, #FF4FD8 0%, #B44CFF 45%, #38BDF8 100%);
+  --fp-chip-on: linear-gradient(135deg, #FF3FB4, #9B5CFF 55%, #3B82F6);
+  --fp-chip-on-fg: #FFFFFF;
+  --fp-btn: linear-gradient(135deg, #FF3FB4, #B44CFF);
+  --fp-btn-fg: #FFFFFF;
+  --fp-btn-alt: linear-gradient(135deg, #7C5CFF, #38BDF8);
+  --fp-btn-alt-fg: #FFFFFF;
+  --fp-cta-gold: linear-gradient(135deg, #FFE08A, #F5C542 50%, #E0A21B);
+  --fp-cta-gold-fg: #2A1A04;
+  --fp-nav-on: linear-gradient(145deg, #FF3FB4, #9B5CFF 55%, #3B82F6);
+  --fp-nav-on-fg: #FFFFFF;
+  --fp-nav-on-shadow: 0 0 0 5px #120933, 0 0 22px rgba(255, 63, 180, 0.55);
+  --fp-nav-label-on: #FF9AD9;
+  --fp-sheet: #140A38;
+  --fp-scrim: rgba(5, 3, 18, 0.66);
+  --fp-live: #FF4FD8;
+  --fp-live-bg: rgba(255, 79, 216, 0.12);
+  --fp-live-line: rgba(255, 79, 216, 0.42);
+  --fp-rays: rgba(180, 76, 255, 0.12);
+  --fp-on-cat: #0B0620;
+  --fp-gb-fg: #150B36;
+  --fp-logo-line: rgba(255, 79, 216, 0.6);
+  /* Glass: a frosted fill, light at the top-left and fading, and a gradient
+     neon edge drawn by .fp-glass-edge's masked ring (below). */
+  --fp-panel-edge: linear-gradient(135deg, rgba(255, 79, 216, 0.9) 0%, rgba(155, 92, 255, 0.4) 30%, rgba(255, 255, 255, 0.08) 55%, rgba(59, 130, 246, 0.9) 100%);
+  /* Separated from the background: a denser frost (a tinted base under the
+     white sheen, so streaks behind read as blurred light, not as the panel),
+     a bright top rim, a darker bottom rim and a deep drop shadow. */
+  --fp-panel-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.05) 30%, rgba(255, 255, 255, 0.02) 100%), rgba(18, 10, 50, 0.84);
+  --fp-panel-bg-strong: linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 32%, rgba(255, 255, 255, 0.03) 100%), rgba(18, 10, 50, 0.9);
+  --fp-panel-bg-3: linear-gradient(160deg, rgba(214, 110, 255, 0.2) 0%, rgba(255, 255, 255, 0.04) 40%, rgba(56, 120, 248, 0.08) 100%), rgba(18, 10, 50, 0.82);
+  --fp-panel-line: rgba(255, 255, 255, 0.1);
+  --fp-card-glow: 0 18px 40px rgba(3, 1, 14, 0.55), 0 0 24px rgba(180, 76, 255, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+  /* /screen: the neon orbit ring around the spotlight's winner, and the
+     blurred org logo behind the middle column. */
+  --fp-orbit-display: block;
+  --fp-logo-backdrop: block;
+  /* The results board (award card: latest result, results page, /screen's
+     Final results) is a pastel orchid "certificate" — lavender into pink,
+     the page's own purple and magenta lightened — floating on the dark glass
+     with a violet halo, so the winners are the brightest, most readable thing
+     on the page. Saturated enough to stay distinct from the steel-blue silver
+     row. Dark ink. */
+  --fp-award-bg: linear-gradient(165deg, #F1E6FF 0%, #E2CEFF 50%, #F6DAF2 100%);
+  --fp-award-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6), inset 0 1px 0 #FFFFFF, 0 26px 60px rgba(3, 1, 14, 0.6), 0 0 44px rgba(180, 76, 255, 0.32);
+  --fp-award-ink: #1E1B4B;
+  --fp-award-sub: #57527F;
+  --fp-award-link: #5A1FB8;
+  --fp-award-gold-ink: #8A5800;
+  --fp-award-line: rgba(90, 31, 184, 0.16);
+  --fp-award-soft: rgba(255, 255, 255, 0.6);
+  /* Rows inside panels: a touch lighter than their panel, never see-through. */
+  --fp-row-bg: rgba(255, 255, 255, 0.06);
+  --fp-row-open: rgba(255, 255, 255, 0.1);
+  --fp-meta: #CFCAEE;
+  --fp-cat-s: #C9A2FF; --fp-cat-s-ink: #C9A2FF; --fp-cat-s-deep: #9B5CFF;
+  --fp-cat-s-hi: var(--fp-cat-s);
+  --fp-cat-team-hi: #7DD3FC;
+  --fp-panel-blur: 16px;
+  --fp-panel-glow: 0 30px 70px rgba(3, 1, 14, 0.65), 0 0 30px rgba(255, 79, 216, 0.16), 0 0 80px rgba(59, 130, 246, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* The portal's app name is set in Nayana (the poster's Malayalam display
+   face, @font-face at the top of this file) in every theme. */
+.fp-app-name {
+  font-family: "Nayana", var(--font-anek), sans-serif;
+  font-weight: 700;
+  font-stretch: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  line-height: 0.74;
+  padding-block: 0.13em;
+}
+
+/* Nebula Glass: the portal's app name as a gold-foil festival title —
+   Nayana in polished gold (light at the top, deep amber at the base, a pale
+   rim at the bottom edge), a fine dark edge so it holds on any background,
+   a warm glow, and one light sweep across it when the page loads. Other
+   themes keep the gradient display type. */
+[data-fp-theme="nebula"] .fp-app-name {
+  background:
+    linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.9) 50%, transparent 58%) 130% 0 / 260% 100% no-repeat,
+    linear-gradient(180deg, #FFF7D6 0%, #FFE08A 26%, #F5C542 52%, #C98E14 78%, #FFE7A3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 0.6px rgba(92, 52, 0, 0.55);
+  font-family: "Nayana", var(--font-anek), sans-serif;
+  font-weight: 700;
+  font-stretch: normal;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  line-height: 0.74;
+  padding-block: 0.13em;
+  text-shadow: none;
+  filter: drop-shadow(0 2px 0 rgba(74, 40, 0, 0.55)) drop-shadow(0 10px 26px rgba(245, 197, 66, 0.32));
+  animation: fp-foil-sweep 1.8s cubic-bezier(.4, 0, .2, 1) 0.4s both;
+}
+@keyframes fp-foil-sweep {
+  from { background-position: 130% 0, 0 0; }
+  to { background-position: -30% 0, 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-fp-theme="nebula"] .fp-app-name { animation: none; }
+}
+
+/* The org logo as a watermark behind the page (portal shell and /screen). */
+.fp-logo-backdrop { display: var(--fp-logo-backdrop, none); aspect-ratio: 1; object-fit: contain; filter: grayscale(0.7) brightness(1.05); opacity: .17; pointer-events: none; user-select: none; }
+
+/* Gradient neon edge for glass panels: a 1px ring masked out of a gradient
+   fill, so the panel's own translucent fill stays clear. Only themes that
+   define --fp-panel-edge (Nebula Glass) draw it. */
+/* In the base layer so a utility (absolute, fixed…) or an inline position
+   on the panel still wins. */
+@layer base {
+  [data-fp-theme="nebula"] .fp-glass-edge { position: relative; }
+}
+[data-fp-theme="nebula"] .fp-glass-edge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: var(--fp-panel-edge);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
 /* ── Championship design utilities (Feast Portal only, fp- prefixed) ──── */
 .fp-num { font-family: var(--font-archivo), sans-serif; font-stretch: 78%; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; line-height: 1; }
 .fp-disp { font-family: var(--font-archivo), var(--font-anek), sans-serif; font-stretch: 70%; font-weight: 900; text-transform: uppercase; line-height: 0.92; letter-spacing: 0.005em; }
@@ -821,7 +1016,7 @@
 }
 
 /* Native pickers (date inputs, selects) follow the dark portal themes. */
-[data-fp-theme="midnight"] .fp-shell, [data-fp-theme="emerald"] .fp-shell, [data-fp-theme="championship"] .fp-shell, [data-fp-theme="burgundy"] .fp-shell { color-scheme: dark; }
+[data-fp-theme="midnight"] .fp-shell, [data-fp-theme="emerald"] .fp-shell, [data-fp-theme="championship"] .fp-shell, [data-fp-theme="burgundy"] .fp-shell, [data-fp-theme="nebula"] .fp-shell { color-scheme: dark; }
 /* A select's dropdown list is painted with the select's own background. The
    portal's input fill is translucent, so on its own the list lands on plain
    white with the theme's (white, in dark themes) text. Give the options a

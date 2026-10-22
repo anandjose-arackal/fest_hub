@@ -30,6 +30,8 @@ Meghala/Diocese-wise point rollups are computed on read (`getMeghalaStandings`/`
 
 `feasts` → `feast_competitions` (joins `competitions`, carries `gender`/`competition_category_id`/`stage_id`) → `participants` (`shakha_id`, `house_name`, `registration_number`, `competition_category_id`) → `participant_registrations` (per-entry, `participated` boolean, `chance_no`). Team competitions mirror this via `team_registrations`/`team_registration_members`. Categories (`sub_junior | junior | senior | super_senior | elder`) derive from DOB against `competition_categories` (DB is the single source of truth for cutoffs — don't duplicate the thresholds in TS).
 
+Participant photos: `participants.photo_url` is an S3 URL. Every registration form uses the one `ParticipantPhotoField` (`src/components/feast/participant-photo-field.tsx`): crop to the poster's 556×730 portrait, compress to JPEG under 4MB in the browser (`src/lib/compress-image.ts`), presigned PUT from `createPhotoUploadUrl` (`src/actions/photos.ts`). Registration actions store only URLs that pass `checkPhotoUrl` (`src/lib/s3.ts`). Posters prefill from it; `/screen` shows it via `src/components/screen/participant-photo.tsx` (individual items only).
+
 Scoring: scores land in `competition_results`/`team_results`; publishing computes grade/position/points (`src/lib/result-calculator.ts`, pure functions), writes `shakha_point_ledger`, rebuilds `shakha_feast_standings`. `feast_competitions.result_status` is `draft | published`; unpublish reverses.
 
 ## Auth / roles

@@ -29,6 +29,7 @@ const THEME_OPTIONS: { value: PortalTheme; label: string; swatches: string[] }[]
   { value: "emerald", label: "Emerald Night", swatches: ["#0D1A16", "#16D9A0", "#FF7A5C"] },
   { value: "championship", label: "Championship Night", swatches: ["#1C1946", "#F5C542", "#FF6FB0"] },
   { value: "burgundy", label: "Burgundy Night", swatches: ["#3A0F1E", "#F5C542", "#EA6B8A"] },
+  { value: "nebula", label: "Nebula Glass", swatches: ["#0E0726", "#FF3FB4", "#38BDF8"] },
 ];
 
 export default function OrgSettingsPage() {

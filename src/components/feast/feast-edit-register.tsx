@@ -12,6 +12,7 @@ import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { GlassPanel, GlowBtn, FeastTopBar, ProcessingOverlay, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS, useSubmitLock } from "./feast-shared";
 import { TextField, DateField, CategoryPill, GenderPicker, TeamEventList, normGender, DEFAULT_MAX_PER_SHAKHA } from "./feast-register";
 import type { CompetitionCategory } from "@/types";
+import { ParticipantPhotoField } from "./participant-photo-field";
 
 const STEPS = ["Details", "Events", "Review"];
 
@@ -35,6 +36,8 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   const [teamCounts, setTeamCounts] = useState<Record<string, number>>({});
   const [teamScopeName, setTeamScopeName] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => { fetchCompetitionCategories().then(setCategories); }, []);
@@ -43,7 +46,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   useEffect(() => {
     (async () => {
       const [{ data: p }, { data: regs }, { data: teams }] = await Promise.all([
-        supabase.from("participants").select("name, house_name, date_of_birth, gender, phone, shakha_id").eq("id", participantId).single(),
+        supabase.from("participants").select("*").eq("id", participantId).single(),
         supabase.from("participant_registrations").select("feast_competition_id").eq("participant_id", participantId),
         supabase.from("team_registration_members").select("feast_competition_id").eq("participant_id", participantId),
       ]);
@@ -59,6 +62,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
           phone: p.phone ?? "",
         });
         setShakhaId(p.shakha_id);
+        setPhotoUrl(p.photo_url ?? null);
       }
       setPicked((regs ?? []).map((r) => r.feast_competition_id));
       setLoaded(true);
@@ -118,6 +122,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
         phone: form.phone,
         feastCompetitionIds: picked,
         teamCompetitionIds: pickedTeams,
+        photoUrl,
       });
       if (result.error) {
         setServerError(result.error);
@@ -248,8 +253,14 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
               </div>
             </div>
           </GlassPanel>
+          {picked.length > 0 && (
+            <GlassPanel strong className="mb-3.5 p-[18px]">
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Participant photo</div>
+              <ParticipantPhotoField feastId={feast.id} value={photoUrl} onChange={setPhotoUrl} onBusyChange={setPhotoBusy} personName={form.name} />
+            </GlassPanel>
+          )}
           {serverError && <p className="mb-3 rounded-xl px-2 py-2 text-center text-xs" style={{ color: "#ef4444", background: "#fee2e2" }}>{serverError}</p>}
-          <GlowBtn variant="gold" size="lg" className="w-full" loading={submitting} onClick={submit}>{submitting ? "Saving…" : "Save Changes"}</GlowBtn>
+          <GlowBtn variant="gold" size="lg" className="w-full" loading={submitting} disabled={photoBusy} onClick={submit}>{submitting ? "Saving…" : "Save Changes"}</GlowBtn>
         </div>
       )}
       {submitting && <ProcessingOverlay label={busyLabel} />}

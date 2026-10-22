@@ -16,6 +16,7 @@ import { AlertTriangle, ArrowLeft, Loader2, Search, UserPlus, X } from "lucide-r
 import { supabase } from "@/lib/supabase";
 import { fetchAll } from "@/lib/fetch-all";
 import { addParticipantToCompetition, createParticipantAdmin, updateParticipant } from "@/actions/feast";
+import { ParticipantPhotoField } from "@/components/feast/participant-photo-field";
 import { registerTeam } from "@/actions/team";
 import { CATEGORY_LABELS, fetchCompetitionCategories, formatCompetitionOptionLabel, getCategorySlug } from "@/lib/competition-categories";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
@@ -58,9 +59,12 @@ interface FestParticipant {
   phone: string | null;
   shakha_id: string | null;
   competition_category_id: string | null;
+  photo_url: string | null;
 }
 
-const PARTICIPANT_COLS = "id, name, house_name, registration_number, gender, date_of_birth, phone, shakha_id, competition_category_id";
+// "*" rather than a column list: photo_url only exists after migration 018,
+// and naming it on an older database would fail the whole read.
+const PARTICIPANT_COLS = "*";
 const MAX_LIST = 60;
 const INPUT = "w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 focus:border-[#6B46FF] focus:outline-none";
 const LABEL = "mb-1 block text-xs font-semibold text-neutral-600";
@@ -119,6 +123,9 @@ export function RegisterEntryDialog({
   const [teamMembers, setTeamMembers] = useState<string[]>([]);
   const [memberQuery, setMemberQuery] = useState("");
 
+  const [editPhoto, setEditPhoto] = useState<string | null>(null);
+  const [newPhoto, setNewPhoto] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -201,6 +208,7 @@ export function RegisterEntryDialog({
   function openEdit(p: FestParticipant) {
     setEditId(p.id);
     setEditForm({ name: p.name, houseName: p.house_name ?? "", dob: p.date_of_birth ?? "", gender: normGender(p.gender) || (p.gender ?? ""), phone: p.phone ?? "" });
+    setEditPhoto(p.photo_url ?? null);
     setEditItems(null);
     setError(null);
     setNotice(null);
@@ -244,7 +252,8 @@ export function RegisterEntryDialog({
       editForm.houseName.trim() !== (editing.house_name ?? "") ||
       editForm.dob !== (editing.date_of_birth ?? "") ||
       editForm.gender !== (normGender(editing.gender) || (editing.gender ?? "")) ||
-      editForm.phone.trim() !== (editing.phone ?? "");
+      editForm.phone.trim() !== (editing.phone ?? "") ||
+      editPhoto !== (editing.photo_url ?? null);
     let detailsError: string | null = null;
     if (changed) {
       const fcIds = [...new Set([...(editItems ?? []).map((i) => i.fcId), target.id])];
@@ -257,6 +266,7 @@ export function RegisterEntryDialog({
             gender: editForm.gender,
             phone: editForm.phone.trim(),
             feastCompetitionIds: fcIds,
+            photoUrl: editPhoto,
           })
         : { error: "their current items hadn't loaded yet" };
       detailsError = res.error ?? null;
@@ -267,7 +277,7 @@ export function RegisterEntryDialog({
     if (changed && !detailsError) {
       setParticipants((prev) =>
         prev?.map((p) =>
-          p.id === editing.id ? { ...p, name, house_name: house || null, date_of_birth: editForm.dob, gender: editForm.gender, phone: editForm.phone.trim() || null } : p
+          p.id === editing.id ? { ...p, name, house_name: house || null, date_of_birth: editForm.dob, gender: editForm.gender, phone: editForm.phone.trim() || null, photo_url: editPhoto } : p
         ) ?? prev
       );
     }
@@ -313,6 +323,7 @@ export function RegisterEntryDialog({
       gender: newForm.gender,
       phone: newForm.phone.trim(),
       feastCompetitionIds: [target.id],
+      photoUrl: newPhoto,
     });
     setSaving(false);
     const regId = res.registrationIds?.[target.id];
@@ -330,6 +341,7 @@ export function RegisterEntryDialog({
       phone: newForm.phone.trim() || null,
       shakha_id: newShakhaId,
       competition_category_id: categories.find((c) => c.slug === getCategorySlug(newForm.dob, categories))?.id ?? null,
+      photo_url: newPhoto,
     };
     setParticipants((prev) => (prev ? [...prev, created] : prev));
     onAdded({
@@ -342,6 +354,7 @@ export function RegisterEntryDialog({
       participantId: created.id,
     });
     setNewForm(defaultForm);
+    setNewPhoto(null);
     setNewShakhaId("");
     setView("find");
   }
@@ -556,6 +569,10 @@ export function RegisterEntryDialog({
                 <p className="mt-1 text-xs font-semibold" style={{ color: "#6B46FF" }}>Saving adds this item to the same registration — no new participant is created.</p>
               </div>
               <PersonFields form={editForm} onChange={setEditForm} />
+              <div>
+                <span className={LABEL}>Photo</span>
+                <ParticipantPhotoField feastId={target.feastId} value={editPhoto} onChange={setEditPhoto} onBusyChange={setPhotoBusy} personName={editForm.name} variant="admin" />
+              </div>
               {editWarnings.map((w) => <Warning key={w} text={w} />)}
             </div>
           )}
@@ -568,6 +585,10 @@ export function RegisterEntryDialog({
                 <HierarchyPicker value={newShakhaId} onChange={setNewShakhaId} hierarchy={hierarchy} className={INPUT} required />
               </div>
               <PersonFields form={newForm} onChange={setNewForm} />
+              <div>
+                <span className={LABEL}>Photo</span>
+                <ParticipantPhotoField feastId={target.feastId} value={newPhoto} onChange={setNewPhoto} onBusyChange={setPhotoBusy} personName={newForm.name} variant="admin" />
+              </div>
               {possibleDuplicates.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
                   <p className="text-xs font-bold text-amber-800">Already registered? Edit their registration instead of creating a duplicate:</p>
@@ -646,7 +667,7 @@ export function RegisterEntryDialog({
             <button
               type="button"
               onClick={target.isGroup ? saveTeam : view === "edit" ? saveEdit : saveNew}
-              disabled={saving || target.isPublished || (target.isGroup && teamShakhaTaken)}
+              disabled={saving || photoBusy || target.isPublished || (target.isGroup && teamShakhaTaken)}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               style={{ background: "linear-gradient(135deg,#6B46FF,#A855F7)" }}
             >

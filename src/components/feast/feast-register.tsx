@@ -12,10 +12,14 @@ import { countScopeRegistrations, loadScopeTeams, resolveCapScope } from "@/lib/
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { GlassPanel, GlowBtn, FeastTopBar, ProcessingOverlay, RegistrationClosed, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS, catStyle, mix, useSubmitLock } from "./feast-shared";
 import { HierarchyPicker, type PickerHierarchy } from "@/components/admin/hierarchy-picker";
+import { ParticipantPhotoField } from "./participant-photo-field";
 import type { CompetitionCategory } from "@/types";
 
 export const DEFAULT_MAX_PER_SHAKHA = 2;
+// The Photo step only appears once an individual event is picked — team-only
+// registrations go straight from Events to Review.
 const STEPS = ["Details", "Events", "Review"];
+const STEPS_WITH_PHOTO = ["Details", "Events", "Photo", "Review"];
 
 // Matches TextField/DateField's glass-input look above, for the one place a
 // plain <select> (HierarchyPicker) needs to sit among them.
@@ -159,6 +163,8 @@ export function FeastRegister({ slug }: { slug: string }) {
   const [form, setForm] = useState({ name: "", houseName: "", dob: "", gender: "", phone: "" });
   const [picked, setPicked] = useState<string[]>([]);
   const [pickedTeams, setPickedTeams] = useState<string[]>([]);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [shakhaCounts, setShakhaCounts] = useState<Record<string, number>>({});
   // Members already on the scope's team, per team event, and the scope's
   // name (the team is named after it).
@@ -229,6 +235,7 @@ export function FeastRegister({ slug }: { slug: string }) {
         phone: form.phone,
         feastCompetitionIds: picked,
         teamCompetitionIds: pickedTeams,
+        photoUrl: picked.length > 0 ? photoUrl : null,
       });
       if ("error" in result) {
         setServerError(result.error);
@@ -262,14 +269,21 @@ export function FeastRegister({ slug }: { slug: string }) {
     ...picked.map((id) => ({ id, team: false })),
     ...pickedTeams.map((id) => ({ id, team: true })),
   ].map(({ id, team }) => ({ id, team, name: feast.competitions.find((c) => c.id === id)?.name ?? "" }));
+  const steps = picked.length > 0 ? STEPS_WITH_PHOTO : STEPS;
+  const stepKey = steps[Math.min(step, steps.length - 1)];
+  const showPhoto = picked.length > 0 && !!photoUrl;
 
   const summarySidebar = (
     <GlassPanel strong className="p-4">
       <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Registering for</p>
       <p className="mt-0.5 text-[17px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{feast.name}</p>
-      <p className="mt-1 text-[12.5px]" style={{ color: theme.sub }}>Step {step + 1} of {STEPS.length} — {STEPS[step]}</p>
+      <p className="mt-1 text-[12.5px]" style={{ color: theme.sub }}>Step {step + 1} of {steps.length} — {stepKey}</p>
 
       <div className="mt-4 space-y-2.5" style={{ borderTop: `1px solid ${theme.hairline}`, paddingTop: 14 }}>
+        {showPhoto && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photoUrl!} alt="" className="mb-1 h-20 rounded-xl object-cover" style={{ aspectRatio: "556 / 730", border: `1px solid ${theme.hairline}` }} />
+        )}
         {form.name ? (
           <SummaryRow label="Name" value={form.name} />
         ) : (
@@ -305,12 +319,12 @@ export function FeastRegister({ slug }: { slug: string }) {
   return (
     <div>
       <FeastTopBar title={`Register · ${feast.name}`} onBack={() => (step === 0 ? router.push(`/feast/${slug}`) : setStep((s) => s - 1))} />
-      <div className="mb-4"><StepDots steps={STEPS} current={step} /></div>
+      <div className="mb-4"><StepDots steps={steps} current={step} /></div>
 
       <div className="lg:grid lg:grid-cols-[1fr_320px] lg:items-start lg:gap-8">
         <div className="min-w-0">
 
-      {step === 0 && (
+      {stepKey === "Details" && (
         <div>
           <GlassPanel className="mb-3.5 p-4">
             <TextField label="Full Name" value={form.name} onChange={(v) => set("name", v)} placeholder="e.g. Ann Maria Joy" icon={User} />
@@ -344,7 +358,7 @@ export function FeastRegister({ slug }: { slug: string }) {
         </div>
       )}
 
-      {step === 1 && (
+      {stepKey === "Events" && (
         <div>
           <div className="mb-3 flex items-center justify-between">
             <p className="text-[13px] leading-relaxed" style={{ color: theme.sub }}>Showing competitions for your category. Select the ones you&apos;d like to enter.</p>
@@ -404,15 +418,35 @@ export function FeastRegister({ slug }: { slug: string }) {
             <span className="text-[13px]" style={{ color: theme.sub }}>Selected</span>
             <span className="text-[15px] font-bold" style={{ color: theme.text }}>{chosen.length} event{chosen.length !== 1 ? "s" : ""}</span>
           </div>
-          <GlowBtn variant="primary" size="lg" className="w-full" onClick={() => setStep(2)}>Review Registration</GlowBtn>
+          <GlowBtn variant="primary" size="lg" className="w-full" onClick={() => setStep(2)}>{picked.length > 0 ? "Continue" : "Review Registration"}</GlowBtn>
           {chosen.length === 0 && <p className="mt-2.5 text-center text-[11.5px]" style={{ color: theme.faint }}>No events selected — you can still register now and add events later from My registrations.</p>}
         </div>
       )}
 
-      {step === 2 && (
+      {stepKey === "Photo" && (
         <div>
           <GlassPanel strong className="mb-3.5 p-[18px]">
-            <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Confirm your details</div>
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Participant photo</div>
+            <p className="mb-4 text-[12.5px] leading-relaxed" style={{ color: theme.sub }}>
+              For individual events, a photo of <strong style={{ color: theme.text }}>{form.name.trim() || "the participant"}</strong> is shown with their result. It&apos;s compressed before upload.
+            </p>
+            <ParticipantPhotoField feastId={feast.id} value={photoUrl} onChange={setPhotoUrl} onBusyChange={setPhotoBusy} personName={form.name} />
+          </GlassPanel>
+          <GlowBtn variant="primary" size="lg" className="w-full" disabled={photoBusy} onClick={() => setStep(3)}>{photoUrl ? "Review Registration" : "Skip for now"}</GlowBtn>
+          {!photoUrl && <p className="mt-2.5 text-center text-[11.5px]" style={{ color: theme.faint }}>You can add the photo later from My registrations.</p>}
+        </div>
+      )}
+
+      {stepKey === "Review" && (
+        <div>
+          <GlassPanel strong className="mb-3.5 p-[18px]">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Confirm your details</div>
+              {showPhoto && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoUrl!} alt={`Photo of ${form.name}`} className="h-[76px] shrink-0 rounded-xl object-cover" style={{ aspectRatio: "556 / 730", border: `1px solid ${theme.hairline}` }} />
+              )}
+            </div>
             {[
               ["Name", form.name], ["House Name", form.houseName || "—"], ["Date of Birth", form.dob],
               ["Gender", form.gender.charAt(0).toUpperCase() + form.gender.slice(1)],

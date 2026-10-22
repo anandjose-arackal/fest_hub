@@ -125,7 +125,9 @@ export function FeastParticipants() {
   const groups = level === "diocese" ? hierarchy.dioceses : level === "meghala" ? hierarchy.meghalas : hierarchy.shakhas;
   const [groupId, setGroupId] = useState(search.get("group") ?? "");
   const activeGroup = groups.find((g) => g.id === groupId) ?? null;
-  const [query, setQuery] = useState("");
+  // ?q= opens the page already searched (Angel's "Open Search" link).
+  const [query, setQuery] = useState(search.get("q") ?? "");
+  const initialQuery = useRef(search.get("q") ?? "");
   const [scope, setScope] = useState<Scope>("all");
   const [results, setResults] = useState<ParticipantSearchRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -149,6 +151,13 @@ export function FeastParticipants() {
     let cancelled = false;
     getLeaderboard(activeSlug).then(({ data }) => { if (!cancelled) setBoard({ slug: activeSlug, rows: data ?? [] }); });
     return () => { cancelled = true; };
+  }, [activeSlug]);
+
+  useEffect(() => {
+    if (!initialQuery.current || !activeSlug) return;
+    const q = initialQuery.current;
+    initialQuery.current = "";
+    doSearch(q, activeSlug);
   }, [activeSlug]);
 
   function doSearch(q: string, feastSlug: string) {

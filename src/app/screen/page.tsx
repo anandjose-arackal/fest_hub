@@ -8,11 +8,12 @@ import { useFeasts, useOrgHierarchy } from "@/hooks/use-feast";
 import { useCompetitionStages, type CompetitionStage } from "@/hooks/use-competition-stages";
 import {
   getLeaderboard, getMeghalaLeaderboard, getOverallLeaderboard, getOverallMeghalaLeaderboard, getScreenData,
-  type LeaderboardRow, type ScreenAchiever, type ScreenCompetitionResult, type ScreenData,
+  type LeaderboardRow, type ScreenAchiever, type ScreenCompetitionResult, type ScreenData, type ScreenPosition,
 } from "@/actions/results";
+import { ParticipantPhoto } from "@/components/screen/participant-photo";
 import { getRecentActivity, type ActivityItem } from "@/actions/activity";
 import { catStyle } from "@/components/feast/feast-shared";
-import { AWARD } from "@/components/feast/feast-shared-results";
+import { AWARD, LIGHT_AWARD_VARS, PLACE_PASTEL } from "@/components/feast/feast-shared-results";
 import { GradeBadge, Medal, MedalCounts, toneStyle, type MedalPos } from "@/components/feast/feast-ui";
 import { SUB_MS, useDashboardRotation } from "./use-dashboard-rotation";
 import { sectionKey, sectionLabel, type DashboardSection } from "./dashboard-types";
@@ -21,6 +22,14 @@ import { sectionKey, sectionLabel, type DashboardSection } from "./dashboard-typ
 // root layout's data-fp-theme), so the big screen follows whichever theme
 // the org picked instead of carrying its own palette.
 const DESIGN_W = 1920;
+// The result screen's middle (spotlight) column: after the 56px gutter, the
+// 560px Final results column and a 28px gap; 1fr of what's left once the
+// 520px grade column and its gap are taken.
+const MID_COL_X = 56 + 560 + 28;
+const MID_COL_W = DESIGN_W - 56 * 2 - 560 - 520 - 28 * 2;
+// The blurred logo is centred on that column but larger than it, spilling
+// behind the side panels.
+const LOGO_BACKDROP = 1040;
 const REFRESH_MS = 20_000;
 const FEASTS_POLL_MS = 5 * 60 * 1000;
 const FLIP_MS = 7000;
@@ -40,7 +49,13 @@ const CATS = [
 ] as const;
 
 const GOLD_BAR = "linear-gradient(90deg, color-mix(in srgb, var(--fp-gold) 62%, #7A4F00), var(--fp-gold) 60%, color-mix(in srgb, var(--fp-gold) 55%, #FFFFFF))";
-const PANEL: React.CSSProperties = { borderRadius: 28, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" };
+// --fp-panel-blur / --fp-panel-glow are 0 / none except in themes that turn
+// on frosted glass with neon edges (Nebula Glass).
+// --fp-panel-bg / --fp-panel-line fall back to the plain surface and line;
+// a glass theme gives them a frosted fill and a gradient (neon) edge.
+const GLASS: React.CSSProperties = { backdropFilter: "blur(var(--fp-panel-blur)) saturate(150%)", WebkitBackdropFilter: "blur(var(--fp-panel-blur)) saturate(150%)", boxShadow: "var(--fp-panel-glow)" };
+const PANEL: React.CSSProperties = { borderRadius: 28, background: "var(--fp-panel-bg, var(--fp-surface))", border: "1px solid var(--fp-panel-line, var(--fp-line-2))", ...GLASS };
+const PANEL_TINT = "var(--fp-panel-bg-3, var(--fp-surface-3))";
 const PILL: React.CSSProperties = { height: 40, padding: "0 18px", display: "inline-flex", alignItems: "center", borderRadius: 9999, fontSize: 15, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
 const PILL_ON: React.CSSProperties = { ...PILL, fontWeight: 800, border: "1px solid transparent", background: "var(--fp-chip-on)", color: "var(--fp-chip-on-fg)" };
 const PILL_OFF: React.CSSProperties = { ...PILL, border: "1px solid var(--fp-line-2)", background: "var(--fp-surface)", color: "var(--fp-sub)" };
@@ -95,7 +110,7 @@ function EmptyState({ message, lead = "No results" }: { message: string; lead?: 
       <div style={{ width: 128, height: 128, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--fp-note-bg)", border: "2px solid var(--fp-note-line)", color: "var(--fp-gold-ink)" }}>
         <Trophy size={56} strokeWidth={1.6} aria-hidden="true" />
       </div>
-      <div className="fp-disp" style={{ fontSize: 72 }}>{lead} <span className="fp-hl-text">yet</span></div>
+      <div className="fp-disp" style={{ fontSize: 72 }}>{lead} yet</div>
       <div style={{ fontSize: 24, fontWeight: 600, color: "var(--fp-sub)", maxWidth: 720 }}>{message}</div>
     </div>
   );
@@ -168,10 +183,10 @@ function Podium({ rows, tier, caption }: { rows: RankRow[]; tier: Tier; caption:
     { h: 160, medal: 60, pts: 56 },
   ];
   return (
-    <section aria-label={tier === "meghala" ? "Top three meghalas" : "Top three shakhas"} style={{ ...PANEL, background: "var(--fp-surface-3)", position: "relative", overflow: "hidden", padding: "28px 24px", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+    <section className="fp-glass-edge" aria-label={tier === "meghala" ? "Top three meghalas" : "Top three shakhas"} style={{ ...PANEL, background: PANEL_TINT, position: "relative", overflow: "hidden", padding: "28px 24px", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
       <div className="fp-rays" aria-hidden="true" style={{ position: "absolute", left: "50%", top: 250, width: 900, height: 900, marginLeft: -450, marginTop: -450, borderRadius: "50%" }} />
       <div style={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <p className="fp-cap" style={{ margin: 0, fontSize: 14, color: "var(--fp-gold-ink)" }}>{tier === "meghala" ? "Meghala podium" : "Shakha podium"}</p>
+        <p className="sc-label" style={{ margin: 0, fontSize: 14, color: "var(--fp-gold-ink)" }}>{tier === "meghala" ? "Meghala podium" : "Shakha podium"}</p>
         <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--fp-meta)" }}>{caption}</p>
       </div>
       <div style={{ position: "relative", flex: 1, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, alignItems: "end" }}>
@@ -189,7 +204,7 @@ function Podium({ rows, tier, caption }: { rows: RankRow[]; tier: Tier; caption:
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                 <span className={`fp-num fp-t-${t}`} style={{ fontSize: ped[i].pts }}>{row.points}</span>
-                <span className="fp-cap" style={{ fontSize: 12, color: "var(--fp-meta)" }}>pts</span>
+                <span className="sc-label" style={{ fontSize: 12, color: "var(--fp-meta)" }}>pts</span>
               </div>
               <MedalCounts g={row.first} s={row.second} b={row.third} size={18} className="text-[15px]" />
               <div style={{ width: "100%", height: ped[i].h, borderRadius: "20px 20px 6px 6px", background: `var(--fp-ped-${t})`, borderTop: `2px solid var(--fp-ped-${t}-line)`, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, paddingTop: 18, boxSizing: "border-box" }}>
@@ -236,9 +251,9 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
   const label = tier === "meghala" ? "Meghala" : "Shakha";
 
   return (
-    <section aria-label={`${label} leaderboard`} style={{ ...PANEL, padding: 28, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 14, minWidth: 0, minHeight: 0 }}>
+    <section className="fp-glass-edge" aria-label={`${label} leaderboard`} style={{ ...PANEL, padding: 28, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 14, minWidth: 0, minHeight: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20 }}>
-        <h2 className="fp-disp" style={{ margin: 0, fontSize: 44 }}>{label} <span className="fp-hl-text">leaderboard</span></h2>
+        <h2 className="fp-disp" style={{ margin: 0, fontSize: 44 }}>{label} leaderboard</h2>
         <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
           <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "var(--fp-meta)" }}>{meta}{overflow ? " · scrolls automatically" : ""}</p>
           {tiers.length > 1 && (
@@ -252,7 +267,7 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
           )}
         </div>
       </div>
-      <div className="fp-cap" style={{ display: "grid", gridTemplateColumns: cols, gap: 8, alignItems: "center", padding: "0 16px", fontSize: 12, color: "var(--fp-meta)" }}>
+      <div className="sc-label" style={{ display: "grid", gridTemplateColumns: cols, gap: 8, alignItems: "center", padding: "0 16px", fontSize: 12, color: "var(--fp-meta)" }}>
         <span>Rank</span>
         <span>{tier === "meghala" ? "Meghala" : tiers.length > 1 ? "Shakha · Meghala" : "Shakha"}</span>
         {CATS.map((c) => (
@@ -379,6 +394,7 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
   const place = (subIdx + 1) as MedalPos;
   const winner = comp.positions.find((p) => p.place === place) ?? null;
   const winnerGrade = winner ? findGrade(comp, winner) : null;
+  const spotPhoto = !comp.isTeam ? winner?.photoUrl ?? null : null;
   const activeGrade = GRADE_KEYS[subIdx];
   const graded = comp.grades.A.length + comp.grades.B.length + comp.grades.C.length;
   const gender = comp.gender === "girl" ? "Girls" : comp.gender === "boy" ? "Boys" : null;
@@ -388,7 +404,7 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
     <>
       <section aria-label="Competition" style={{ position: "absolute", top: 148, left: 56, right: 56, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 32 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-meta)" }}>{comp.positions.length} placed · {graded} graded</span>
+          <span className="sc-label" style={{ fontSize: 14, color: "var(--fp-meta)" }}>{comp.positions.length} placed, {graded} graded</span>
           {/* Age category and boys/girls lead the title as solid badges —
               from the back of the hall they're what tells two same-named
               items apart. */}
@@ -400,7 +416,7 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flex: "none" }}>
-          <span className="fp-cap" style={{ fontSize: 12, color: "var(--fp-meta)" }}>Spotlight</span>
+          <span className="sc-label" style={{ fontSize: 12, color: "var(--fp-meta)" }}>Spotlight</span>
           <div style={{ display: "flex", gap: 8 }} aria-label={`${PLACE_WORDS[subIdx]} place of 3`}>
             {[0, 1, 2].map((i) => (
               <span key={i} style={{ width: i === subIdx ? 54 : 22, height: 8, borderRadius: 9999, background: i === subIdx ? GOLD_BAR : "var(--fp-track)", transition: "width .4s" }} />
@@ -410,9 +426,9 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
       </section>
 
       <main style={{ position: "absolute", top: 312, left: 56, right: 56, bottom: TICKER_H + 28, display: "grid", gridTemplateColumns: "560px minmax(0, 1fr) 520px", gap: 28 }}>
-        <article aria-label="Final results" style={{ borderRadius: 28, overflow: "hidden", background: "var(--fp-award-bg)", color: AWARD.ink, boxShadow: "var(--fp-award-shadow)", display: "flex", flexDirection: "column" }}>
+        <article aria-label="Final results" style={{ borderRadius: 28, overflow: "hidden", background: "var(--fp-award-bg)", color: AWARD.ink, boxShadow: "var(--fp-award-shadow)", backdropFilter: GLASS.backdropFilter, WebkitBackdropFilter: GLASS.WebkitBackdropFilter, display: "flex", flexDirection: "column" }}>
           <div aria-hidden="true" style={{ height: 6, background: `linear-gradient(90deg, ${cs.color}, #F5C542)` }} />
-          <div className="fp-cap" style={{ display: "flex", alignItems: "center", gap: 8, padding: "22px 26px 8px", fontSize: 14, color: AWARD.link }}>
+          <div className="sc-label" style={{ display: "flex", alignItems: "center", gap: 8, padding: "22px 26px 8px", fontSize: 14, color: AWARD.link }}>
             <Award size={18} strokeWidth={2.2} aria-hidden="true" />Final results
             <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               {comp.categoryName && <span style={{ ...MINI_BADGE, background: cs.hi }}>{comp.categoryName}</span>}
@@ -427,12 +443,17 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
               {comp.positions.map((p, i) => {
                 const active = p.place === place;
                 return (
+                  // Same pastel gold / silver / bronze rows as the portal's award
+                  // card; the place now in the spotlight gets a gold outline.
                   <li key={`${p.place}-${p.name}-${i}`} style={{
-                    display: "flex", alignItems: "center", gap: 18, padding: 18, borderRadius: 20, transition: "background .4s, border-color .4s",
-                    background: active ? "linear-gradient(100deg, rgba(245,197,66,.34) 0%, rgba(255,255,255,.8) 62%)" : AWARD.soft,
-                    border: `1.5px solid ${active ? "rgba(217,144,26,.45)" : AWARD.line}`,
+                    ...LIGHT_AWARD_VARS,
+                    display: "flex", alignItems: "center", gap: 18, padding: 18, borderRadius: 20, transition: "box-shadow .4s, border-color .4s",
+                    background: PLACE_PASTEL[p.place].bg,
+                    border: `1.5px solid ${active ? "#E0A21B" : PLACE_PASTEL[p.place].line}`,
+                    boxShadow: active ? "0 0 0 3px rgba(245,197,66,.55), 0 10px 26px rgba(245,197,66,.3)" : undefined,
                   }}>
                     <Medal pos={p.place} size={62} />
+                    {!comp.isTeam && p.photoUrl && <ParticipantPhoto src={p.photoUrl} place={p.place} name={p.name} width={62} variant="round" />}
                     <span style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: 1 }}>
                       <span className="fp-ml" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>{p.name}</span>
                       {p.houseName && <span className="fp-ml" style={{ fontSize: 18, fontWeight: 600, color: AWARD.sub, ...CLAMP2 }}>{p.houseName}</span>}
@@ -448,13 +469,23 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
           )}
         </article>
 
-        <section key={subIdx} aria-label={`Spotlight — ${PLACE_WORDS[subIdx].toLowerCase()} place`} style={{ ...PANEL, background: "var(--fp-surface-3)", border: "1px solid var(--fp-tone-gold-line)", boxShadow: "0 0 60px var(--fp-glow)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", padding: 28 }}>
+        <section key={subIdx} aria-label={`Spotlight — ${PLACE_WORDS[subIdx].toLowerCase()} place`} style={{ ...PANEL, background: PANEL_TINT, border: "1px solid var(--fp-tone-gold-line)", boxShadow: "0 0 60px var(--fp-glow), inset 0 1px 0 rgba(255,255,255,.12)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", padding: 28 }}>
           <div className="fp-rays" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "42%", width: 1100, height: 1100, marginLeft: -550, marginTop: -550, borderRadius: "50%" }} />
-          <span className="fp-rise" style={{ position: "relative", opacity: winner ? 1 : 0.35 }}><Medal pos={place} size={168} /></span>
-          <span className={`fp-disp fp-t-${TONE[subIdx]}`} style={{ position: "relative", fontSize: 84, marginTop: 8 }}>{PLACE_WORDS[subIdx]} place</span>
+          {/* The winner's registration photo leads the spotlight (individual
+              items); without one, the big medal stands in. */}
+          {/* A tilted neon orbit (Nebula Glass) passes behind the top of the
+              photo or medal and in front of its bottom. */}
+          <span className="fp-rise" style={{ position: "relative", display: "inline-block", opacity: winner ? 1 : 0.35 }}>
+            {winner && <span aria-hidden="true" className="sc-orbit back" />}
+            <span style={{ position: "relative", zIndex: 1, display: "block" }}>
+              {spotPhoto ? <ParticipantPhoto src={spotPhoto} place={place} name={winner!.name} width={268} /> : <Medal pos={place} size={168} />}
+            </span>
+            {winner && <span aria-hidden="true" className="sc-orbit front" />}
+          </span>
+          <span className={`fp-disp fp-t-${TONE[subIdx]}`} style={{ position: "relative", fontSize: spotPhoto ? 64 : 84, marginTop: spotPhoto ? 22 : 8 }}>{PLACE_WORDS[subIdx]} place</span>
           {winner ? (
-            <div className="fp-fade-up" style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 14, animationDelay: ".2s" }}>
-              <div className="fp-ml" style={{ fontSize: 68, fontWeight: 800, lineHeight: 1.05, marginTop: 10 }}>{winner.name}</div>
+            <div className="fp-fade-up" style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: spotPhoto ? 10 : 14, animationDelay: ".2s" }}>
+              <div className="fp-ml" style={{ fontSize: spotPhoto ? 58 : 68, fontWeight: 800, lineHeight: 1.05, marginTop: spotPhoto ? 4 : 10 }}>{winner.name}</div>
               {winner.houseName && <div className="fp-ml" style={{ fontSize: 26, fontWeight: 600, color: "var(--fp-sub)", maxWidth: 820, ...CLAMP2 }}>{winner.houseName}</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <span className="fp-ml" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 26, fontWeight: 800, color: "var(--fp-link)" }}>
@@ -468,9 +499,9 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
           )}
         </section>
 
-        <section aria-label="Grade achievers" style={{ ...PANEL, padding: "26px 28px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 16, minHeight: 0 }}>
+        <section className="fp-glass-edge" aria-label="Grade achievers" style={{ ...PANEL, padding: "26px 28px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 16, minHeight: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <h3 className="fp-disp" style={{ margin: 0, fontSize: 40 }}>Grade <span className="fp-hl-text">achievers</span></h3>
+            <h3 className="fp-disp" style={{ margin: 0, fontSize: 40 }}>Grade achievers</h3>
             <span style={{ fontSize: 15, fontWeight: 700, color: "var(--fp-meta)" }}>{graded} graded</span>
           </div>
           <div aria-label="Grade shown" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6, padding: 5, borderRadius: 18, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" }}>
@@ -519,13 +550,13 @@ function StageBoardScreen({ feastSlug, page, onPageCount }: { feastSlug: string;
 
   return (
     <>
-      <section aria-label="Overall progress" style={{ position: "absolute", top: 152, left: 56, right: 56, height: 72, boxSizing: "border-box", padding: "0 12px 0 24px", borderRadius: 22, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)", display: "flex", alignItems: "center", gap: 28 }}>
+      <section className="fp-glass-edge" aria-label="Overall progress" style={{ position: "absolute", top: 152, left: 56, right: 56, height: 72, boxSizing: "border-box", padding: "0 12px 0 24px", borderRadius: 22, background: "var(--fp-panel-bg, var(--fp-surface))", border: "1px solid var(--fp-panel-line, var(--fp-line-2))", ...GLASS, display: "flex", alignItems: "center", gap: 28 }}>
         {liveCount > 0 ? (
-          <span className="fp-cap" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 15, color: "var(--fp-live)" }}>
+          <span className="sc-label" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 15, color: "var(--fp-live)" }}>
             <span className="fp-livedot" style={{ width: 10, height: 10 }} />{liveCount} stage{liveCount > 1 ? "s" : ""} live
           </span>
         ) : (
-          <span className="fp-cap" style={{ fontSize: 15, color: "var(--fp-meta)" }}>No stage live</span>
+          <span className="sc-label" style={{ fontSize: 15, color: "var(--fp-meta)" }}>No stage live</span>
         )}
         <span style={{ width: 1, height: 32, background: "var(--fp-line-2)" }} />
         <span style={{ fontSize: 19, fontWeight: 700, color: "var(--fp-sub)", whiteSpace: "nowrap" }}>
@@ -567,9 +598,10 @@ function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boole
   return (
     <article
       aria-label={title}
+      className={isLive ? undefined : "fp-glass-edge"}
       style={{
         position: "relative", minWidth: 0, minHeight: 0, borderRadius: 24, overflow: "hidden", perspective: 1400,
-        ...(isLive ? { background: "var(--fp-tone-gold-bg)", border: "1.5px solid var(--fp-tone-gold-line)", boxShadow: "0 0 40px var(--fp-glow)" } : { background: "var(--fp-surface)", border: "1.5px solid var(--fp-line-2)" }),
+        ...(isLive ? { background: "var(--fp-tone-gold-bg)", border: "1.5px solid var(--fp-tone-gold-line)", boxShadow: "0 0 40px var(--fp-glow)" } : { background: "var(--fp-panel-bg, var(--fp-surface))", border: "1.5px solid var(--fp-panel-line, var(--fp-line-2))", ...GLASS }),
         opacity: isDone ? 0.7 : 1, transition: "opacity .5s, box-shadow .5s",
       }}
     >
@@ -585,13 +617,13 @@ function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boole
           )}
           <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-              <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+              <span className="sc-label" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
               {isLive ? (
-                <span className="fp-cap" style={{ ...LIVE_CHIP, gap: 8, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}><span className="fp-livedot" style={{ width: 8, height: 8 }} />On stage now</span>
+                <span className="sc-label" style={{ ...LIVE_CHIP, gap: 8, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}><span className="fp-livedot" style={{ width: 8, height: 8 }} />On stage now</span>
               ) : isDone ? (
-                <span className="fp-cap" style={{ ...CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none", color: "var(--fp-ok)", background: "var(--fp-ok-bg)" }}>Completed</span>
+                <span className="sc-label" style={{ ...CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none", color: "var(--fp-ok)", background: "var(--fp-ok-bg)" }}>Completed</span>
               ) : (
-                <span className="fp-cap" style={{ ...GOLD_CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}>{stage.scheduledTime ? `Starts ${stage.scheduledTime}` : "Up next"}</span>
+                <span className="sc-label" style={{ ...GOLD_CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}>{stage.scheduledTime ? `Starts ${stage.scheduledTime}` : "Up next"}</span>
               )}
             </div>
             <div className="fp-ml" style={{ fontSize: isLive ? 40 : 30, fontWeight: 800, lineHeight: 1.08, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: isLive ? "var(--fp-ink)" : isDone ? "var(--fp-meta)" : "var(--fp-sub)" }}>{label}</div>
@@ -610,8 +642,8 @@ function StageCard({ stage, flipped }: { stage: CompetitionStage; flipped: boole
         <div style={{ ...face, transform: "rotateY(180deg)", flexDirection: "column", alignItems: "stretch", justifyContent: "center", gap: 10, padding: "16px 28px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span className={isLive ? "fp-medal fp-m-gold" : "fp-medal"} style={{ width: 40, height: 40, fontSize: 20, flex: "none", ...(isLive ? {} : { color: "var(--fp-sub)", border: "2px solid var(--fp-line-2)" }) }}>{stage.stageNumber}</span>
-            <span className="fp-cap" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
-            <span className="fp-cap" style={{ marginLeft: "auto", fontSize: 13, color: "var(--fp-gold-ink)", flex: "none" }}>Up next · {upcoming.length}</span>
+            <span className="sc-label" style={{ fontSize: 14, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+            <span className="sc-label" style={{ marginLeft: "auto", fontSize: 13, color: "var(--fp-gold-ink)", flex: "none" }}>Up next · {upcoming.length}</span>
           </div>
           {upcoming.length === 0 ? (
             <div className="fp-ml" style={{ fontSize: 26, fontWeight: 700, color: "var(--fp-meta)" }}>{isDone ? "All competitions completed" : "Nothing left upcoming"}</div>
@@ -648,11 +680,14 @@ interface PublishEvent {
   gender: string | null;
   isTeam: boolean;
 }
-type TakeoverPhase = "announce" | "slide" | "exit";
+// "winner" (the 1st-place photo) only plays when that item's 1st place has
+// a registration photo and the screen already holds its data.
+type TakeoverPhase = "announce" | "slide" | "winner" | "exit";
 
 const PUBLISH_POLL_MS = 10_000;
 const ANNOUNCE_MS = 2800;
 const SLIDE_MS = 2800;
+const WINNER_MS = 3600;
 const EXIT_MS = 450;
 // A queued takeover waits until the previous result has shown 1st/2nd/3rd.
 const RESULT_HOLD_MS = 3 * SUB_MS;
@@ -680,7 +715,7 @@ function toPublishEvent(a: ActivityItem): PublishEvent {
   };
 }
 
-function PublishTakeover({ ev, phase }: { ev: PublishEvent; phase: TakeoverPhase }) {
+function PublishTakeover({ ev, phase, winner, afterWinner }: { ev: PublishEvent; phase: TakeoverPhase; winner: ScreenPosition | null; afterWinner?: boolean }) {
   const cs = catStyle(ev.categorySlug);
   const gender = ev.gender === "girl" ? "Girls" : ev.gender === "boy" ? "Boys" : null;
   const gc = gender === "Girls" ? "var(--fp-girls)" : "var(--fp-boys)";
@@ -708,7 +743,7 @@ function PublishTakeover({ ev, phase }: { ev: PublishEvent; phase: TakeoverPhase
             <span key={i} aria-hidden="true" className="pt-confetti" style={{ left: `${c.left}%`, width: c.w, height: c.h, background: c.color, animationDelay: `${c.delay}s`, animationDuration: `${c.dur}s` }} />
           ))}
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 26, textAlign: "center" }}>
-            <div className="fp-cap pt-up" style={{ ...LIVE_CHIP, gap: 12, fontSize: 20, padding: "10px 22px", animationDelay: ".15s" }}>
+            <div className="sc-label pt-up" style={{ ...LIVE_CHIP, gap: 12, fontSize: 20, padding: "10px 22px", animationDelay: ".15s" }}>
               <span className="fp-livedot" style={{ width: 12, height: 12 }} />New result · just now
             </div>
             <div className="pt-slam" style={{ animationDelay: ".25s" }}>
@@ -717,14 +752,33 @@ function PublishTakeover({ ev, phase }: { ev: PublishEvent; phase: TakeoverPhase
             </div>
           </div>
         </>
+      ) : (phase === "winner" || (phase === "exit" && afterWinner)) && winner?.photoUrl ? (
+        // The 1st-place winner, photo first, before the result screen.
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 84, padding: "0 140px" }}>
+          <div aria-hidden="true" className="pt-rays-in" style={{ position: "absolute", left: "34%", top: "50%", width: 1600, height: 1600, marginLeft: -800, marginTop: -800 }}>
+            <div className="fp-rays" style={{ width: "100%", height: "100%", borderRadius: "50%" }} />
+          </div>
+          <span className="pt-slam" style={{ position: "relative", animationDelay: ".05s" }}>
+            <ParticipantPhoto src={winner.photoUrl} place={1} name={winner.name} width={430} />
+          </span>
+          <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 22, minWidth: 0, maxWidth: 980 }}>
+            <span className="sc-label pt-slide" style={{ fontSize: 22, color: "var(--fp-gold-ink)", animationDelay: ".2s" }}>{ev.competitionName} · Winner</span>
+            <span className="fp-disp fp-t-gold pt-slide" style={{ fontSize: 120, animationDelay: ".32s", filter: "drop-shadow(0 10px 30px var(--fp-glow))" }}>First place</span>
+            <span className="fp-ml pt-slide" style={{ fontSize: 104, fontWeight: 800, lineHeight: 1.04, animationDelay: ".44s", ...CLAMP2 }}>{winner.name}</span>
+            {winner.houseName && <span className="fp-ml pt-up" style={{ fontSize: 34, fontWeight: 600, color: "var(--fp-sub)", animationDelay: ".7s", ...CLAMP2 }}>{winner.houseName}</span>}
+            <span className="fp-ml pt-up" style={{ display: "inline-flex", alignItems: "center", gap: 12, fontSize: 36, fontWeight: 800, color: "var(--fp-link)", animationDelay: ".8s" }}>
+              <Church size={32} strokeWidth={2.2} aria-hidden="true" />{winner.shakha}{winner.meghalaName ? ` · ${winner.meghalaName}` : ""}
+            </span>
+          </div>
+        </div>
       ) : (
         // Category, boys/girls and the item's name slide in before the result.
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 34, textAlign: "center", padding: "0 120px" }}>
           <div aria-hidden="true" className="pt-sweep" style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 6, marginTop: -3, background: GOLD_BAR }} />
-          <span className="fp-cap pt-slide" style={{ fontSize: 22, color: "var(--fp-gold-ink)" }}>{ev.feastName} · Result published</span>
+          <span className="sc-label pt-slide" style={{ fontSize: 22, color: "var(--fp-gold-ink)" }}>{ev.feastName} · Result published</span>
           <div className="pt-slide" style={{ display: "flex", gap: 18, animationDelay: ".12s" }}>{badges}</div>
           <div className="fp-ml pt-slide" style={{ fontSize: 132, fontWeight: 800, lineHeight: 1.05, animationDelay: ".28s", maxWidth: "100%", ...CLAMP2 }}>{ev.competitionName}</div>
-          <span className="fp-cap pt-up" style={{ fontSize: 18, color: "var(--fp-meta)", animationDelay: "1.1s", display: "inline-flex", alignItems: "center", gap: 10 }}>
+          <span className="sc-label pt-up" style={{ fontSize: 18, color: "var(--fp-meta)", animationDelay: "1.1s", display: "inline-flex", alignItems: "center", gap: 10 }}>
             The winners <ChevronRight size={20} aria-hidden="true" />
           </span>
         </div>
@@ -772,11 +826,11 @@ function ScreenHeader({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, minWidth: 0 }}>
-        <div className="fp-cap" style={eyebrowTone === "live" ? LIVE_CHIP : GOLD_CHIP}>
+        <div className="sc-label" style={eyebrowTone === "live" ? LIVE_CHIP : GOLD_CHIP}>
           {eyebrowTone === "live" ? <span className="fp-livedot" style={{ width: 9, height: 9 }} /> : <Trophy size={16} strokeWidth={2.2} aria-hidden="true" />}
           {eyebrow}
         </div>
-        <h1 className="fp-disp" style={{ margin: 0, fontSize: 76, whiteSpace: "nowrap" }}>{titleLead} <span className="fp-hl-text">{titleGold}</span></h1>
+        <h1 className="fp-disp" style={{ margin: 0, fontSize: 76, whiteSpace: "nowrap" }}>{titleLead} {titleGold.toLowerCase()}</h1>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12, minWidth: 0 }}>
@@ -857,7 +911,7 @@ function Ticker({ rows }: { rows: LeaderboardRow[] }) {
   if (rows.length === 0) return null;
   return (
     <footer aria-label="Live standings ticker" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: TICKER_H, display: "flex", alignItems: "center", overflow: "hidden", background: "var(--fp-bar)", borderTop: "1px solid var(--fp-note-line)", zIndex: 6 }}>
-      <span className="fp-cap" style={{ flex: "none", height: "100%", display: "flex", alignItems: "center", padding: "0 34px 0 56px", fontSize: 15, background: "var(--fp-cta-gold)", color: "var(--fp-cta-gold-fg)", clipPath: "polygon(0 0, 100% 0, calc(100% - 22px) 100%, 0 100%)", position: "relative", zIndex: 1 }}>
+      <span className="sc-label" style={{ flex: "none", height: "100%", display: "flex", alignItems: "center", padding: "0 34px 0 56px", fontSize: 15, background: "var(--fp-cta-gold)", color: "var(--fp-cta-gold-fg)", clipPath: "polygon(0 0, 100% 0, calc(100% - 22px) 100%, 0 100%)", position: "relative", zIndex: 1 }}>
         Live standings
       </span>
       <div style={{ flex: 1, overflow: "hidden" }}>
@@ -987,7 +1041,9 @@ function ScreenPageInner() {
   // items newer than the newest one when this screen opened announce, so
   // reopening the screen never replays old results.
   const [publishQueue, setPublishQueue] = useState<PublishEvent[]>([]);
-  const [takeover, setTakeover] = useState<{ ev: PublishEvent; phase: TakeoverPhase } | null>(null);
+  const [takeover, setTakeover] = useState<{ ev: PublishEvent; phase: TakeoverPhase; afterWinner?: boolean } | null>(null);
+  // The announced item's 1st-place winner with a photo (set further down).
+  const takeoverWinnerRef = useRef<ScreenPosition | null>(null);
   const lastTakeoverEndRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
@@ -1098,14 +1154,23 @@ function ScreenPageInner() {
         setTakeover({ ev, phase: "slide" });
         focusResultRef.current(ev);
       } else if (phase === "slide") {
-        setTakeover({ ev, phase: "exit" });
+        setTakeover({ ev, phase: takeoverWinnerRef.current ? "winner" : "exit" });
+      } else if (phase === "winner") {
+        setTakeover({ ev, phase: "exit", afterWinner: true });
       } else {
         lastTakeoverEndRef.current = Date.now();
         setTakeover(null);
       }
-    }, phase === "announce" ? ANNOUNCE_MS : phase === "slide" ? SLIDE_MS : EXIT_MS);
+    }, phase === "announce" ? ANNOUNCE_MS : phase === "slide" ? SLIDE_MS : phase === "winner" ? WINNER_MS : EXIT_MS);
     return () => clearTimeout(t);
   }, [takeover]);
+
+  // The announced item's 1st-place winner with a photo, once the fest data
+  // under the takeover has loaded (team items never qualify). Read through a
+  // ref by the phase timer above, which shouldn't restart when data lands.
+  const takeoverComp = takeover ? screenData.competitions.find((c) => c.competitionId === takeover.ev.fcId) ?? null : null;
+  const takeoverWinner = takeoverComp && !takeoverComp.isTeam ? takeoverComp.positions.find((p) => p.place === 1 && p.photoUrl) ?? null : null;
+  useEffect(() => { takeoverWinnerRef.current = takeoverWinner; });
 
   // URL deep-link (initial)
   const initialAppliedRef = useRef(false);
@@ -1180,7 +1245,7 @@ function ScreenPageInner() {
   const busy = feastsLoading || (isOverall ? overallLoading : activeSection.kind === "feast" ? loadedFeastSlug !== activeFeastSlug : false);
   const feastName = isOverall ? "Overall Standings" : activeSection.feastName || "Fest";
 
-  let eyebrow = isOverall ? "Live standings · All fests" : "Live standings";
+  let eyebrow = isOverall ? "Live standings, all fests" : "Live standings";
   let eyebrowTone: "live" | "gold" = "live";
   let titleLead = tier === "meghala" ? "Meghala" : "Shakha";
   let titleGold = "Rankings";
@@ -1205,7 +1270,7 @@ function ScreenPageInner() {
 
   const settingsPanel = (
     <>
-      <p className="fp-cap" style={{ fontSize: 12, color: "var(--fp-meta)", margin: "0 0 10px" }}>Rotate through</p>
+      <p className="sc-label" style={{ fontSize: 12, color: "var(--fp-meta)", margin: "0 0 10px" }}>Rotate through</p>
       {sections.map((s) => {
         const key = sectionKey(s);
         const checked = !enabledSectionKeys || enabledSectionKeys.has(key);
@@ -1226,9 +1291,14 @@ function ScreenPageInner() {
   const meta = tier === "meghala" ? `${rankedMeghalas} meghalas · ${shakhas.length} shakhas` : `${shakhaRankRows.length} shakhas`;
 
   return (
-    <div className="fp-shell" style={{ position: "fixed", inset: 0, overflow: "hidden", background: "var(--fp-page-bg)", color: "var(--fp-ink)", fontFamily: "var(--font-manrope), var(--font-anek), sans-serif" }}>
+    <div className="fp-shell sc-root" style={{ position: "fixed", inset: 0, overflow: "hidden", background: "var(--fp-page-bg)", color: "var(--fp-ink)", fontFamily: "var(--font-manrope), var(--font-anek), sans-serif" }}>
       <style>{CSS}</style>
       <div style={{ position: "absolute", top: 0, left: 0, width: DESIGN_W, height: designH, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+        {/* The org's logo as a watermark over the middle column behind the
+            glass — the spotlight's frost picks up its colours. Only themes
+            that set --fp-logo-backdrop (Nebula Glass) show it. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={orgLogo} alt="" aria-hidden="true" className="fp-logo-backdrop" style={{ position: "absolute", left: MID_COL_X + MID_COL_W / 2 - LOGO_BACKDROP / 2, width: LOGO_BACKDROP, top: Math.round(designH / 2 - LOGO_BACKDROP / 2 + 40) }} />
         <ScreenHeader
           logoUrl={orgLogo}
           subtitle={orgTagline}
@@ -1260,7 +1330,7 @@ function ScreenPageInner() {
 
         <Ticker rows={overallRows} />
 
-        {takeover && <PublishTakeover key={takeover.ev.id} ev={takeover.ev} phase={takeover.phase} />}
+        {takeover && <PublishTakeover key={takeover.ev.id} ev={takeover.ev} phase={takeover.phase} winner={takeoverWinner} afterWinner={takeover.afterWinner} />}
       </div>
     </div>
   );
@@ -1268,6 +1338,13 @@ function ScreenPageInner() {
 
 const CSS = `
 .fp-shell button:disabled { opacity: .35; cursor: default; }
+/* Display face: Chakra Petch, sentence case, for titles and numbers. */
+.sc-root .fp-disp { font-family: var(--font-chakra), var(--font-anek), sans-serif; font-stretch: normal; font-weight: 700; text-transform: none; letter-spacing: -0.015em; line-height: .98; }
+.sc-root .fp-num { font-family: var(--font-chakra), sans-serif; font-stretch: normal; font-weight: 600; letter-spacing: 0; }
+.sc-label { font-family: var(--font-manrope), sans-serif; font-weight: 700; font-size: 11px; letter-spacing: .01em; }
+.sc-orbit { display: var(--fp-orbit-display, none); position: absolute; left: 50%; top: 62%; width: 158%; aspect-ratio: 3.3; transform: translate(-50%, -50%) rotate(-9deg); border-radius: 50%; border: 3px solid transparent; pointer-events: none; }
+.sc-orbit.back { z-index: 0; border-top-color: rgba(255, 79, 216, .9); filter: drop-shadow(0 0 10px rgba(255, 79, 216, .85)); }
+.sc-orbit.front { z-index: 2; border-bottom-color: rgba(125, 211, 252, .95); filter: drop-shadow(0 0 12px rgba(56, 189, 248, .9)); }
 .sc-sheen { position: absolute; inset: 0; width: 45%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); mix-blend-mode: overlay; animation: scSheen 2.2s linear infinite; }
 @keyframes scSheen { from { transform: translateX(-100%); } to { transform: translateX(240%); } }
 @keyframes scSpin { to { transform: rotate(360deg); } }

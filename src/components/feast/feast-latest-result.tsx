@@ -72,7 +72,7 @@ export function LatestResultWidget() {
           header={
             <div className="flex items-start gap-3 px-[18px] pb-1 pt-4">
               <div className="min-w-0 flex-1">
-                <span className="fp-ml inline-flex h-6 items-center rounded-full px-2.5 text-[12.5px] font-bold" style={{ background: "#EFEAFE", color: AWARD.link }}>{data.feastName}</span>
+                <span className="fp-ml inline-flex h-6 items-center rounded-full px-2.5 text-[12.5px] font-bold" style={{ background: AWARD.chip, color: AWARD.link, border: `1px solid ${AWARD.line}` }}>{data.feastName}</span>
                 <h3 className="fp-ml m-0 mt-2 text-[26px] font-bold leading-[1.3] sm:text-[30px]" style={{ color: AWARD.ink }}>{data.competitionName}</h3>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
                   {label && (

@@ -39,6 +39,7 @@ const THEMED_TINT: Record<string, { literature: [string, string]; arts: [string,
   emerald: { literature: ["#16D9A0", "#5EEAD4"], arts: ["#5EEAD4", "#FF7A5C"] },
   championship: { literature: ["#6B46FF", "#0EA5C4"], arts: ["#A855F7", "#EC4899"] },
   burgundy: { literature: ["#C2365A", "#F59E0B"], arts: ["#EA6B8A", "#FF8C6B"] },
+  nebula: { literature: ["#7C5CFF", "#38BDF8"], arts: ["#B44CFF", "#FF3FB4"] },
 };
 
 function currentPortalTheme(): string {
