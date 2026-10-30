@@ -41,6 +41,8 @@ export interface AngelContext {
 export type AngelIntent =
   | { kind: "too-short" }
   | { kind: "greeting"; variant: Greeting }
+  /** A reply the AI wrote (greetings, small talk, a clarifying question) — words only, never data. */
+  | { kind: "chat"; text: string; suggest: boolean }
   | { kind: "help" }
   /** `within`: rank only the members of this meghala or diocese. */
   | { kind: "top"; tier: Tier; feastSlug: string | null; within?: NamedEntity }
@@ -65,22 +67,29 @@ const SCORE_WORDS = ["score", "scores", "point", "points", "pts", "marks", "mark
 const HELP_WORDS = ["help", "how", "guide", "സഹായം", "എങ്ങനെ"];
 export type Greeting = "hello" | "morning" | "afternoon" | "evening" | "night" | "thanks";
 const GREETINGS: Record<Greeting, string[]> = {
-  hello: ["hi", "hii", "hiii", "hai", "hello", "helo", "hey", "namaskaram", "namaste", "ഹായ്", "ഹലോ", "നമസ്കാരം"],
-  morning: ["good morning", "gm", "സുപ്രഭാതം"],
-  afternoon: ["good afternoon"],
-  evening: ["good evening"],
-  night: ["good night", "gn"],
-  thanks: ["thanks", "thank you", "thank u", "thankyou", "thx", "tnx", "ty", "നന്ദി"],
+  hello: ["hi", "hai", "hay", "hy", "hello", "hlo", "hey", "yo", "hola", "namaskaram", "namaskar", "namaste", "ഹായ്", "ഹലോ", "നമസ്കാരം"],
+  morning: ["good morning", "gud morning", "gd morning", "good mrng", "gud mrng", "gd mrng", "morning", "gm", "സുപ്രഭാതം"],
+  afternoon: ["good afternoon", "gud afternoon", "afternoon"],
+  evening: ["good evening", "gud evening", "evening"],
+  night: ["good night", "gud night", "gn"],
+  thanks: ["thanks", "thank you", "thank u", "thankyou", "thanku", "thanq", "thx", "thnx", "thnks", "tnx", "tq", "tnq", "ty", "nanni", "നന്ദി"],
 };
-// Words that can ride along with a greeting without asking anything.
-const GREETING_EXTRAS = ["angel", "there", "all", "everyone", "so", "much", "very", "dear", "chechi", "ji", "a", "lot", "you", "u", "ok", "okay"];
+// Words that can ride along with a greeting without asking anything —
+// including "how are you", which gets a greeting back.
+const GREETING_EXTRAS = [
+  "angel", "there", "all", "everyone", "so", "much", "very", "dear", "chechi", "ji", "a", "lot", "you", "u", "ok", "okay",
+  "how", "are", "r", "doing", "and", "sugamano", "sukhamano", "sugam", "alle", "സുഖമാണോ", "സുഖം", "അല്ലേ",
+];
+
+// "hiii" → "hi", "helloo" → "helo": people stretch greetings.
+const squash = (s: string) => s.replace(/(\p{L})\1+/gu, "$1");
 
 function greetingOf(joined: string): Greeting | null {
-  let rest = ` ${joined} `;
+  let rest = ` ${squash(joined)} `;
   let found: Greeting | null = null;
   // Phrases first, so "good morning" isn't read as an unknown word.
   for (const [kind, phrases] of Object.entries(GREETINGS) as [Greeting, string[]][]) {
-    for (const p of [...phrases].sort((a, b) => b.length - a.length)) {
+    for (const p of phrases.map(squash).sort((a, b) => b.length - a.length)) {
       if (rest.includes(` ${p} `)) {
         found ??= kind;
         rest = rest.split(` ${p} `).join(" ");
@@ -88,7 +97,8 @@ function greetingOf(joined: string): Greeting | null {
     }
   }
   if (!found) return null;
-  return tokens(rest.trim().replace(/\s+/g, " ")).every((w) => GREETING_EXTRAS.includes(w)) ? found : null;
+  const extras = new Set(GREETING_EXTRAS.map(squash));
+  return tokens(rest.trim().replace(/\s+/g, " ")).every((w) => extras.has(w)) ? found : null;
 }
 
 const SCHEDULE_WORDS = [
@@ -351,7 +361,8 @@ export function resolveIntent(message: string, ctx: AngelContext): AngelIntent {
 // nothing here trusts that: intentFromAi only accepts names that match the
 // portal's own entities and competitions.
 
-export const AI_INTENTS = ["greeting", "help", "top", "entity", "competition", "schedule", "stage", "participant", "registered", "left", "unclear"] as const;
+export const AI_INTENTS = ["greeting", "smalltalk", "help", "top", "entity", "competition", "schedule", "stage", "participant", "registered", "left", "unclear"] as const;
+const MAX_REPLY = 280;
 export const AI_CATEGORIES = ["sub junior", "junior", "senior", "super senior", "elder"] as const;
 
 export interface AngelAiReading {
@@ -365,6 +376,8 @@ export interface AngelAiReading {
   gender: "boy" | "girl" | null;
   /** stages.number, for "what's on stage 4". */
   stage: number | null;
+  /** Angel's own words for greetings, small talk and unclear questions. */
+  reply: string | null;
 }
 
 const TIERS: readonly Tier[] = ["shakha", "meghala", "diocese"];
@@ -390,6 +403,7 @@ export function parseAiReading(raw: unknown): AngelAiReading | null {
     category: oneOf(r.category, AI_CATEGORIES),
     gender: oneOf(r.gender, ["boy", "girl"] as const),
     stage: Number.isInteger(r.stage) && (r.stage as number) >= 1 && (r.stage as number) <= 99 ? (r.stage as number) : null,
+    reply: text(r.reply)?.slice(0, MAX_REPLY) ?? null,
   };
 }
 
@@ -436,7 +450,9 @@ export function intentFromAi(ai: AngelAiReading, ctx: AngelContext): AngelIntent
       return best && best.score >= 2 ? { kind: "entity", entity: best.entity, wantsScore: true } : null;
     }
     case "greeting":
-      return { kind: "greeting", variant: "hello" };
+      return ai.reply ? { kind: "chat", text: ai.reply, suggest: true } : { kind: "greeting", variant: "hello" };
+    case "smalltalk":
+      return ai.reply ? { kind: "chat", text: ai.reply, suggest: false } : null;
     case "competition":
     case "schedule": {
       const matches = namedCompetitions(ai, ctx, feastSlug);
@@ -450,6 +466,8 @@ export function intentFromAi(ai: AngelAiReading, ctx: AngelContext): AngelIntent
     case "left":
       return { kind: "registrations", mode: ai.intent, feastSlug };
     case "unclear":
-      return null;
+      // A friendly "did you mean…?" — the caller still prefers a confident
+      // keyword match over it.
+      return ai.reply ? { kind: "chat", text: ai.reply, suggest: true } : null;
   }
 }

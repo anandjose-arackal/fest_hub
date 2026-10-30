@@ -81,7 +81,7 @@ test("help and too-short", () => {
   assert.deepEqual(resolveIntent("a", ctx), { kind: "too-short" });
 });
 
-const reading = (r: Partial<AngelAiReading>): AngelAiReading => ({ intent: "unclear", tier: null, feast: null, name: null, category: null, gender: null, stage: null, ...r });
+const reading = (r: Partial<AngelAiReading>): AngelAiReading => ({ intent: "unclear", tier: null, feast: null, name: null, category: null, gender: null, stage: null, reply: null, ...r });
 
 test("parseAiReading drops anything outside the schema", () => {
   assert.equal(parseAiReading(null), null);
@@ -187,4 +187,23 @@ test("schedule and stage questions", () => {
 
 test("intentFromAi accepts a competition copied with its English name", () => {
   assert.deepEqual(intentFromAi(reading({ intent: "schedule", name: "മിഷൻ ക്വിസ് (Mission Quiz)" }), ctx), { kind: "schedule", matches: [ctx.competitions[2]] });
+});
+
+test("stretched and chatty greetings still count", () => {
+  assert.deepEqual(resolveIntent("hiii angel", ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(resolveIntent("Helloooo, how are you?", ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(resolveIntent("hlo", ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(resolveIntent("gud mrng", ctx), { kind: "greeting", variant: "morning" });
+  assert.deepEqual(resolveIntent("thanq dear", ctx), { kind: "greeting", variant: "thanks" });
+  assert.deepEqual(resolveIntent("nanni", ctx), { kind: "greeting", variant: "thanks" });
+  assert.deepEqual(resolveIntent("hai sugamano", ctx), { kind: "greeting", variant: "hello" });
+});
+
+test("intentFromAi: the AI's own words for greetings, small talk and unclear", () => {
+  assert.deepEqual(intentFromAi(reading({ intent: "greeting", reply: "Hello! 😊" }), ctx), { kind: "chat", text: "Hello! 😊", suggest: true });
+  assert.deepEqual(intentFromAi(reading({ intent: "greeting" }), ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(intentFromAi(reading({ intent: "smalltalk", reply: "I'm Angel!" }), ctx), { kind: "chat", text: "I'm Angel!", suggest: false });
+  assert.equal(intentFromAi(reading({ intent: "smalltalk" }), ctx), null);
+  assert.deepEqual(intentFromAi(reading({ intent: "unclear", reply: "Did you mean a shakha?" }), ctx), { kind: "chat", text: "Did you mean a shakha?", suggest: true });
+  assert.equal(parseAiReading({ intent: "greeting", reply: "x".repeat(500) })?.reply?.length, 280);
 });
