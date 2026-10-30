@@ -10,16 +10,23 @@ import {
   getOverallMeghalaLeaderboard, getScreenData, searchParticipantResults,
   type LeaderboardRow, type ParticipantSearchRow, type ScreenCompetitionResult,
 } from "@/actions/results";
-import { resolveIntent, type AngelContext, type AngelIntent, type CompetitionRef, type NamedEntity, type Tier } from "@/lib/angel-intents";
+import { readAngelQuestion } from "@/actions/angel";
+import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/lib/supabase";
+import { getDescendantShakhaIds, type AdminScope } from "@/lib/org-hierarchy";
+import { countScopeRegistrations, loadScopeTeams, resolveCapScope } from "@/lib/reg-cap-scope";
+import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
+import { intentFromAi, resolveIntent, type AngelContext, type AngelIntent, type CompetitionRef, type NamedEntity, type Tier } from "@/lib/angel-intents";
 import { GradeBadge, Medal, MedalCounts, isMedalPos } from "../feast-ui";
 import { AngelMark } from "./angel-mark";
 import { OPEN_ANGEL_EVENT } from "./angel-events";
 
 // Angel — the portal's assistant. It reads like a chat, but every answer is
-// a lookup: src/lib/angel-intents.ts decides what was asked (a top list, a
-// shakha/meghala/diocese, a competition, or a person), and this component
-// fetches it with the same public actions the portal pages use. Nothing is
-// stored; the conversation lives in this component.
+// a lookup: an AI model reads the question (readAngelQuestion), falling back to
+// the keyword router in src/lib/angel-intents.ts, to decide what was asked
+// (a top list, a shakha/meghala/diocese, a competition, or a person), and
+// this component fetches it with the same public actions the portal pages
+// use. Nothing is stored; the conversation lives in this component.
 
 type Chip = { label: string; send?: string; href?: string; run?: () => void };
 interface Message {
@@ -49,15 +56,123 @@ function compLabel(c: { categoryName: string; gender: string | null }): string {
   return [c.categoryName, genderWord(c.gender)].filter(Boolean).join(" ");
 }
 
+const one = <T,>(x: T | T[] | null | undefined): T | null => (Array.isArray(x) ? x[0] ?? null : x ?? null);
+
+// One fest's items with their stage, time and run status — every item, not
+// just published ones, so Angel can also name items still to come.
+interface ScheduleItem {
+  id: string;
+  name: string;
+  nameEn: string | null;
+  categoryName: string;
+  gender: string | null;
+  time: string | null;
+  minutes: number | null;
+  order: number;
+  stageNumber: number | null;
+  stageTitle: string | null;
+  venue: string | null;
+  status: string;
+  progress: number | null;
+}
+
+const SCHEDULE_TTL = 30_000;
+
+// "9:30 AM" → minutes after midnight, for sorting; anything else sorts last.
+function toMinutes(t: string | null): number | null {
+  const m = t?.trim().match(/^(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s?m\.?$/i);
+  if (!m) return null;
+  return (Number(m[1]) % 12 + (m[3].toLowerCase() === "p" ? 12 : 0)) * 60 + Number(m[2] ?? 0);
+}
+
+const byTime = (a: ScheduleItem, b: ScheduleItem) => (a.minutes ?? 1e4) - (b.minutes ?? 1e4) || a.order - b.order;
+
+async function loadSchedule(feastSlug: string): Promise<ScheduleItem[]> {
+  const { data, error } = await supabase
+    .from("feast_competitions")
+    .select("id, display_order, time_slot, venue, scheduled_time, comp_status, progress_pct, feast:feasts!inner(slug), stage:stages(number, title, venue), competition:competitions(name, name_en, gender, competition_category:competition_categories(name))")
+    .eq("feast.slug", feastSlug)
+    .order("display_order");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((fc) => {
+    const c = one(fc.competition);
+    const stage = one(fc.stage);
+    const time = fc.scheduled_time || fc.time_slot || null;
+    return {
+      id: fc.id,
+      name: c?.name ?? "Competition",
+      nameEn: c?.name_en ?? null,
+      categoryName: one(c?.competition_category)?.name ?? "",
+      gender: c?.gender ?? null,
+      time,
+      minutes: toMinutes(time),
+      order: fc.display_order ?? 0,
+      stageNumber: stage?.number ?? null,
+      stageTitle: stage?.title ?? null,
+      venue: fc.venue || stage?.venue || null,
+      status: fc.comp_status ?? "upcoming",
+      progress: fc.progress_pct ?? null,
+    };
+  });
+}
+
+const schedule = (feastSlug: string) => fetchCached(`angel:schedule:${feastSlug}`, () => loadSchedule(feastSlug), SCHEDULE_TTL);
+
+// Labels match the stage page (feast-stages.tsx).
+function runStatus(item: ScheduleItem): { label: string; live: boolean } {
+  if (item.status === "progressing") return { label: item.progress != null ? `Live · ${item.progress}%` : "Live", live: true };
+  if (item.status === "completed") return { label: "Completed", live: false };
+  if (item.status === "published") return { label: "Result out", live: false };
+  return { label: "Upcoming", live: false };
+}
+
+function stageText(item: ScheduleItem): string | null {
+  if (item.stageNumber == null) return item.venue;
+  return `Stage ${item.stageNumber}${item.stageTitle ? ` (${item.stageTitle})` : ""}`;
+}
+
+// One fest's items with how many places a cap scope has used — counted the
+// way the registration form counts them (lib/reg-cap-scope): individual
+// entries against max_per_shakha, team members against max_team_size.
+interface ItemSlots { id: string; name: string; label: string; team: boolean; filled: number; cap: number }
+
+async function loadItemSlots(feastSlug: string, scopeShakhaIds: string[]): Promise<ItemSlots[]> {
+  const { data, error } = await supabase
+    .from("feast_competitions")
+    .select("id, feast:feasts!inner(slug), competition:competitions(name, type, gender, max_per_shakha, max_team_size, competition_category:competition_categories(name))")
+    .eq("feast.slug", feastSlug)
+    .order("display_order");
+  if (error) throw new Error(error.message);
+  const items = (data ?? []).map((fc) => {
+    const c = one(fc.competition);
+    const team = c?.type === "group";
+    return {
+      id: fc.id,
+      name: c?.name ?? "Competition",
+      label: compLabel({ categoryName: one(c?.competition_category)?.name ?? "", gender: c?.gender ?? null }),
+      team,
+      cap: team ? c?.max_team_size ?? DEFAULT_MAX_TEAM_MEMBERS : c?.max_per_shakha ?? DEFAULT_MAX_PER_SHAKHA,
+    };
+  });
+  const [counts, teams] = await Promise.all([
+    countScopeRegistrations(supabase, items.filter((i) => !i.team).map((i) => i.id), scopeShakhaIds),
+    loadScopeTeams(supabase, items.filter((i) => i.team).map((i) => i.id), scopeShakhaIds),
+  ]);
+  return items.map((i) => ({ ...i, filled: i.team ? teams[i.id]?.members ?? 0 : counts[i.id] ?? 0 }));
+}
+
 export default function AngelChat() {
   const { feasts } = useFeasts();
   const hierarchy = useOrgHierarchy();
+  const { profile, adminScope } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [screens, setScreens] = useState<Record<string, ScreenCompetitionResult[]>>({});
+  const [schedules, setSchedules] = useState<Record<string, ScheduleItem[]>>({});
   const nextId = useRef(1);
+  const aiOff = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -70,23 +185,27 @@ export default function AngelChat() {
     setMessages((prev) => [...prev, { ...m, id: nextId.current++ }]);
   }, []);
 
+  const starterChips: Chip[] = useMemo(() => [
+    { label: "What's on stage now", send: "what's happening now" },
+    { label: "Top shakhas", send: "top shakha" },
+    ...(hasMeghala ? [{ label: "Top meghalas", send: "top meghala" }] : []),
+    ...(hasDiocese ? [{ label: "Top dioceses", send: "top diocese" }] : []),
+    ...(adminScope ? [{ label: "Items left to register", send: "which items are left" }] : []),
+    { label: "Open help", href: "/help" },
+  ], [hasMeghala, hasDiocese, adminScope]);
+
   // Greeting, the first time the panel opens.
   useEffect(() => {
     if (!open || messages.length > 0) return;
     push({
       from: "angel",
-      text: "Hi, I'm Angel. Ask me about a participant (name or registration number), a shakha or meghala, a competition's result, or who's on top.",
-      chips: [
-        { label: "Top shakhas", send: "top shakha" },
-        ...(hasMeghala ? [{ label: "Top meghalas", send: "top meghala" }] : []),
-        ...(hasDiocese ? [{ label: "Top dioceses", send: "top diocese" }] : []),
-        { label: "Open help", href: "/help" },
-      ],
+      text: "Hi, I'm Angel. Ask me about a participant (name or registration number), a shakha or meghala, a competition's result or time, what's on stage, or who's on top.",
+      chips: starterChips,
     });
-  }, [open, messages.length, push, hasMeghala, hasDiocese]);
+  }, [open, messages.length, push, starterChips]);
 
-  // Published results for every fest, loaded once when Angel first opens —
-  // they name the competitions Angel can recognise and hold their winners.
+  // Published results and the stage schedule for every fest, loaded when
+  // Angel opens — they name the competitions Angel can recognise.
   useEffect(() => {
     if (!open || feasts.length === 0) return;
     let cancelled = false;
@@ -95,6 +214,8 @@ export default function AngelChat() {
         fetchCached(`angel:screen:${f.slug}`, async () => (await getScreenData(f.slug)).data?.competitions ?? [], LOOKUP_TTL).then((c) => [f.slug, c] as const)
       )
     ).then((pairs) => { if (!cancelled) setScreens(Object.fromEntries(pairs)); });
+    Promise.all(feasts.map((f) => schedule(f.slug).catch(() => [] as ScheduleItem[]).then((s) => [f.slug, s] as const)))
+      .then((pairs) => { if (!cancelled) setSchedules(Object.fromEntries(pairs)); });
     return () => { cancelled = true; };
   }, [open, feasts]);
 
@@ -104,11 +225,15 @@ export default function AngelChat() {
       ...(hasMeghala ? hierarchy.meghalas.map((m) => ({ id: m.id, name: m.name, kind: "meghala" as const })) : []),
       ...(hasDiocese ? hierarchy.dioceses.map((d) => ({ id: d.id, name: d.name, kind: "diocese" as const })) : []),
     ];
+    // Every scheduled item; published results stand in if the schedule
+    // couldn't be read.
     const competitions: CompetitionRef[] = feasts.flatMap((f) =>
-      (screens[f.slug] ?? []).map((c) => ({ id: c.competitionId, name: c.competitionName, altName: c.competitionNameEn, categoryName: c.categoryName, gender: c.gender, feastSlug: f.slug, feastName: f.name }))
+      schedules[f.slug]?.length
+        ? schedules[f.slug].map((c) => ({ id: c.id, name: c.name, altName: c.nameEn, categoryName: c.categoryName, gender: c.gender, feastSlug: f.slug, feastName: f.name }))
+        : (screens[f.slug] ?? []).map((c) => ({ id: c.competitionId, name: c.competitionName, altName: c.competitionNameEn, categoryName: c.categoryName, gender: c.gender, feastSlug: f.slug, feastName: f.name }))
     );
     return { entities, competitions, feasts: feasts.map((f) => ({ slug: f.slug, name: f.name, type: f.type })) };
-  }, [hierarchy.shakhas, hierarchy.meghalas, hierarchy.dioceses, hasMeghala, hasDiocese, feasts, screens]);
+  }, [hierarchy.shakhas, hierarchy.meghalas, hierarchy.dioceses, hasMeghala, hasDiocese, feasts, screens, schedules]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -132,7 +257,14 @@ export default function AngelChat() {
   // ── Answers ──────────────────────────────────────────────────────────
   const feastName = useCallback((slug: string | null) => (slug ? feasts.find((f) => f.slug === slug)?.name ?? null : null), [feasts]);
 
-  const answerTop = useCallback(async (tier: Tier, feastSlug: string | null): Promise<Omit<Message, "id">> => {
+  // Ids of the `tier` nodes inside a meghala or diocese.
+  const memberIds = useCallback((group: NamedEntity, tier: Tier): Set<string> => {
+    if (tier === "meghala") return new Set(hierarchy.meghalas.filter((m) => m.diocese_id === group.id).map((m) => m.id));
+    if (group.kind === "meghala") return new Set(hierarchy.shakhas.filter((s) => s.meghala_id === group.id).map((s) => s.id));
+    return new Set(getDescendantShakhaIds({ level: "diocese", id: group.id, name: group.name }, hierarchy));
+  }, [hierarchy]);
+
+  const answerTop = useCallback(async (tier: Tier, feastSlug: string | null, within?: NamedEntity): Promise<Omit<Message, "id">> => {
     if (tier === "diocese" && !hasDiocese) return { from: "angel", text: "This org doesn't group shakhas into dioceses, so there's no diocese ranking." };
     if (tier === "meghala" && !hasMeghala) return { from: "angel", text: "This org doesn't group shakhas into meghalas, so there's no meghala ranking." };
     const rows = await (tier === "shakha"
@@ -140,16 +272,23 @@ export default function AngelChat() {
       : tier === "meghala"
         ? lb(`meghala:${feastSlug ?? "all"}`, () => (feastSlug ? getMeghalaLeaderboard(feastSlug) : getOverallMeghalaLeaderboard()))
         : lb(`diocese:${feastSlug ?? "all"}`, () => (feastSlug ? getDioceseLeaderboard(feastSlug) : getOverallDioceseLeaderboard())));
-    const top = rows.filter((r) => r.shakhaId !== UNASSIGNED && r.points > 0).slice(0, 3);
     const where = feastName(feastSlug) ?? "all fests";
-    if (top.length === 0) return { from: "angel", text: `No ${TIER_LABEL[tier]} have points in ${where} yet.` };
+    const scored = rows.filter((r) => r.shakhaId !== UNASSIGNED && r.points > 0);
+    // Inside a group: its members only, ranked among themselves, and a few
+    // more of them since the list is short.
+    const members = within ? memberIds(within, tier) : null;
+    const top = members
+      ? scored.filter((r) => members.has(r.shakhaId)).slice(0, 5).map((r, i) => ({ ...r, rank: i + 1 }))
+      : scored.slice(0, 3);
+    const group = within ? ` in ${within.name} ${within.kind}` : "";
+    if (top.length === 0) return { from: "angel", text: `No ${TIER_LABEL[tier]}${group} have points in ${where} yet.` };
     return {
       from: "angel",
-      text: `Top ${TIER_LABEL[tier]} in ${where}:`,
+      text: `Top ${TIER_LABEL[tier]}${group}, ${where}:`,
       body: <RankList rows={top} />,
       chips: [{ label: "See full rankings", href: "/rankings" }],
     };
-  }, [hasDiocese, hasMeghala, feastName]);
+  }, [hasDiocese, hasMeghala, feastName, memberIds]);
 
   const answerEntity = useCallback(async (entity: NamedEntity): Promise<Omit<Message, "id">> => {
     const rows = await (entity.kind === "shakha"
@@ -214,14 +353,133 @@ export default function AngelChat() {
     };
   }, [feasts]);
 
+  // When and where — read fresh (30s cache), since status changes live.
+  const answerSchedule = useCallback(async (matches: CompetitionRef[]): Promise<Omit<Message, "id">> => {
+    const slugs = [...new Set(matches.map((m) => m.feastSlug))];
+    const items = (await Promise.all(slugs.map(schedule))).flat();
+    const found = matches.map((m) => items.find((i) => i.id === m.id)).filter((i): i is ScheduleItem => !!i).sort(byTime);
+    const chips: Chip[] = slugs.map((s) => ({ label: slugs.length > 1 ? `${feastName(s) ?? "Fest"} stages` : "Stage schedule", href: `/feast/${s}/stages` }));
+    const name = matches[0].name;
+    if (!found.some((i) => i.stageNumber != null || i.time)) {
+      return { from: "angel", text: `${name} isn't on the stage schedule yet.`, chips };
+    }
+    const where = slugs.length === 1 ? `, ${feastName(slugs[0]) ?? ""}` : "";
+    return {
+      from: "angel",
+      text: found.length === 1 ? `${name}${where}:` : `When and where ${name} runs${where}:`,
+      body: (
+        <ScheduleList
+          rows={found.map((i) => ({
+            key: i.id,
+            title: [compLabel(i), slugs.length > 1 ? feastName(matches.find((m) => m.id === i.id)?.feastSlug ?? null) : null].filter(Boolean).join(" · ") || i.name,
+            sub: [stageText(i), i.time].filter(Boolean).join(" · ") || "Not scheduled yet",
+            status: runStatus(i),
+          }))}
+        />
+      ),
+      chips,
+    };
+  }, [feastName]);
+
+  // One stage's running order, or every stage's live/next item.
+  const answerStage = useCallback(async (number: number | null, feastSlug: string | null): Promise<Omit<Message, "id">> => {
+    const targets = feastSlug ? feasts.filter((f) => f.slug === feastSlug) : feasts;
+    const lists = await Promise.all(targets.map(async (f) => ({ f, items: await schedule(f.slug) })));
+    const many = lists.filter((l) => l.items.some((i) => i.stageNumber != null)).length > 1;
+    const chips: Chip[] = lists
+      .filter((l) => l.items.some((i) => i.stageNumber != null))
+      .map(({ f }) => ({ label: many ? `${f.name} stages` : "Stage schedule", href: `/feast/${f.slug}/stages` }));
+
+    if (number != null) {
+      const groups = lists.map(({ f, items }) => ({ f, items: items.filter((i) => i.stageNumber === number).sort(byTime) })).filter((g) => g.items.length);
+      if (groups.length === 0) return { from: "angel", text: `I couldn't find a stage ${number}${feastSlug ? ` in ${feastName(feastSlug)}` : ""}.`, chips };
+      const title = groups[0].items[0].stageTitle;
+      return {
+        from: "angel",
+        text: `Stage ${number}${title ? ` (${title})` : ""}${groups.length === 1 ? `, ${groups[0].f.name}` : ""}:`,
+        body: (
+          <ScheduleList
+            rows={groups.flatMap(({ f, items }) => items.map((i) => ({
+              key: i.id,
+              title: `${i.name}${compLabel(i) ? ` · ${compLabel(i)}` : ""}`,
+              sub: [i.time, groups.length > 1 ? f.name : null].filter(Boolean).join(" · ") || "Time not set",
+              status: runStatus(i),
+            })))}
+          />
+        ),
+        chips,
+      };
+    }
+
+    // Each stage's live item, or else its next one.
+    const rows = lists.flatMap(({ f, items }) => {
+      const numbers = [...new Set(items.map((i) => i.stageNumber).filter((n): n is number => n != null))].sort((a, b) => a - b);
+      return numbers.flatMap((n) => {
+        const onStage = items.filter((i) => i.stageNumber === n).sort(byTime);
+        const pick = onStage.find((i) => i.status === "progressing") ?? onStage.find((i) => i.status === "upcoming");
+        if (!pick) return [];
+        const live = pick.status === "progressing";
+        return [{
+          key: pick.id,
+          title: `Stage ${n} · ${pick.name}`,
+          sub: [compLabel(pick), live ? null : pick.time ? `Next at ${pick.time}` : "Next", many ? f.name : null].filter(Boolean).join(" · "),
+          status: runStatus(pick),
+        }];
+      });
+    });
+    if (rows.length === 0) {
+      const anyStages = lists.some((l) => l.items.some((i) => i.stageNumber != null));
+      return { from: "angel", text: anyStages ? "Nothing is on stage right now, and nothing more is scheduled." : "The stage schedule hasn't been published yet.", chips };
+    }
+    return {
+      from: "angel",
+      text: rows.some((r) => r.status.live) ? "On stage now:" : "Nothing is live right now. Next up:",
+      body: <ScheduleList rows={rows} />,
+      chips,
+    };
+  }, [feasts, feastName]);
+
+  // A branch admin's own items, counted over their cap scope — the same set
+  // of shakhas the registration form checks the cap against.
+  const answerRegistrations = useCallback(async (node: AdminScope, mode: "registered" | "left", slug: string): Promise<Omit<Message, "id">> => {
+    const scope = node.level === "shakha"
+      ? await resolveCapScope(supabase, node.id)
+      : { shakhaIds: getDescendantShakhaIds(node, hierarchy), name: node.name };
+    const items = await loadItemSlots(slug, scope.shakhaIds);
+    const where = feastName(slug) ?? "this fest";
+    const chips: Chip[] = [
+      { label: "Register", href: `/feast/${slug}/register` },
+      { label: "My registrations", href: `/feast/${slug}/registrations` },
+    ];
+    if (mode === "registered") {
+      const done = items.filter((i) => i.filled > 0);
+      if (done.length === 0) return { from: "angel", text: `${scope.name} hasn't registered for anything in ${where} yet.`, chips };
+      return { from: "angel", text: `${scope.name} has entries in ${done.length} of ${items.length} items in ${where}:`, body: <SlotList items={done} mode={mode} />, chips };
+    }
+    const remaining = items.filter((i) => i.filled < i.cap);
+    if (remaining.length === 0) return { from: "angel", text: `Every item in ${where} is full for ${scope.name}.`, chips };
+    return { from: "angel", text: `${scope.name} can still register for ${remaining.length} of ${items.length} items in ${where}:`, body: <SlotList items={remaining} mode={mode} />, chips };
+  }, [hierarchy, feastName]);
+
   const answer = useCallback(async (intent: AngelIntent, raw: string): Promise<Omit<Message, "id">> => {
     switch (intent.kind) {
       case "too-short":
         return { from: "angel", text: "Type a bit more — a name, a registration number, a shakha or a competition." };
+      case "greeting": {
+        if (intent.variant === "thanks") return { from: "angel", text: "You're welcome! Ask me anything else about the fest." };
+        if (intent.variant === "night") return { from: "angel", text: "Good night! Come back any time for the latest results." };
+        const hello = { hello: "Hi", morning: "Good morning", afternoon: "Good afternoon", evening: "Good evening" }[intent.variant];
+        const first = profile?.full_name?.trim().split(/\s+/)[0];
+        return { from: "angel", text: `${hello}${first ? ` ${first}` : ""}! What would you like to know?`, chips: starterChips };
+      }
+      case "schedule":
+        return answerSchedule(intent.matches);
+      case "stage":
+        return answerStage(intent.number, intent.feastSlug);
       case "help":
         return { from: "angel", text: "The help page has step-by-step guides with pictures.", chips: [{ label: "Open help", href: "/help" }] };
       case "top":
-        return answerTop(intent.tier, intent.feastSlug);
+        return answerTop(intent.tier, intent.feastSlug, intent.within);
       case "entity":
         return answerEntity(intent.entity);
       case "competition": {
@@ -243,8 +501,33 @@ export default function AngelChat() {
         };
       case "participant":
         return answerParticipant(intent.query || raw);
+      case "registrations": {
+        if (!profile) {
+          return { from: "angel", text: "Sign in with your branch's admin account and I can tell you what you've registered and what's left.", chips: [{ label: "Sign in", href: "/admin/login" }] };
+        }
+        if (!adminScope) {
+          return { from: "angel", text: "Your account isn't assigned to a shakha, so there's no branch to check. Branch admin accounts can ask this." };
+        }
+        const slug = intent.feastSlug ?? (feasts.length === 1 ? feasts[0].slug : null);
+        if (slug) return answerRegistrations(adminScope, intent.mode, slug);
+        return {
+          from: "angel",
+          text: "Which fest?",
+          chips: feasts.map((f) => ({ label: f.name, run: () => { void answerRegistrations(adminScope, intent.mode, f.slug).then(push); } })),
+        };
+      }
     }
-  }, [answerTop, answerEntity, competitionAnswer, answerParticipant, push]);
+  }, [answerTop, answerEntity, competitionAnswer, answerParticipant, answerRegistrations, answerSchedule, answerStage, profile, adminScope, feasts, starterChips, push]);
+
+  // The AI's reading when it points at something real, else the keyword
+  // router's. Once the server says the AI isn't configured, stop asking.
+  const readIntent = useCallback(async (raw: string): Promise<AngelIntent> => {
+    const local = resolveIntent(raw, context);
+    if (local.kind === "too-short" || local.kind === "greeting" || aiOff.current) return local;
+    const res = await readAngelQuestion(raw).catch(() => null);
+    if (res?.disabled) aiOff.current = true;
+    return (res?.data && intentFromAi(res.data, context)) || local;
+  }, [context]);
 
   async function send(text: string) {
     const raw = text.trim();
@@ -253,7 +536,7 @@ export default function AngelChat() {
     push({ from: "user", text: raw });
     setThinking(true);
     try {
-      const [reply] = await Promise.all([answer(resolveIntent(raw, context), raw), sleep(MIN_THINK_MS)]);
+      const [reply] = await Promise.all([readIntent(raw).then((intent) => answer(intent, raw)), sleep(MIN_THINK_MS)]);
       push(reply);
     } catch {
       push({ from: "angel", text: "Something went wrong looking that up. Check your connection and try again." });
@@ -443,6 +726,56 @@ function RankList({ rows }: { rows: LeaderboardRow[] }) {
           <span className="fp-ml min-w-0 flex-1 truncate text-[14.5px] font-extrabold">{r.name}</span>
           <span className="fp-num text-[18px]" style={{ color: "var(--fp-gold-ink)" }}>{r.points}</span>
           <span className="text-[10.5px] font-bold" style={{ color: "var(--fp-meta)" }}>pts</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface ScheduleRow { key: string; title: string; sub: string; status: { label: string; live: boolean } }
+
+function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
+  return (
+    <div className="fp-scroll flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+      {rows.map((r) => (
+        <div key={r.key} className="flex items-center gap-2.5 px-3 py-2.5" style={CARD}>
+          <span className="min-w-0 flex-1">
+            <span className="fp-ml block truncate text-[14px] font-extrabold">{r.title}</span>
+            {r.sub && <span className="fp-ml block truncate text-[11.5px] font-bold" style={{ color: "var(--fp-sub)" }}>{r.sub}</span>}
+          </span>
+          <span
+            className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-extrabold"
+            style={r.status.live ? { background: "var(--fp-warn-bg)", color: "var(--fp-warn)" } : { background: "var(--fp-muted-bg)", color: "var(--fp-muted-fg)" }}
+          >
+            {r.status.label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SlotList({ items, mode }: { items: ItemSlots[]; mode: "registered" | "left" }) {
+  return (
+    <div className="fp-scroll flex max-h-[320px] flex-col gap-1.5 overflow-y-auto">
+      {items.map((i) => (
+        <div key={i.id} className="flex items-center gap-2.5 px-3 py-2.5" style={CARD}>
+          <span className="min-w-0 flex-1">
+            <span className="fp-ml block truncate text-[14px] font-extrabold">{i.name}</span>
+            {(i.label || i.team) && (
+              <span className="block truncate text-[11.5px] font-bold" style={{ color: "var(--fp-sub)" }}>
+                {[i.label, i.team ? "Team" : ""].filter(Boolean).join(" · ")}
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 text-right">
+            <span className="fp-num block text-[16px]" style={{ color: "var(--fp-gold-ink)" }}>
+              {mode === "left" ? i.cap - i.filled : i.filled}
+            </span>
+            <span className="block text-[10.5px] font-bold" style={{ color: "var(--fp-meta)" }}>
+              {mode === "left" ? `left of ${i.cap}` : `of ${i.cap}${i.team ? " members" : ""}`}
+            </span>
+          </span>
         </div>
       ))}
     </div>

@@ -57,6 +57,8 @@ export function isAllowed(role: UserRole | null | undefined, key: PermissionKey)
 export const PUBLIC_ACTIONS: readonly string[] = [
   // activity.ts
   "getRecentActivity",
+  // angel.ts — rate-limited, and off unless OPENAI_API_KEY is set
+  "readAngelQuestion",
   // results.ts
   "getFeastStandings",
   "getOverallStandings",

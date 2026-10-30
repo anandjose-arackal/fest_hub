@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { editDistance, nameScore, normalize, resolveIntent, type AngelContext } from "./angel-intents.ts";
+import { editDistance, intentFromAi, nameScore, normalize, parseAiReading, resolveIntent, type AngelAiReading, type AngelContext } from "./angel-intents.ts";
 
 const ctx: AngelContext = {
   entities: [
@@ -79,4 +79,112 @@ test("help and too-short", () => {
   assert.deepEqual(resolveIntent("help", ctx), { kind: "help" });
   assert.deepEqual(resolveIntent("how to register", ctx), { kind: "help" });
   assert.deepEqual(resolveIntent("a", ctx), { kind: "too-short" });
+});
+
+const reading = (r: Partial<AngelAiReading>): AngelAiReading => ({ intent: "unclear", tier: null, feast: null, name: null, category: null, gender: null, stage: null, ...r });
+
+test("parseAiReading drops anything outside the schema", () => {
+  assert.equal(parseAiReading(null), null);
+  assert.equal(parseAiReading({ intent: "delete everything" }), null);
+  assert.deepEqual(
+    parseAiReading({ intent: "top", tier: "planet", feast: " arts-fest ", name: "", category: "toddler", gender: "boy", extra: 1 }),
+    reading({ intent: "top", feast: "arts-fest", gender: "boy" }),
+  );
+});
+
+test("intentFromAi: top, help and unknown fests", () => {
+  assert.deepEqual(intentFromAi(reading({ intent: "top", tier: "meghala", feast: "arts-fest" }), ctx), { kind: "top", tier: "meghala", feastSlug: "arts-fest" });
+  assert.deepEqual(intentFromAi(reading({ intent: "top", feast: "made-up" }), ctx), { kind: "top", tier: "shakha", feastSlug: null });
+  assert.deepEqual(intentFromAi(reading({ intent: "help" }), ctx), { kind: "help" });
+  assert.equal(intentFromAi(reading({ intent: "unclear" }), ctx), null);
+});
+
+test("intentFromAi: entities must be real", () => {
+  assert.deepEqual(intentFromAi(reading({ intent: "entity", name: "Nilgiris", tier: "meghala" }), ctx), { kind: "entity", entity: ctx.entities[2], wantsScore: true });
+  assert.equal(intentFromAi(reading({ intent: "entity", name: "Nilgiris", tier: "shakha" }), ctx), null);
+  assert.equal(intentFromAi(reading({ intent: "entity", name: "Atlantis" }), ctx), null);
+});
+
+test("intentFromAi: competitions match by name or English name, then narrow", () => {
+  const both = intentFromAi(reading({ intent: "competition", name: "പ്രസംഗം" }), ctx);
+  assert.equal(both?.kind === "competition" && both.matches.length, 2);
+  assert.deepEqual(intentFromAi(reading({ intent: "competition", name: "പ്രസംഗം", gender: "girl" }), ctx), { kind: "competition", matches: [ctx.competitions[0]] });
+  assert.deepEqual(intentFromAi(reading({ intent: "competition", name: "mission quiz" }), ctx), { kind: "competition", matches: [ctx.competitions[2]] });
+  // A filter that matches nothing is ignored rather than emptying the list.
+  const kept = intentFromAi(reading({ intent: "competition", name: "പ്രസംഗം", category: "super senior" }), ctx);
+  assert.equal(kept?.kind === "competition" && kept.matches.length, 2);
+  assert.equal(intentFromAi(reading({ intent: "competition", name: "Group Dance" }), ctx), null);
+});
+
+test("intentFromAi: participants need a name", () => {
+  assert.deepEqual(intentFromAi(reading({ intent: "participant", name: "Anu Joseph" }), ctx), { kind: "participant", query: "Anu Joseph" });
+  assert.equal(intentFromAi(reading({ intent: "participant" }), ctx), null);
+});
+
+test("own registrations: registered vs left, but not a named person", () => {
+  assert.deepEqual(resolveIntent("which items are left", ctx), { kind: "registrations", mode: "left", feastSlug: null });
+  assert.deepEqual(resolveIntent("items not registered yet", ctx), { kind: "registrations", mode: "left", feastSlug: null });
+  assert.deepEqual(resolveIntent("our registrations in arts", ctx), { kind: "registrations", mode: "registered", feastSlug: "arts-fest" });
+  assert.deepEqual(resolveIntent("ബാക്കി ഐറ്റം", ctx), { kind: "registrations", mode: "left", feastSlug: null });
+  assert.deepEqual(resolveIntent("is Anu registered", ctx), { kind: "participant", query: "anu" });
+  assert.deepEqual(intentFromAi(reading({ intent: "left", feast: "literature-fest" }), ctx), { kind: "registrations", mode: "left", feastSlug: "literature-fest" });
+  assert.deepEqual(intentFromAi(reading({ intent: "registered" }), ctx), { kind: "registrations", mode: "registered", feastSlug: null });
+});
+
+test("roopatha means diocese", () => {
+  assert.deepEqual(resolveIntent("top roopatha", ctx), { kind: "top", tier: "diocese", feastSlug: null });
+});
+
+test("top within a meghala or diocese", () => {
+  const groups: AngelContext = {
+    ...ctx,
+    entities: [
+      ...ctx.entities,
+      { id: "s3", name: "Mananthavady Town", kind: "shakha" },
+      { id: "m3", name: "Mananthavady", kind: "meghala" },
+    ],
+  };
+  const m3 = groups.entities[6];
+  assert.deepEqual(resolveIntent("best shakha in mananthavady", groups), { kind: "top", tier: "shakha", feastSlug: null, within: m3 });
+  assert.deepEqual(resolveIntent("mananthavady meghalayile best shakha", groups), { kind: "top", tier: "shakha", feastSlug: null, within: m3 });
+  assert.deepEqual(resolveIntent("top meghala in mananthavady diocese", groups), { kind: "top", tier: "meghala", feastSlug: null, within: ctx.entities[4] });
+  assert.deepEqual(resolveIntent("best shakha in mananthavady diocese", groups), { kind: "top", tier: "shakha", feastSlug: null, within: ctx.entities[4] });
+  // A shakha is never a group, and a plain name stays a name.
+  assert.equal(resolveIntent("top shakha kottiyoor", groups).kind, "entity");
+  assert.deepEqual(resolveIntent("mananthavady town score", groups), { kind: "entity", entity: groups.entities[5], wantsScore: true });
+  assert.deepEqual(intentFromAi(reading({ intent: "top", tier: "shakha", name: "Mananthavady" }), groups), { kind: "top", tier: "shakha", feastSlug: null, within: m3 });
+  assert.deepEqual(intentFromAi(reading({ intent: "top", tier: "meghala", name: "Mananthavady" }), groups), { kind: "top", tier: "meghala", feastSlug: null, within: ctx.entities[4] });
+  assert.deepEqual(intentFromAi(reading({ intent: "top", tier: "shakha", name: "Kottiyoor" }), groups), { kind: "top", tier: "shakha", feastSlug: null });
+});
+
+test("greetings get a greeting back, but a question with a greeting doesn't", () => {
+  assert.deepEqual(resolveIntent("hi", ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(resolveIntent("Hello Angel!", ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(resolveIntent("good morning", ctx), { kind: "greeting", variant: "morning" });
+  assert.deepEqual(resolveIntent("നമസ്കാരം", ctx), { kind: "greeting", variant: "hello" });
+  assert.deepEqual(resolveIntent("thank you so much", ctx), { kind: "greeting", variant: "thanks" });
+  assert.equal(resolveIntent("hi top shakha", ctx).kind, "top");
+  assert.equal(resolveIntent("hi kottiyoor", ctx).kind, "entity");
+  assert.deepEqual(intentFromAi(reading({ intent: "greeting" }), ctx), { kind: "greeting", variant: "hello" });
+});
+
+test("schedule and stage questions", () => {
+  assert.deepEqual(resolveIntent("when is mission quiz", ctx), { kind: "schedule", matches: [ctx.competitions[2]] });
+  assert.deepEqual(resolveIntent("പ്രസംഗം എപ്പോൾ", ctx), { kind: "schedule", matches: [ctx.competitions[0], ctx.competitions[1]] });
+  assert.deepEqual(resolveIntent("mission quiz result", ctx), { kind: "competition", matches: [ctx.competitions[2]] });
+  assert.deepEqual(resolveIntent("mission quiz evide", ctx), { kind: "schedule", matches: [ctx.competitions[2]] });
+  assert.deepEqual(resolveIntent("what's on stage 4", ctx), { kind: "stage", number: 4, feastSlug: null });
+  assert.deepEqual(resolveIntent("stage4 arts", ctx), { kind: "stage", number: 4, feastSlug: "arts-fest" });
+  assert.deepEqual(resolveIntent("വേദി 2", ctx), { kind: "stage", number: 2, feastSlug: null });
+  assert.deepEqual(resolveIntent("what's happening now", ctx), { kind: "stage", number: null, feastSlug: null });
+  assert.deepEqual(resolveIntent("stage schedule", ctx), { kind: "stage", number: null, feastSlug: null });
+  assert.equal(resolveIntent("who is on top", ctx).kind, "top");
+  assert.deepEqual(intentFromAi(reading({ intent: "schedule", name: "Mission Quiz" }), ctx), { kind: "schedule", matches: [ctx.competitions[2]] });
+  assert.equal(intentFromAi(reading({ intent: "schedule", name: "Group Dance" }), ctx), null);
+  assert.deepEqual(intentFromAi(reading({ intent: "stage", stage: 3, feast: "arts-fest" }), ctx), { kind: "stage", number: 3, feastSlug: "arts-fest" });
+  assert.equal(parseAiReading({ intent: "stage", stage: 4.5 })?.stage, null);
+});
+
+test("intentFromAi accepts a competition copied with its English name", () => {
+  assert.deepEqual(intentFromAi(reading({ intent: "schedule", name: "മിഷൻ ക്വിസ് (Mission Quiz)" }), ctx), { kind: "schedule", matches: [ctx.competitions[2]] });
 });
