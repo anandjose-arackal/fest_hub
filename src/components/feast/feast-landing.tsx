@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Calendar, ChevronRight, Search, Loader2, Users, ListChecks, Clock3, Trophy, LogIn, MapPin, Palette, PenTool, Zap, Sparkles } from "lucide-react";
+import { Calendar, ChevronRight, Search, Loader2, Users, ListChecks, Clock3, Trophy, LogIn, Palette, PenTool, Zap, Sparkles } from "lucide-react";
 import { useFeasts, type FeastUI } from "@/hooks/use-feast";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { GlowBtn, LoginSheet, mix, theme } from "./feast-shared";
-import { Eyebrow } from "./feast-ui";
+import { FeastHero } from "./feast-hero";
 import { LiveActivityFeed, TopRankingWidget } from "./feast-dashboard-widgets";
 import { MissionCountdown } from "./feast-countdown";
 import { LatestResultWidget } from "./feast-latest-result";
@@ -69,19 +69,7 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
           <img src={org.logo_url} alt={org.org_name_en || "Fest Hub"} className="h-12 w-12 rounded-full object-cover" />
         </div>
       </div>
-      <section className="px-1 pt-[72px]">
-        <Eyebrow>{org.tagline || "Fest Portal"}</Eyebrow>
-        <h1 className="m-0 mt-2.5">
-          <span className="fp-ml block text-[28px] font-extrabold leading-[1.15] sm:text-[34px]" style={{ color: theme.text }}>{org.org_name_en || "Fest Hub"}</span>
-          <span className="fp-app-name fp-disp fp-hl-text mt-2 block text-[min(19.5vw,78px)] sm:text-[104px] xl:text-[132px]">{org.app_name || "Competitions & Results"}</span>
-        </h1>
-        {org.area_name_en && (
-          <span className="mt-3.5 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-extrabold" style={{ background: theme.surface3, border: `1px solid ${theme.line2}`, color: "var(--fp-link)" }}>
-            <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-            {org.area_name_en}
-          </span>
-        )}
-      </section>
+      <FeastHero org={org} />
 
       {/* Dashboard: feast list (main) + live updates / top shakhas (sidebar on wide screens) */}
       <div className="mt-2 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">

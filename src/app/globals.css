@@ -948,6 +948,48 @@
   [data-fp-theme="nebula"] .fp-app-name { animation: none; }
 }
 
+/* ── Portal hero (feast-hero.tsx) ───────────────────────────────────────
+   The illustration (public/hero/hero-wide.webp) fills a framed stage; the
+   title sits in its empty centre. Edge and accents read the theme tokens. */
+@property --fp-hero-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.fp-hero-stage { background: #120634; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4); }
+.fp-hero-stage::before {
+  content: ""; position: absolute; inset: 0; z-index: 1; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--fp-hero-angle), var(--fp-gold), var(--fp-accent), var(--fp-primary), transparent 55%, transparent 70%, var(--fp-gold));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: fp-hero-spin 9s linear infinite;
+}
+@keyframes fp-hero-spin { to { --fp-hero-angle: 360deg; } }
+/* Darkens the centre just enough for the title; leaves the art at the edges bright. */
+/* Phone and laptop artwork put the title in the sky above Jesus, so darken up
+   there; the tablet artwork (640–1023px) centres it. */
+.fp-hero-scrim { background: radial-gradient(ellipse 60% 40% at 50% 24%, rgba(10, 3, 30, 0.5), transparent 75%); }
+@media (min-width: 640px) { .fp-hero-scrim { background: radial-gradient(ellipse 34% 62% at 50% 50%, rgba(10, 3, 30, 0.55), rgba(10, 3, 30, 0.2) 70%, transparent); } }
+@media (min-width: 1024px) { .fp-hero-scrim { background: radial-gradient(ellipse 30% 70% at 50% 50%, rgba(10, 3, 30, 0.5), transparent 75%); } }
+
+/* Title: the whole app name in condensed display type (Archivo for Latin,
+   Anek Malayalam's narrow width for Malayalam) with a shifting holographic fill. */
+.fp-hero-title {
+  font-family: var(--font-archivo), var(--font-anek), sans-serif; font-stretch: 75%; font-weight: 800;
+  line-height: 1.05; letter-spacing: 0.01em; padding-block: 0.06em;
+  background: linear-gradient(100deg, #FF4FD8, #B44CFF, #38BDF8, #6EE7B7, #FFE08A, #FF4FD8) 0 0 / 300% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+  animation: fp-holo 9s linear infinite;
+}
+@keyframes fp-holo { to { background-position: 300% 0; } }
+
+/* Location: wide-tracked caps between two gradient rules. */
+.fp-hero-loc-name { font-family: var(--font-archivo), var(--font-anek), sans-serif; font-stretch: 90%; font-weight: 800; text-transform: uppercase; letter-spacing: 0.42em; margin-right: -0.42em; line-height: 1.15;
+  background: linear-gradient(90deg, #FFF7D6, var(--fp-gold) 50%, #FFF7D6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.6)); }
+.fp-hero-rule { background: linear-gradient(90deg, transparent, var(--fp-gold)); box-shadow: 0 0 8px color-mix(in srgb, var(--fp-gold) 60%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fp-hero-stage::before, .fp-hero-title { animation: none; }
+}
+
 /* The org logo as a watermark behind the page (portal shell and /screen). */
 .fp-logo-backdrop { display: var(--fp-logo-backdrop, none); aspect-ratio: 1; object-fit: contain; filter: grayscale(0.7) brightness(1.05); opacity: .17; pointer-events: none; user-select: none; }
 

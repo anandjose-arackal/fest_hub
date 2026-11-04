@@ -199,7 +199,7 @@ export default function AngelChat() {
     if (!open || messages.length > 0) return;
     push({
       from: "angel",
-      text: "Hi, I'm Angel. Ask me about a participant (name or registration number), a shakha or meghala, a competition's result or time, what's on stage, or who's on top.",
+      text: "Hi, I'm Angel 👋 Ask me anything about the fest — a participant's result, a shakha's points, who's leading, or when and where a competition is. English or Malayalam, both are fine!",
       chips: starterChips,
     });
   }, [open, messages.length, push, starterChips]);
@@ -284,7 +284,7 @@ export default function AngelChat() {
     if (top.length === 0) return { from: "angel", text: `No ${TIER_LABEL[tier]}${group} have points in ${where} yet.` };
     return {
       from: "angel",
-      text: `Top ${TIER_LABEL[tier]}${group}, ${where}:`,
+      text: `Here are the top ${TIER_LABEL[tier]}${group}, ${where} 🏆`,
       body: <RankList rows={top} />,
       chips: [{ label: "See full rankings", href: "/rankings" }],
     };
@@ -336,7 +336,7 @@ export default function AngelChat() {
     if (found.length === 0) {
       return {
         from: "angel",
-        text: `I couldn't find anyone, any shakha or any competition matching "${query}". Check the spelling, or try the registration number.`,
+        text: `Hmm, I couldn't find anyone, any shakha or any competition matching "${query}". Could you check the spelling, or try the registration number?`,
         chips: [{ label: "Open help", href: "/help" }],
       };
     }
@@ -464,20 +464,26 @@ export default function AngelChat() {
   const answer = useCallback(async (intent: AngelIntent, raw: string): Promise<Omit<Message, "id">> => {
     switch (intent.kind) {
       case "too-short":
-        return { from: "angel", text: "Type a bit more — a name, a registration number, a shakha or a competition." };
+        return { from: "angel", text: "Could you tell me a little more? A name, registration number, shakha or competition works best." };
+      case "chat":
+        return { from: "angel", text: intent.text, chips: intent.suggest ? starterChips : undefined };
       case "greeting": {
-        if (intent.variant === "thanks") return { from: "angel", text: "You're welcome! Ask me anything else about the fest." };
-        if (intent.variant === "night") return { from: "angel", text: "Good night! Come back any time for the latest results." };
+        if (intent.variant === "thanks") return { from: "angel", text: "You're most welcome! 😊 Ask me anything else about the fest." };
+        if (intent.variant === "night") return { from: "angel", text: "Good night! Come back any time for the latest results. 🌙" };
         const hello = { hello: "Hi", morning: "Good morning", afternoon: "Good afternoon", evening: "Good evening" }[intent.variant];
         const first = profile?.full_name?.trim().split(/\s+/)[0];
-        return { from: "angel", text: `${hello}${first ? ` ${first}` : ""}! What would you like to know?`, chips: starterChips };
+        return {
+          from: "angel",
+          text: `${hello}${first ? ` ${first}` : ""}! 😊 Lovely to see you. Ask me about results, rankings, a shakha's points, or what's on stage.`,
+          chips: starterChips,
+        };
       }
       case "schedule":
         return answerSchedule(intent.matches);
       case "stage":
         return answerStage(intent.number, intent.feastSlug);
       case "help":
-        return { from: "angel", text: "The help page has step-by-step guides with pictures.", chips: [{ label: "Open help", href: "/help" }] };
+        return { from: "angel", text: "Happy to help! The help page walks you through everything, step by step with pictures.", chips: [{ label: "Open help", href: "/help" }] };
       case "top":
         return answerTop(intent.tier, intent.feastSlug, intent.within);
       case "entity":
@@ -520,13 +526,18 @@ export default function AngelChat() {
   }, [answerTop, answerEntity, competitionAnswer, answerParticipant, answerRegistrations, answerSchedule, answerStage, profile, adminScope, feasts, starterChips, push]);
 
   // The AI's reading when it points at something real, else the keyword
-  // router's. Once the server says the AI isn't configured, stop asking.
+  // router's. Greetings go to the AI too, so the reply sounds like a person
+  // and matches their language. Once the server says the AI isn't
+  // configured, stop asking.
   const readIntent = useCallback(async (raw: string): Promise<AngelIntent> => {
     const local = resolveIntent(raw, context);
-    if (local.kind === "too-short" || local.kind === "greeting" || aiOff.current) return local;
+    if (local.kind === "too-short" || aiOff.current) return local;
     const res = await readAngelQuestion(raw).catch(() => null);
     if (res?.disabled) aiOff.current = true;
-    return (res?.data && intentFromAi(res.data, context)) || local;
+    const ai = res?.data ? intentFromAi(res.data, context) : null;
+    // A friendly "what did you mean?" shouldn't beat a confident keyword match.
+    if (ai?.kind === "chat" && res?.data?.intent === "unclear" && local.kind !== "participant") return local;
+    return ai || local;
   }, [context]);
 
   async function send(text: string) {
@@ -539,7 +550,7 @@ export default function AngelChat() {
       const [reply] = await Promise.all([readIntent(raw).then((intent) => answer(intent, raw)), sleep(MIN_THINK_MS)]);
       push(reply);
     } catch {
-      push({ from: "angel", text: "Something went wrong looking that up. Check your connection and try again." });
+      push({ from: "angel", text: "Sorry, something went wrong looking that up. Check your connection and try again?" });
     } finally {
       setThinking(false);
     }
