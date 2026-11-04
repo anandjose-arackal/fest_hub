@@ -5,7 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { fetchAllIn } from "@/lib/fetch-all";
 import { TAG, TTL, expireTags } from "@/lib/cache-tags";
 import { calcGrade, calcPositions, GROUP_GRADE_POINTS, GROUP_POSITION_POINTS, NO_GRADE_POINTS, NO_POSITION_POINTS, type Grade } from "@/lib/result-calculator";
-import { rebuildStandings, type ScoreEntry, type DraftScore } from "@/actions/results";
+import type { ScoreEntry, DraftScore } from "@/actions/results";
 import { TEAM_CATEGORY_SLUG } from "@/lib/feast-data";
 import { requireRole } from "@/lib/require-role";
 
@@ -58,6 +58,10 @@ export async function saveDraftTeamScores(input: {
   const auth = await requireRole("results.write");
   if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
+  // As in saveDraftScores: a draft save would un-publish rows of a published item.
+  const { data: fc } = await admin.from("feast_competitions").select("result_status").eq("id", input.feastCompetitionId).single();
+  if (!fc) return { error: "Competition not found." };
+  if (fc.result_status === "published") return { error: "Revert to draft before editing scores." };
   const rows = input.scores.map((s) => ({
     feast_competition_id: input.feastCompetitionId,
     team_registration_id: s.registrationId,
@@ -136,11 +140,6 @@ export async function publishTeamResults(feastCompetitionId: string): Promise<{ 
     };
   });
 
-  const { error: upsertErr } = await admin.from("team_results").upsert(calculated, { onConflict: "team_registration_id" });
-  if (upsertErr) return { error: upsertErr.message };
-
-  await admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId);
-
   const ledgerRows = (external ? [] : draftRows)
     .map((r, i) => {
       const teamReg = Array.isArray(r.team_registration) ? r.team_registration[0] : r.team_registration;
@@ -162,38 +161,24 @@ export async function publishTeamResults(feastCompetitionId: string): Promise<{ 
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
-  if (ledgerRows.length > 0) {
-    const { error: ledgerErr } = await admin.from("shakha_point_ledger").insert(ledgerRows);
-    if (ledgerErr) return { error: ledgerErr.message };
-  }
-
-  const [rebuildErr] = await Promise.all([
-    rebuildStandings(fc.feast_id, admin, external),
-    admin.from("feast_competitions").update({ result_status: "published", comp_status: "published" }).eq("id", feastCompetitionId),
-  ]);
-  expireTags(TAG.results);
-  if (rebuildErr) return { error: rebuildErr };
+  // One transaction, as in publishResults (migration 020).
+  const { error } = await admin.rpc("publish_item_results", {
+    p_fc_id: feastCompetitionId,
+    p_kind: "team",
+    p_results: calculated,
+    p_ledger: ledgerRows,
+  });
+  expireTags(TAG.results, TAG.standings);
+  if (error) return { error: error.message };
   return {};
 }
 
-export async function unpublishTeamResults(feastCompetitionId: string, feastId: string): Promise<{ error?: string }> {
+export async function unpublishTeamResults(feastCompetitionId: string): Promise<{ error?: string }> {
   const auth = await requireRole("results.write");
   if ("error" in auth) return { error: auth.error };
-  const admin = getSupabaseAdmin();
-  await Promise.all([
-    admin
-      .from("team_results")
-      .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
-      .eq("feast_competition_id", feastCompetitionId),
-    admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId),
-    // Same as unpublishResults: a print of withdrawn results is stale.
-    admin.from("feast_competition_prints").delete().eq("feast_competition_id", feastCompetitionId),
-  ]);
-  const [, { error }] = await Promise.all([
-    rebuildStandings(feastId, admin),
-    admin.from("feast_competitions").update({ result_status: "draft", comp_status: "completed" }).eq("id", feastCompetitionId),
-  ]);
-  expireTags(TAG.results);
+  // Same as unpublishResults, for team_results.
+  const { error } = await getSupabaseAdmin().rpc("unpublish_item_results", { p_fc_id: feastCompetitionId, p_kind: "team" });
+  expireTags(TAG.results, TAG.standings);
   if (error) return { error: error.message };
   return {};
 }

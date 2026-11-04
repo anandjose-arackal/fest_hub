@@ -3,6 +3,7 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { getOrgSettings } from "@/lib/org-settings";
 import { fetchCached, invalidateCached, useCachedQuery } from "@/lib/client-cache";
+import { fetchAll } from "@/lib/fetch-all";
 import type { Stage, Diocese, Meghala, Shakha, HierarchyLevel, OrgSettings } from "@/types";
 
 // Multi-org: no hardcoded per-slug visual config (the source app had a
@@ -290,9 +291,11 @@ export function useFeast(slug: string) {
 
 // ── useShakhas ───────────────────────────────────────────────────────────
 async function loadShakhas(): Promise<ShakhaOption[]> {
-  const { data, error } = await supabase.from("shakhas").select("id, name, color").order("name");
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((s) => ({ id: s.id, name: s.name, color: s.color }));
+  const { data, error } = await fetchAll((from, to) =>
+    supabase.from("shakhas").select("id, name, color").order("name").order("id").range(from, to)
+  );
+  if (error) throw new Error(error);
+  return data.map((s) => ({ id: s.id, name: s.name, color: s.color }));
 }
 
 export function useShakhas() {
@@ -328,13 +331,13 @@ async function loadOrgHierarchy(): Promise<OrgHierarchyData> {
   const [d, m, s, org] = await Promise.all([
     supabase.from("dioceses").select("*").order("name"),
     supabase.from("meghalas").select("*").order("name"),
-    supabase.from("shakhas").select("*").order("name"),
+    fetchAll((from, to) => supabase.from("shakhas").select("*").order("name").order("id").range(from, to)),
     loadOrgSettingsCached(),
   ]);
   return {
     dioceses: (d.data as Diocese[] | null) ?? [],
     meghalas: (m.data as Meghala[] | null) ?? [],
-    shakhas: (s.data as Shakha[] | null) ?? [],
+    shakhas: s.data as Shakha[],
     hierarchyLevel: org.hierarchy_level,
   };
 }

@@ -3,6 +3,7 @@
 import OpenAI from "openai";
 import { headers } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { fetchAll } from "@/lib/fetch-all";
 import { AI_CATEGORIES, AI_INTENTS, parseAiReading, type AngelAiReading } from "@/lib/angel-intents";
 
 // Angel's AI reading: an OpenAI model turns a free-form question (English,
@@ -15,7 +16,10 @@ import { AI_CATEGORIES, AI_INTENTS, parseAiReading, type AngelAiReading } from "
 const DEFAULT_MODEL = "gpt-5.4-mini";
 const MAX_MESSAGE_LENGTH = 300;
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX = 12;
+// Per IP. A whole venue can share one IP (Wi-Fi, carrier NAT), so this is
+// generous; RATE_MAX_TOTAL caps what one server instance spends on OpenAI.
+const RATE_MAX = 120;
+const RATE_MAX_TOTAL = 600;
 const VOCAB_TTL_MS = 5 * 60_000;
 
 const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
@@ -60,6 +64,7 @@ Competition names are listed mostly in Malayalam script, but people usually type
 let client: OpenAI | null = null;
 let vocabulary: { text: string; at: number } | null = null;
 const recent = new Map<string, number[]>();
+let recentAll: number[] = [];
 
 function openai(): OpenAI {
   client ??= new OpenAI({ timeout: 20_000, maxRetries: 1 });
@@ -70,13 +75,14 @@ async function loadVocabulary(): Promise<string> {
   if (vocabulary && Date.now() - vocabulary.at < VOCAB_TTL_MS) return vocabulary.text;
   const supabase = getSupabaseAdmin();
   const [shakhas, meghalas, dioceses, feasts, competitions] = await Promise.all([
-    supabase.from("shakhas").select("name").order("name"),
+    fetchAll((from, to) => supabase.from("shakhas").select("name").order("name").order("id").range(from, to)),
     supabase.from("meghalas").select("name").order("name"),
     supabase.from("dioceses").select("name").order("name"),
     supabase.from("feasts").select("slug, name, type").order("slug"),
     supabase.from("competitions").select("name, name_en").order("name"),
   ]);
-  const failed = [shakhas, meghalas, dioceses, feasts, competitions].find((r) => r.error);
+  if (shakhas.error) throw new Error(shakhas.error);
+  const failed = [meghalas, dioceses, feasts, competitions].find((r) => r.error);
   if (failed?.error) throw new Error(failed.error.message);
 
   const names = (rows: { name: string }[] | null) => (rows ?? []).map((r) => r.name).join(", ") || "(none)";
@@ -96,9 +102,11 @@ async function overRateLimit(): Promise<boolean> {
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
   const now = Date.now();
+  recentAll = recentAll.filter((t) => now - t < RATE_WINDOW_MS);
   const hits = (recent.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (hits.length >= RATE_MAX) return true;
+  if (hits.length >= RATE_MAX || recentAll.length >= RATE_MAX_TOTAL) return true;
   hits.push(now);
+  recentAll.push(now);
   recent.set(ip, hits);
   if (recent.size > 5_000) {
     for (const [key, times] of recent) if (times.every((t) => now - t >= RATE_WINDOW_MS)) recent.delete(key);

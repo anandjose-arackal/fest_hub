@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { loadOrgSettingsCached as getOrgSettings, invalidateOrgHierarchy } from "@/hooks/use-feast";
 import { createShakha, updateShakha, deleteShakha } from "@/actions/shakha";
 import type { HierarchyLevel, Meghala, Shakha } from "@/types";
+import { fetchAll } from "@/lib/fetch-all";
 
 const DEFAULT_COLORS = ["#6B46FF", "#0F766E", "#B45309", "#BE185D", "#1D4ED8", "#15803D", "#B91C1C", "#4338CA"];
 
@@ -26,7 +27,7 @@ export default function ShakhasPage() {
     invalidateOrgHierarchy();
     setLoading(true);
     const [{ data: s }, { data: m }, org] = await Promise.all([
-      supabase.from("shakhas").select("*").order("name"),
+      fetchAll((from, to) => supabase.from("shakhas").select("*").order("name").order("id").range(from, to)),
       supabase.from("meghalas").select("*").order("name"),
       getOrgSettings(),
     ]);

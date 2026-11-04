@@ -93,9 +93,7 @@ test("PUBLIC_ACTIONS has no stale entries", () => {
 
 test("public actions never write", () => {
   const writes = /\.(insert|update|upsert|delete)\(/;
-  // rebuildStandings is the server-only helper publish/unpublish call (it
-  // takes a SupabaseClient, so a browser can't invoke it usefully).
-  const offenders = actions.filter((a) => PUBLIC_ACTIONS.includes(a.name) && a.name !== "rebuildStandings" && a.name !== "bootstrapFirstAdmin" && writes.test(a.body));
+  const offenders = actions.filter((a) => PUBLIC_ACTIONS.includes(a.name) && a.name !== "bootstrapFirstAdmin" && writes.test(a.body));
   assert.deepEqual(offenders.map((a) => `${a.file}:${a.name}`), []);
 });
 

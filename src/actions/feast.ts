@@ -2,14 +2,14 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { TAG, expireTags } from "@/lib/cache-tags";
-import { supabase, isSupabaseConfigured } from "@/lib/supabase";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { countScopeRegistrations, resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { leaveTeams, prepareTeamJoin, pruneEmptyTeams } from "@/lib/scope-teams";
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { DEFAULT_MAX_PER_SHAKHA, formatRegNumber } from "@/lib/feast-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompStatus } from "@/types";
-import { requireRole } from "@/lib/require-role";
+import { checkShakhaAccess, requireRole } from "@/lib/require-role";
 import { checkPhotoUrl } from "@/lib/s3";
 
 const BAD_PHOTO = "That photo link isn't one of ours — please upload the photo again.";
@@ -44,6 +44,33 @@ async function findFullCompetitionsForShakha(
   );
 }
 
+const CAP_FULL = "The registration limit has been reached for one of the selected competitions.";
+
+// Writes a participant's item entries through insert_capped_registrations
+// (migration 020), which re-checks each item's cap and inserts under one
+// lock — the check above alone let two admins both take an item's last slot.
+// Returns feast_competition_id → new participant_registrations.id. Entries
+// the participant already has are skipped. No shakha = no cap, as above.
+async function insertCappedEntries(
+  admin: SupabaseClient,
+  participantId: string,
+  shakhaId: string | null,
+  feastCompetitionIds: string[]
+): Promise<{ ids: Record<string, string>; error?: string }> {
+  if (feastCompetitionIds.length === 0) return { ids: {} };
+  const scope = shakhaId ? await resolveCapScopeShakhaIds(admin, shakhaId) : [];
+  const { data, error } = await admin.rpc("insert_capped_registrations", {
+    p_participant_id: participantId,
+    p_fc_ids: feastCompetitionIds,
+    p_scope_shakha_ids: scope,
+    p_default_cap: DEFAULT_MAX_PER_SHAKHA,
+  });
+  if (error) return { ids: {}, error: error.message.includes("registration_cap_reached") ? CAP_FULL : error.message };
+  const ids: Record<string, string> = {};
+  for (const r of (data ?? []) as { id: string; feast_competition_id: string }[]) ids[r.feast_competition_id] = r.id;
+  return { ids };
+}
+
 // ── registerParticipant — public-facing (Feast Portal) ──────────────────
 export interface RegInput {
   feastSlug: string;
@@ -74,10 +101,15 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     // (feast-details.tsx's canRegister) — enforce the same here.
     const auth = await requireRole("registration.write");
     if ("error" in auth) return { error: auth.error };
+    const denied = await checkShakhaAccess(auth, [input.shakhaId]);
+    if (denied) return { error: denied };
     const photo = checkPhotoUrl(input.photoUrl);
     if (!photo.ok) return { error: BAD_PHOTO };
+    // Server-only writes: the anon key can no longer insert registrations
+    // (migration 020), so every write here goes through the service role.
+    const admin = getSupabaseAdmin();
 
-    const { data: feast, error: feastErr } = await supabase
+    const { data: feast, error: feastErr } = await admin
       .from("feasts")
       .select("id")
       .eq("slug", input.feastSlug)
@@ -85,7 +117,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     if (feastErr || !feast) return { error: "Fest not found." };
 
     if (input.feastCompetitionIds.length > 0) {
-      const full = await findFullCompetitionsForShakha(supabase, input.feastCompetitionIds, input.shakhaId);
+      const full = await findFullCompetitionsForShakha(admin, input.feastCompetitionIds, input.shakhaId);
       if (full.length > 0) {
         return {
           error: "The registration limit has been reached for one of the selected competitions. Please deselect it and choose another.",
@@ -100,12 +132,12 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     const catSlug = getCategorySlug(input.dob, categories);
     const category = categories.find((c) => c.slug === catSlug);
 
-    const { data: nextNum, error: rpcErr } = await supabase.rpc("next_reg_number", { p_feast_id: feast.id });
+    const { data: nextNum, error: rpcErr } = await admin.rpc("next_reg_number", { p_feast_id: feast.id });
     if (rpcErr || nextNum == null) return { error: "Could not allocate a registration number." };
 
     const regNo = formatRegNumber(nextNum);
 
-    const { data: participant, error: insertErr } = await supabase
+    const { data: participant, error: insertErr } = await admin
       .from("participants")
       .insert({
         feast_id: feast.id,
@@ -123,21 +155,12 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
       .single();
     if (insertErr || !participant) return { error: "Something went wrong. Please try again." };
 
-    if (input.feastCompetitionIds.length > 0) {
-      const { error: regErr } = await supabase.from("participant_registrations").insert(
-        input.feastCompetitionIds.map((fcId) => ({
-          participant_id: participant.id,
-          feast_competition_id: fcId,
-        }))
-      );
-      if (regErr) console.error("[registerParticipant] registration insert failed:", regErr);
-    }
-
-    // All or nothing: if a team can't take them after all, the participant
-    // is removed again so the form can be resubmitted without that event.
-    const joined = await teamPlan.join(participant.id);
+    // All or nothing: if their items or a team can't take them after all,
+    // the participant is removed again so the form can be resubmitted.
+    const entries = await insertCappedEntries(admin, participant.id, input.shakhaId, input.feastCompetitionIds);
+    const joined = entries.error ? { error: entries.error } : await teamPlan.join(participant.id);
     if (joined.error) {
-      await getSupabaseAdmin().from("participants").delete().eq("id", participant.id);
+      await admin.from("participants").delete().eq("id", participant.id);
       return { error: joined.error };
     }
 
@@ -169,6 +192,8 @@ export async function createParticipantAdmin(
 ): Promise<{ error?: string; regNo?: string; participantId?: string; registrationIds?: Record<string, string> }> {
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
+  const denied = await checkShakhaAccess(auth, [input.shakhaId]);
+  if (denied) return { error: denied };
   const photo = checkPhotoUrl(input.photoUrl);
   if (!photo.ok) return { error: BAD_PHOTO };
   try {
@@ -216,23 +241,11 @@ export async function createParticipantAdmin(
     // feast_competition_id → new participant_registrations.id, so a caller
     // can show the entry straight away (/admin/results' Register button)
     // without reloading its list.
-    const registrationIds: Record<string, string> = {};
-    if (input.feastCompetitionIds.length > 0) {
-      const { data: regRows, error: regErr } = await admin
-        .from("participant_registrations")
-        .insert(
-          input.feastCompetitionIds.map((fcId) => ({
-            participant_id: participant.id,
-            feast_competition_id: fcId,
-          }))
-        )
-        .select("id, feast_competition_id");
-      if (regErr) return { error: regErr.message };
-      for (const r of regRows ?? []) registrationIds[r.feast_competition_id] = r.id;
-    }
+    const entries = await insertCappedEntries(admin, participant.id, input.shakhaId, input.feastCompetitionIds);
+    const registrationIds = entries.ids;
 
     // All or nothing, as in registerParticipant.
-    const joined = await teamPlan.join(participant.id);
+    const joined = entries.error ? { error: entries.error } : await teamPlan.join(participant.id);
     if (joined.error) {
       await admin.from("participants").delete().eq("id", participant.id);
       return { error: joined.error };
@@ -262,22 +275,24 @@ export async function addParticipantToCompetition(input: {
     admin.from("feast_competitions").select("id, feast_id, result_status, competition:competitions(type)").eq("id", input.feastCompetitionId).maybeSingle(),
   ]);
   if (!participant || !fc || participant.feast_id !== fc.feast_id) return { error: "Participant or competition not found." };
+  const denied = await checkShakhaAccess(auth, [participant.shakha_id]);
+  if (denied) return { error: denied };
   const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
   if (competition?.type === "group") return { error: "Team competitions take a team registration." };
   if (fc.result_status === "published") return { error: "Results for this item are published — unpublish before adding entries." };
 
+  const full = "The registration limit for this item has been reached for this Shakha.";
   if (participant.shakha_id) {
-    const full = await findFullCompetitionsForShakha(admin, [fc.id], participant.shakha_id, participant.id);
-    if (full.length > 0) return { error: "The registration limit for this item has been reached for this Shakha." };
+    const over = await findFullCompetitionsForShakha(admin, [fc.id], participant.shakha_id, participant.id);
+    if (over.length > 0) return { error: full };
   }
 
-  const { data: reg, error } = await admin
-    .from("participant_registrations")
-    .insert({ participant_id: participant.id, feast_competition_id: fc.id })
-    .select("id")
-    .single();
-  if (error || !reg) return { error: error?.code === "23505" ? "Already entered in this item." : error?.message ?? "Could not add the entry." };
-  return { registrationId: reg.id };
+  const entries = await insertCappedEntries(admin, participant.id, participant.shakha_id, [fc.id]);
+  if (entries.error) return { error: entries.error === CAP_FULL ? full : entries.error };
+  const registrationId = entries.ids[fc.id];
+  // The insert skips an entry that already exists.
+  if (!registrationId) return { error: "Already entered in this item." };
+  return { registrationId };
 }
 
 // ── updateParticipant — admin edit ───────────────────────────────────────
@@ -310,6 +325,8 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       .eq("id", input.participantId)
       .single();
     if (!existing) return { error: "Participant not found." };
+    const denied = await checkShakhaAccess(auth, [existing.shakha_id]);
+    if (denied) return { error: denied };
 
     // Diff, don't replace: competition_results and shakha_point_ledger cascade
     // on participant_registrations delete, so dropping and re-inserting every
@@ -394,13 +411,8 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
     }
 
     if (added.length > 0) {
-      const { error: regErr } = await admin.from("participant_registrations").insert(
-        added.map((fcId) => ({
-          participant_id: input.participantId,
-          feast_competition_id: fcId,
-        }))
-      );
-      if (regErr) return { error: regErr.message };
+      const entries = await insertCappedEntries(admin, input.participantId, existing.shakha_id, added);
+      if (entries.error) return { error: entries.error };
     }
 
     if (teamJoin) {
@@ -421,6 +433,12 @@ export async function deleteParticipant(participantId: string): Promise<{ error?
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
+  if (auth.role === "sa_admin") {
+    const { data: p } = await admin.from("participants").select("shakha_id").eq("id", participantId).maybeSingle();
+    if (!p) return { error: "Participant not found." };
+    const denied = await checkShakhaAccess(auth, [p.shakha_id]);
+    if (denied) return { error: denied };
+  }
   const { data: regs, error: regsErr } = await admin
     .from("participant_registrations")
     .select(REG_WITH_RESULT_SELECT)

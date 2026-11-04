@@ -6,6 +6,7 @@ import { ArrowLeft, Coins, Save } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { getFeastStandings, saveExternalFeastPoints, type ExternalFeastPointsRow, type StandingsRow } from "@/actions/results";
 import type { Feast, Shakha } from "@/types";
+import { fetchAll } from "@/lib/fetch-all";
 
 type CatKey = Exclude<keyof ExternalFeastPointsRow, "shakhaId">;
 
@@ -40,7 +41,7 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
     (async () => {
       const [{ data: f }, { data: shks }, standings] = await Promise.all([
         supabase.from("feasts").select("*").eq("id", feastId).single(),
-        supabase.from("shakhas").select("*").order("name"),
+        fetchAll((from, to) => supabase.from("shakhas").select("*").order("name").order("id").range(from, to)),
         getFeastStandings(feastId),
       ]);
       if (cancelled) return;
