@@ -60,14 +60,16 @@ export async function POST(req: NextRequest) {
       password,
       email_confirm: true,
       user_metadata: { full_name: full_name || "" },
+      // Marks an app-created account; self sign-ups get no profile (migration 020).
+      app_metadata: { fh_provisioned: true },
     });
 
     if (createError) {
       return NextResponse.json({ error: createError.message }, { status: 400 });
     }
 
-    // The on_auth_user_created trigger auto-creates the profile row (default
-    // role 'admin'); update it with the requested role & scope. The scope
+    // The profile row is written here with the requested role & scope
+    // (upsert: the signup trigger may or may not have created it). The scope
     // column (shakha_id/meghala_id/diocese_id) is resolved from the org's
     // *current* hierarchy_level server-side, not trusted from the client —
     // a crafted request otherwise could write scope_id into an arbitrary
@@ -76,9 +78,11 @@ export async function POST(req: NextRequest) {
       const { data: org } = await getSupabaseAdmin().from("org_settings").select("hierarchy_level").eq("id", true).single();
       const level = org?.hierarchy_level ?? "shakha";
       const scopeColumn = level === "diocese" ? "diocese_id" : level === "meghala" ? "meghala_id" : "shakha_id";
-      await getSupabaseAdmin()
+      const { error: profileError } = await getSupabaseAdmin()
         .from("profiles")
-        .update({
+        .upsert({
+          id: newUser.user.id,
+          email: newUser.user.email,
           full_name: full_name || "",
           role: role || "admin",
           shakha_id: null,
@@ -86,8 +90,8 @@ export async function POST(req: NextRequest) {
           diocese_id: null,
           // trophy_manager is never tied to a node (see /admin/users).
           [scopeColumn]: role === "trophy_manager" ? null : scope_id || null,
-        })
-        .eq("id", newUser.user.id);
+        });
+      if (profileError) return NextResponse.json({ error: profileError.message }, { status: 400 });
     }
 
     return NextResponse.json({

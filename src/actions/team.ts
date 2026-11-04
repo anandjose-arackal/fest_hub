@@ -6,7 +6,7 @@ import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { recalcCompetitionProgress } from "@/actions/feast";
 import type { CompStatus } from "@/types";
-import { requireRole } from "@/lib/require-role";
+import { checkShakhaAccess, requireRole } from "@/lib/require-role";
 
 async function getMaxTeamSize(feastCompetitionId: string): Promise<number> {
   const admin = getSupabaseAdmin();
@@ -30,6 +30,8 @@ export interface RegisterTeamInput {
 export async function registerTeam(input: RegisterTeamInput): Promise<{ error?: string; teamId?: string }> {
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
+  const denied = await checkShakhaAccess(auth, [input.shakhaId]);
+  if (denied) return { error: denied };
   const admin = getSupabaseAdmin();
   const teamName = input.teamName.trim();
   const participantIds = [...new Set(input.participantIds)];
@@ -131,6 +133,8 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
     .eq("id", input.teamId)
     .single();
   if (!team) return { error: "Team not found." };
+  const denied = await checkShakhaAccess(auth, [team.shakha_id]);
+  if (denied) return { error: denied };
 
   const maxTeamMembers = await getMaxTeamSize(team.feast_competition_id);
   if (participantIds.length > maxTeamMembers) return { error: `Maximum ${maxTeamMembers} members allowed.` };
@@ -180,6 +184,12 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
 export async function deleteTeam(teamId: string): Promise<{ error?: string }> {
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
+  if (auth.role === "sa_admin") {
+    const { data: team } = await getSupabaseAdmin().from("team_registrations").select("shakha_id").eq("id", teamId).maybeSingle();
+    if (!team) return { error: "Team not found." };
+    const denied = await checkShakhaAccess(auth, [team.shakha_id]);
+    if (denied) return { error: denied };
+  }
   const { error } = await getSupabaseAdmin().from("team_registrations").delete().eq("id", teamId);
   if (error) return { error: error.message };
   return {};

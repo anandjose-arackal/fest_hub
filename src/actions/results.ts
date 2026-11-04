@@ -178,7 +178,7 @@ async function readFeastStandingsBySlug(feastSlug: string): Promise<StandingsRow
 type LeaderboardTier = "shakha" | "meghala" | "diocese";
 
 // Shared by every viewer: one database read per publish (the standings tag
-// is expired by rebuildStandings) instead of one per phone refresh.
+// is expired by publish and unpublish) instead of one per phone refresh.
 const cachedLeaderboard = unstable_cache(
   async (scope: "feast" | "overall", tier: LeaderboardTier, feastSlug: string): Promise<LeaderboardRow[]> => {
     const splitScope = scope === "overall" ? {} : { feastSlug };
@@ -211,7 +211,7 @@ export async function getOverallLeaderboard(): Promise<{ data?: LeaderboardRow[]
 // ── Meghala/Diocese rollups (optional org hierarchy) ─────────────────────
 // Computed on read by rolling the existing shakha_feast_standings rows up
 // through shakhas.meghala_id / meghalas.diocese_id — no new ledger/
-// standings tables, no changes to rebuildStandings' write path above. A
+// standings tables, no changes to rebuild_shakha_standings' write path above. A
 // shakha with no meghala_id (or a meghala with no diocese_id, for a
 // diocese rollup) buckets into a surfaced "__unassigned__" group sorted
 // last, rather than silently dropping its points — that keeps a
@@ -244,18 +244,18 @@ async function getShakhaGroupMap(level: "meghala" | "diocese"): Promise<Map<stri
   const map = new Map<string, { id: string; name: string }>();
 
   if (level === "meghala") {
-    const { data } = await admin.from("shakhas").select("id, meghala:meghalas(id, name)");
-    for (const row of (data ?? []) as unknown as { id: string; meghala: { id: string; name: string } | { id: string; name: string }[] | null }[]) {
+    const { data } = await fetchAll((from, to) => admin.from("shakhas").select("id, meghala:meghalas(id, name)").order("id").range(from, to));
+    for (const row of data as unknown as { id: string; meghala: { id: string; name: string } | { id: string; name: string }[] | null }[]) {
       const m = Array.isArray(row.meghala) ? row.meghala[0] : row.meghala;
       map.set(row.id, m ? { id: m.id, name: m.name } : UNASSIGNED_GROUP);
     }
     return map;
   }
 
-  const { data } = await admin
-    .from("shakhas")
-    .select("id, meghala:meghalas(diocese:dioceses(id, name))");
-  for (const row of (data ?? []) as unknown as {
+  const { data } = await fetchAll((from, to) =>
+    admin.from("shakhas").select("id, meghala:meghalas(diocese:dioceses(id, name))").order("id").range(from, to)
+  );
+  for (const row of data as unknown as {
     id: string;
     meghala: { diocese: { id: string; name: string } | { id: string; name: string }[] | null } | { diocese: { id: string; name: string } | { id: string; name: string }[] | null }[] | null;
   }[]) {
@@ -558,6 +558,11 @@ export async function saveDraftScores(input: {
   const auth = await requireRole("results.write");
   if ("error" in auth) return { error: auth.error };
   const admin = getSupabaseAdmin();
+  // Saving a draft clears published_at, which would hide published rows
+  // while the item still says "published".
+  const { data: fc } = await admin.from("feast_competitions").select("result_status").eq("id", input.feastCompetitionId).single();
+  if (!fc) return { error: "Competition not found." };
+  if (fc.result_status === "published") return { error: "Revert to draft before editing scores." };
   const rows = input.scores.map((s) => ({
     feast_competition_id: input.feastCompetitionId,
     participant_registration_id: s.registrationId,
@@ -637,13 +642,6 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
     };
   });
 
-  const { error: upsertErr } = await admin
-    .from("competition_results")
-    .upsert(calculated, { onConflict: "participant_registration_id" });
-  if (upsertErr) return { error: upsertErr.message };
-
-  await admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId);
-
   const competition = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
   const category = Array.isArray(competition?.competition_category)
     ? competition?.competition_category[0]
@@ -673,168 +671,37 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
-  if (ledgerRows.length > 0) {
-    const { error: ledgerErr } = await admin.from("shakha_point_ledger").insert(ledgerRows);
-    if (ledgerErr) return { error: ledgerErr.message };
-  }
-
-  const [rebuildErr] = await Promise.all([
-    rebuildStandings(fc.feast_id, admin, external),
-    admin.from("feast_competitions").update({ result_status: "published", comp_status: "published" }).eq("id", feastCompetitionId),
-  ]);
-  expireTags(TAG.results);
-  if (rebuildErr) return { error: rebuildErr };
-  return {};
-}
-
-export async function unpublishResults(feastCompetitionId: string, feastId: string): Promise<{ error?: string }> {
-  const auth = await requireRole("results.write");
-  if ("error" in auth) return { error: auth.error };
-  const admin = getSupabaseAdmin();
-  // Clearing the results and dropping their ledger rows touch different
-  // tables — run them together, then rebuild once both are done. Anything
-  // printed for these results is stale too, so the item goes back to "not
-  // printed" (feast_competition_prints — gates trophy handover).
-  await Promise.all([
-    admin
-      .from("competition_results")
-      .update({ grade: null, grade_points: 0, position: null, position_points: 0, total_points: 0, published_at: null })
-      .eq("feast_competition_id", feastCompetitionId),
-    admin.from("shakha_point_ledger").delete().eq("feast_competition_id", feastCompetitionId),
-    admin.from("feast_competition_prints").delete().eq("feast_competition_id", feastCompetitionId),
-  ]);
-  const [, { error }] = await Promise.all([
-    rebuildStandings(feastId, admin),
-    admin.from("feast_competitions").update({ result_status: "draft", comp_status: "completed" }).eq("id", feastCompetitionId),
-  ]);
-  expireTags(TAG.results);
+  // Results, ledger, status and standings in one transaction (migration 020):
+  // a failure part-way can no longer leave published results with no points.
+  const { error } = await admin.rpc("publish_item_results", {
+    p_fc_id: feastCompetitionId,
+    p_kind: "individual",
+    p_results: calculated,
+    p_ledger: ledgerRows,
+  });
+  expireTags(TAG.results, TAG.standings);
   if (error) return { error: error.message };
   return {};
 }
 
-const BUCKETS: Record<string, keyof Pick<
-  StandingsRow,
-  "subJuniorPoints" | "juniorPoints" | "seniorPoints" | "superSeniorPoints" | "elderPoints"
->> = {
-  sub_junior: "subJuniorPoints",
-  junior: "juniorPoints",
-  senior: "seniorPoints",
-  super_senior: "superSeniorPoints",
-  elder: "elderPoints",
-};
-
-// An external feast's points were calculated outside the app: its
-// standings are what an admin typed into /admin/feasts/[id]/external-points
-// (saveExternalFeastPoints), and its published results carry grade/position
-// only — no points, no ledger rows. Publishing must never sum them again.
-export async function isExternalFeast(feastId: string, admin: SupabaseClient): Promise<boolean> {
-  const { data } = await admin.from("feasts").select("is_external").eq("id", feastId).single();
-  return !!data?.is_external;
-}
-
-// Exported — shared by team-results.ts so individual + team publishing feed
-// into one unified standings rebuild. A no-op for an external feast, whose
-// standings are entered by hand instead.
-// `knownExternal` lets a caller that already read the fest's flag skip the
-// lookup. The ledger is paged: a fest with more than 1000 published entries
-// would otherwise be summed from a silently truncated list.
-export async function rebuildStandings(feastId: string, admin: SupabaseClient, knownExternal?: boolean): Promise<string | null> {
-  if (knownExternal ?? (await isExternalFeast(feastId, admin))) return null;
-
-  const [{ data: shakhas, error: shakhaErr }, { data: ledger, error: ledgerErr }] = await Promise.all([
-    admin.from("shakhas").select("id, name"),
-    fetchAll((from, to) =>
-      admin
-        .from("shakha_point_ledger")
-        .select("shakha_id, category_slug, position, grade, total_points")
-        .eq("feast_id", feastId)
-        .order("id")
-        .range(from, to)
-    ),
-  ]);
-  if (shakhaErr) return shakhaErr.message;
-  if (ledgerErr) return ledgerErr;
-
-  interface Agg {
-    subJuniorPoints: number; juniorPoints: number; seniorPoints: number; superSeniorPoints: number;
-    elderPoints: number; teamPoints: number; firstPlaceCount: number; secondPlaceCount: number;
-    thirdPlaceCount: number; aGradeCount: number; bGradeCount: number; cGradeCount: number;
-  }
-  const empty = (): Agg => ({
-    subJuniorPoints: 0, juniorPoints: 0, seniorPoints: 0, superSeniorPoints: 0, elderPoints: 0, teamPoints: 0,
-    firstPlaceCount: 0, secondPlaceCount: 0, thirdPlaceCount: 0, aGradeCount: 0, bGradeCount: 0, cGradeCount: 0,
-  });
-
-  const byShakha = new Map<string, Agg>();
-  for (const s of shakhas ?? []) byShakha.set(s.id, empty());
-
-  for (const row of ledger ?? []) {
-    const agg = byShakha.get(row.shakha_id) ?? empty();
-    if (row.category_slug === "team") agg.teamPoints += row.total_points;
-    else {
-      const key = BUCKETS[row.category_slug];
-      if (key) agg[key] += row.total_points;
-    }
-    if (row.position === 1) agg.firstPlaceCount++;
-    else if (row.position === 2) agg.secondPlaceCount++;
-    else if (row.position === 3) agg.thirdPlaceCount++;
-    if (row.grade === "A") agg.aGradeCount++;
-    else if (row.grade === "B") agg.bGradeCount++;
-    else if (row.grade === "C") agg.cGradeCount++;
-    byShakha.set(row.shakha_id, agg);
-  }
-
-  const rows = (shakhas ?? []).map((s) => {
-    const agg = byShakha.get(s.id) ?? empty();
-    const grandTotal =
-      agg.subJuniorPoints + agg.juniorPoints + agg.seniorPoints + agg.superSeniorPoints + agg.elderPoints + agg.teamPoints;
-    return { shakhaId: s.id, shakhaName: s.name, ...agg, grandTotal };
-  });
-
-  rows.sort(
-    (a, b) =>
-      b.grandTotal - a.grandTotal ||
-      b.firstPlaceCount - a.firstPlaceCount ||
-      b.aGradeCount - a.aGradeCount ||
-      b.juniorPoints - a.juniorPoints ||
-      a.shakhaName.localeCompare(b.shakhaName)
-  );
-
-  const upsertRows = rows.map((r, i) => ({
-    feast_id: feastId,
-    shakha_id: r.shakhaId,
-    sub_junior_points: r.subJuniorPoints,
-    junior_points: r.juniorPoints,
-    senior_points: r.seniorPoints,
-    super_senior_points: r.superSeniorPoints,
-    elder_points: r.elderPoints,
-    team_points: r.teamPoints,
-    grand_total: r.grandTotal,
-    first_place_count: r.firstPlaceCount,
-    second_place_count: r.secondPlaceCount,
-    third_place_count: r.thirdPlaceCount,
-    a_grade_count: r.aGradeCount,
-    b_grade_count: r.bGradeCount,
-    c_grade_count: r.cGradeCount,
-    rank: i + 1,
-    updated_at: new Date().toISOString(),
-  }));
-
-  const { error: upsertErr } = await admin
-    .from("shakha_feast_standings")
-    .upsert(upsertRows, { onConflict: "feast_id,shakha_id" });
-  expireTags(TAG.standings);
-  if (upsertErr) return upsertErr.message;
-
-  return null;
+export async function unpublishResults(feastCompetitionId: string): Promise<{ error?: string }> {
+  const auth = await requireRole("results.write");
+  if ("error" in auth) return { error: auth.error };
+  // Clears the results and their ledger rows, marks the item "not printed"
+  // (stale prints gate trophy handover), back to draft, and rebuilds the
+  // standings — all in one transaction (migration 020).
+  const { error } = await getSupabaseAdmin().rpc("unpublish_item_results", { p_fc_id: feastCompetitionId, p_kind: "individual" });
+  expireTags(TAG.results, TAG.standings);
+  if (error) return { error: error.message };
+  return {};
 }
 
 // ── external feasts (points calculated outside the app; entered by hand) ──
 // shakha_feast_standings is normally derived from shakha_point_ledger via
-// rebuildStandings(). An external feast's points come from outside — it may
+// rebuild_shakha_standings() (SQL). An external feast's points come from outside — it may
 // have no competitions at all, or competitions whose results are published
 // here for grade/position only (no points, no ledger rows; see
-// isExternalFeast) — so this writes its standings row directly: the
+// feasts.is_external) — so this writes its standings row directly: the
 // hand-entered age-category (and team) points, grand_total = their sum.
 // Place/grade counts stay 0.
 export interface ExternalFeastPointsRow {
@@ -1325,7 +1192,7 @@ async function readLatestResult(): Promise<LatestResult | null> {
   const cat = Array.isArray(comp?.competition_category) ? comp?.competition_category[0] : comp?.competition_category;
   const regCount = Array.isArray(fc.participant_registrations) ? fc.participant_registrations[0] : fc.participant_registrations;
   const isTeam = comp?.type === "group";
-  // Imported lazily: team-results imports this module (rebuildStandings).
+  // Imported lazily: team-results imports this module (for its types).
   const { getPublishedTeamResults } = await import("@/actions/team-results");
   const [rows, latest] = await Promise.all([
     isTeam ? getPublishedTeamResults(fc.id) : cachedPublishedResults(fc.id),

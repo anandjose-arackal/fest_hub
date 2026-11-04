@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Medal, Check, ImageDown, X, Award, Loader2, RotateCcw, Printer, PrinterCheck, UserPlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { fetchAllIn, groupBy } from "@/lib/fetch-all";
+import { fetchAll, fetchAllIn, groupBy } from "@/lib/fetch-all";
 import { setMaxScore, saveDraftScores, clearDraftScores, publishResults, unpublishResults, getCompetitionScores, getScoresForCompetitions } from "@/actions/results";
 import { saveDraftTeamScores, clearDraftTeamScores, publishTeamResults, unpublishTeamResults, getTeamCompetitionScores, getScoresForTeamCompetitions } from "@/actions/team-results";
 import {
@@ -175,7 +175,7 @@ export default function ResultsPage() {
       setFeasts(data ?? []);
       if (data && data.length > 0) setFeastId(data[0].id);
     });
-    supabase.from("shakhas").select("*").order("name").then(({ data }) => setShakhas(data ?? []));
+    fetchAll((from, to) => supabase.from("shakhas").select("*").order("name").order("id").range(from, to)).then(({ data }) => setShakhas(data));
     supabase.from("meghalas").select("*").order("name").then(({ data }) => setMeghalas(data ?? []));
     supabase.from("dioceses").select("*").order("name").then(({ data }) => setDioceses(data ?? []));
   }, []);
@@ -543,7 +543,7 @@ export default function ResultsPage() {
     if (busy) return;
     setBusyAction("unpublish");
     try {
-      const result = isGroup ? await unpublishTeamResults(compId, feastId) : await unpublishResults(compId, feastId);
+      const result = isGroup ? await unpublishTeamResults(compId) : await unpublishResults(compId);
       if (!result.error) {
         showSuccess("Reverted to draft");
         loadEntries(false);

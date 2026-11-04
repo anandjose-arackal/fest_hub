@@ -50,10 +50,7 @@ export function isAllowed(role: UserRole | null | undefined, key: PermissionKey)
 // requireRole() guard:
 // - public reads behind the Feast Portal, /results, /screen and the
 //   standings pages (published data only — never drafts);
-// - bootstrapFirstAdmin, which guards itself (only while profiles is empty);
-// - server-only helpers exported for reuse between action files. They take
-//   a SupabaseClient argument, which a browser can't serialize, so they
-//   can't usefully be invoked as actions.
+// - bootstrapFirstAdmin, which guards itself (only while profiles is empty).
 export const PUBLIC_ACTIONS: readonly string[] = [
   // activity.ts
   "getRecentActivity",
@@ -84,7 +81,4 @@ export const PUBLIC_ACTIONS: readonly string[] = [
   "getPublishedTeamResults",
   // setup.ts
   "bootstrapFirstAdmin",
-  // server-only helpers (SupabaseClient parameter)
-  "isExternalFeast",
-  "rebuildStandings",
 ];
