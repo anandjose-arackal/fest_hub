@@ -12,7 +12,7 @@ import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCom
 import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
-import { useOrgHierarchy } from "@/hooks/use-feast";
+import { useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { EMPTY_HIERARCHY_FILTER, filterShakhaIds, HierarchyFilter, HierarchyPicker, type HierarchyFilterValue } from "@/components/admin/hierarchy-picker";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, HierarchyLevel, Meghala, OrgSettings, Participant, Shakha } from "@/types";
@@ -328,7 +328,7 @@ export default function ParticipantsPage() {
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
   const hierarchy = useOrgHierarchy();
-  const { shakhas } = hierarchy;
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [categories, setCategories] = useState<CompetitionCategory[]>([]);
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
@@ -811,14 +811,16 @@ export default function ParticipantsPage() {
 
   // ── Exports ──────────────────────────────────────────────────────────────
   function exportCSV() {
-    const header = ["Reg No", "Name", "House Name", "Shakha", "Gender", "Category", "Events", "Team Events", "Phone", "Registered"];
+    const header = ["Reg No", "Name", "House Name", "Shakha", ...lineageCols.map((c) => c.label), "Gender", "Category", "Events", "Team Events", "Phone", "Registered"];
     const rows = filtered.map((p) => {
       const cat = categories.find((c) => c.id === p.competition_category_id);
+      const l = lineage(p.shakha_id);
       return [
         p.registration_number ?? "",
         p.name,
         p.house_name ?? "",
         p.shakha?.name ?? "",
+        ...lineageCols.map((c) => l[c.key]),
         p.gender ?? "",
         cat?.name ?? "",
         String(p.events),
@@ -874,32 +876,17 @@ export default function ParticipantsPage() {
       .join(" · ");
   }
 
-  // Meghala/Diocese names for a row's shakha — same convention as
-  // /admin/results' hierarchyNamesFor: "—" when the shakha isn't assigned
-  // into that tier yet.
   function hierarchyNamesFor(shakhaId: string | null): { meghalaName: string; dioceseName: string } {
-    const shakha = shakhaId ? shakhas.find((s) => s.id === shakhaId) : undefined;
-    const meghala = shakha?.meghala_id ? hierarchy.meghalas.find((m) => m.id === shakha.meghala_id) : undefined;
-    const diocese = meghala?.diocese_id ? hierarchy.dioceses.find((d) => d.id === meghala.diocese_id) : undefined;
-    return { meghalaName: meghala?.name ?? "—", dioceseName: diocese?.name ?? "—" };
+    const l = lineage(shakhaId);
+    return { meghalaName: l.meghala, dioceseName: l.diocese };
   }
 
-  // On-screen "Shakha" column/badge: the meghala name as a second, smaller
-  // line underneath — only once the org has opted into that hierarchy tier,
-  // and only when this particular shakha is actually assigned into one.
-  function meghalaNameFor(shakhaId: string | null): string | null {
-    if (hierarchy.hierarchyLevel === "shakha") return null;
-    const shakha = shakhaId ? shakhas.find((s) => s.id === shakhaId) : undefined;
-    const meghala = shakha?.meghala_id ? hierarchy.meghalas.find((m) => m.id === shakha.meghala_id) : undefined;
-    return meghala?.name ?? null;
-  }
-
-  // Meghala prints by default once the org has a Meghala tier (meghala or
-  // diocese level) — the toggle below only records an admin's override.
-  // Derived rather than seeded into state, since the hierarchy loads async.
+  // Meghala/Diocese print by default once the org has that tier — the toggle
+  // below only records an admin's override. Derived rather than seeded into
+  // state, since the hierarchy loads async.
   const pdfColumns: ParticipantPdfColumns = {
     meghala: hierarchy.hierarchyLevel !== "shakha" && (pdfColumnOverrides.meghala ?? true),
-    diocese: hierarchy.hierarchyLevel === "diocese" && (pdfColumnOverrides.diocese ?? false),
+    diocese: hierarchy.hierarchyLevel === "diocese" && (pdfColumnOverrides.diocese ?? true),
   };
 
   function togglePdfColumn(key: keyof ParticipantPdfColumns) {
@@ -1060,7 +1047,7 @@ export default function ParticipantsPage() {
             <table className="min-w-[680px] w-full text-sm">
               <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
                 <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
-                  {["Reg No", "Name", "House", "Shakha", "Category", "Events", ""].map((h) => (
+                  {["Reg No", "Name", "House", "Shakha", ...lineageCols.map((c) => c.label), "Category", "Events", ""].map((h) => (
                     <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
                   ))}
                 </tr>
@@ -1069,7 +1056,7 @@ export default function ParticipantsPage() {
                 {pageRows.map((p, i) => {
                   const cat = categories.find((c) => c.id === p.competition_category_id);
                   const pill = categoryPill(cat?.name, p.gender);
-                  const meghalaName = meghalaNameFor(p.shakha_id);
+                  const l = lineage(p.shakha_id);
                   const isEven = i % 2 === 0;
                   return (
                     <tr
@@ -1087,10 +1074,10 @@ export default function ParticipantsPage() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{p.house_name || "—"}</span></td>
-                      <td className="whitespace-nowrap px-3 py-3">
-                        {meghalaName && <span className="block text-[13px] font-black" style={{ color: "#374151" }}>{meghalaName}</span>}
-                        <span className={`block ${meghalaName ? "text-[11px] font-semibold" : "text-[13px] font-semibold"}`} style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span>
-                      </td>
+                      <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{p.shakha?.name ?? "—"}</span></td>
+                      {lineageCols.map((c) => (
+                        <td key={c.key} className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{l[c.key]}</span></td>
+                      ))}
                       <td className="whitespace-nowrap px-3 py-3">
                         <span className="inline-block rounded-lg px-2.5 py-1 text-[12px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
                       </td>
@@ -1112,7 +1099,7 @@ export default function ParticipantsPage() {
             {pageRows.map((p) => {
               const cat = categories.find((c) => c.id === p.competition_category_id);
               const pill = categoryPill(cat?.name, p.gender);
-              const meghalaName = meghalaNameFor(p.shakha_id);
+              const line = lineageLine(p.shakha_id);
               return (
                 <div key={p.id} className="overflow-hidden rounded-xl bg-white" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
                   <div className="px-3.5 py-3">
@@ -1130,8 +1117,8 @@ export default function ParticipantsPage() {
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                       <RegNoBadge regNo={p.registration_number} />
                       <span className="flex flex-col" style={{ color: "#374151" }}>
-                        {meghalaName && <span className="text-[12px] font-black">{meghalaName}</span>}
-                        <span className={meghalaName ? "text-[10.5px] font-semibold" : "text-[12px] font-bold"}>{p.shakha?.name ?? "—"}</span>
+                        <span className="text-[12px] font-bold">{p.shakha?.name ?? "—"}</span>
+                        {line && <span className="text-[10.5px] font-semibold">{line}</span>}
                       </span>
                       <span className="rounded-lg px-2 py-1 text-[11px] font-black text-white" style={{ background: pill.color }}>{pill.label}</span>
                     </div>
@@ -1181,7 +1168,7 @@ export default function ParticipantsPage() {
           <table className="w-full text-sm">
             <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
               <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
-                {["Team", "Shakha", "Competition", "Members", ""].map((h) => (
+                {["Team", "Shakha", ...lineageCols.map((c) => c.label), "Competition", "Members", ""].map((h) => (
                   <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
                 ))}
               </tr>
@@ -1189,6 +1176,7 @@ export default function ParticipantsPage() {
             <tbody>
               {filteredTeams.map((t, i) => {
                 const isEven = i % 2 === 0;
+                const l = lineage(t.shakhaId);
                 return (
                   <tr
                     key={t.id}
@@ -1199,6 +1187,9 @@ export default function ParticipantsPage() {
                   >
                     <td className="px-3 py-3"><p className="text-[14px] font-bold leading-tight" style={{ color: "#1e1b4b" }}>{t.teamName}</p></td>
                     <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{t.shakhaName}</span></td>
+                    {lineageCols.map((c) => (
+                      <td key={c.key} className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{l[c.key]}</span></td>
+                    ))}
                     <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{t.compName}</span></td>
                     <td className="px-3 py-3"><span className="text-[12.5px]" style={{ color: "#6B7280" }}>{t.members.join(", ") || "—"}</span></td>
                     <td className="px-3 py-3">
@@ -1222,6 +1213,7 @@ export default function ParticipantsPage() {
                     <button onClick={() => openEditTeam(t)} className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-400 hover:bg-purple-50 hover:text-[#7C3AED]"><Pencil className="h-3.5 w-3.5" /></button>
                   </div>
                 </div>
+                {lineageCols.length > 0 && <p className="mt-0.5 text-[11px] font-semibold" style={{ color: "#6B7280" }}>{lineageLine(t.shakhaId)}</p>}
                 <p className="mt-1 text-[12px] font-semibold" style={{ color: "#5B21B6" }}>{t.compName}</p>
                 {t.members.length > 0 && <p className="mt-1.5 text-[12px] leading-snug" style={{ color: "#6B7280" }}>{t.members.join(", ")}</p>}
               </div>
@@ -1531,7 +1523,7 @@ export default function ParticipantsPage() {
 
                 {quickAddOpen && (
                   <div className="mt-2 space-y-2 rounded-lg border border-[#ddd6fe] bg-[#faf8ff] p-3">
-                    <p className="text-xs font-semibold text-neutral-600">Quick-add participant · {shakhas.find((s) => s.id === teamForm.shakhaId)?.name}</p>
+                    <p className="text-xs font-semibold text-neutral-600">Quick-add participant · {hierarchy.shakhas.find((s) => s.id === teamForm.shakhaId)?.name}</p>
                     <input className="input" placeholder="Name" value={quickAddForm.name} onChange={(e) => setQuickAddForm({ ...quickAddForm, name: e.target.value })} />
                     <input className="input" placeholder="House Name" value={quickAddForm.houseName} onChange={(e) => setQuickAddForm({ ...quickAddForm, houseName: e.target.value })} />
                     <input type="date" className="input" value={quickAddForm.dob} onChange={(e) => setQuickAddForm({ ...quickAddForm, dob: e.target.value })} />

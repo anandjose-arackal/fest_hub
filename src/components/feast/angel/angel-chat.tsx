@@ -824,7 +824,7 @@ function CompetitionCard({ comp }: { comp: ScreenCompetitionResult }) {
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="fp-ml truncate text-[14.5px] font-extrabold">{p.name}</span>
             <span className="fp-ml inline-flex items-center gap-1 truncate text-[12px] font-bold" style={{ color: "var(--fp-link)" }}>
-              <Church className="h-3 w-3 shrink-0" aria-hidden="true" />{p.shakha}{p.meghalaName ? `, ${p.meghalaName}` : ""}
+              <Church className="h-3 w-3 shrink-0" aria-hidden="true" />{[p.shakha, p.meghalaName, p.dioceseName].filter(Boolean).join(", ")}
             </span>
           </span>
           <GradeBadge grade={gradeOf(p.name, p.shakha)} size={30} />
@@ -841,7 +841,7 @@ function ParticipantCard({ row, feastName }: { row: ParticipantSearchRow; feastN
         <div className="min-w-0">
           <p className="fp-ml m-0 truncate text-[15px] font-extrabold">{row.name}</p>
           <p className="fp-ml m-0 truncate text-[12px] font-bold" style={{ color: "var(--fp-link)" }}>
-            {row.shakha}{row.meghalaName ? `, ${row.meghalaName}` : ""}
+            {[row.shakha, row.meghalaName, row.dioceseName].filter(Boolean).join(", ")}
           </p>
         </div>
         <span className="fp-num shrink-0 rounded-md px-2 py-1 text-[11.5px]" style={{ background: "var(--fp-surface-3)", border: "1px solid var(--fp-line)" }}>{row.regNo}</span>

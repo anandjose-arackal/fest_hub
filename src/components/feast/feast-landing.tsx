@@ -11,6 +11,7 @@ import { FeastHero } from "./feast-hero";
 import { LiveActivityFeed, TopRankingWidget } from "./feast-dashboard-widgets";
 import { MissionCountdown } from "./feast-countdown";
 import { LatestResultWidget } from "./feast-latest-result";
+import { StagesSummaryCard } from "./feast-stages-card";
 import type { OrgSettings } from "@/types";
 
 export function FeastLanding({ org }: { org: OrgSettings }) {
@@ -26,6 +27,8 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
   // date would otherwise block a later, genuinely upcoming one from ever
   // showing a countdown.
   const upcomingFeast = feasts.find((f) => f.startDate && new Date(f.startDate).getTime() > Date.now());
+  // Stage map / live stages card: the running fest, else the next one.
+  const stageFeast = feasts.find((f) => f.status === "Ongoing") ?? upcomingFeast;
 
   return (
     <div>
@@ -99,6 +102,8 @@ export function FeastLanding({ org }: { org: OrgSettings }) {
               <p className="col-span-full text-sm font-semibold" style={{ color: theme.sub }}>No active fests right now — check back soon.</p>
             )}
           </div>
+
+          {stageFeast && <StagesSummaryCard key={stageFeast.slug} slug={stageFeast.slug} name={stageFeast.name} />}
 
           {/* Widgets: shown here (after the feast list) on phone/tablet; the
               sidebar covers wide screens instead. */}

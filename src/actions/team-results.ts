@@ -188,13 +188,13 @@ const cachedPublishedTeamResults = unstable_cache(
     const { data } = await getSupabaseAdmin()
       .from("team_results")
       .select(
-        "id, score, grade, position, total_points, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name)))"
+        "id, score, grade, position, total_points, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name))), team_registration_members(participant:participants(name)))"
       )
       .eq("feast_competition_id", feastCompetitionId)
       .not("published_at", "is", null);
     return data ?? [];
   },
-  ["fp-published-team-results"],
+  ["fp-published-team-results-v2"],
   { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.standard },
 );
 

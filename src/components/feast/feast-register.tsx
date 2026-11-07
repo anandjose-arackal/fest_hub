@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useId } from "react";
 import { useRouter } from "next/navigation";
 import { User, Phone, Calendar, Check, Loader2, Users } from "lucide-react";
-import { useFeast, useOrgHierarchy, type FeastCompetitionUI } from "@/hooks/use-feast";
+import { useFeast, useOrgHierarchy, useShakhaLineage, type FeastCompetitionUI } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { registerParticipant } from "@/actions/feast";
@@ -127,6 +127,7 @@ export function FeastRegister({ slug }: { slug: string }) {
   const { feast } = useFeast(slug);
   const { adminScope } = useAuth();
   const orgHierarchy = useOrgHierarchy();
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [categories, setCategories] = useState<CompetitionCategory[]>([]);
   // When adminScope.level === "shakha" (the default, unchanged case),
   // adminShakha is fixed to that one shakha — no picker, same read-only
@@ -243,7 +244,7 @@ export function FeastRegister({ slug }: { slug: string }) {
       }
       const compName = (id: string) => feast.competitions.find((c) => c.id === id)?.name ?? id;
       const params = new URLSearchParams({
-        regNo: result.regNo, name: form.name, houseName: form.houseName, shakha: adminShakha?.name ?? "",
+        regNo: result.regNo, name: form.name, houseName: form.houseName, shakha: adminShakha ? [adminShakha.name, lineageLine(adminShakha.id)].filter(Boolean).join(" · ") : "",
         dob: form.dob, gender: form.gender, category: catSlug, phone: form.phone,
         comps: [...picked.map(compName), ...pickedTeams.map((id) => `${compName(id)} (Team)`)].join("|"),
       });
@@ -295,6 +296,7 @@ export function FeastRegister({ slug }: { slug: string }) {
         {form.gender && <SummaryRow label="Gender" value={form.gender.charAt(0).toUpperCase() + form.gender.slice(1)} />}
         {form.phone && <SummaryRow label="Phone" value={form.phone} />}
         {adminShakha && <SummaryRow label="Shakha" value={adminShakha.name} />}
+        {adminShakha && lineageCols.map((c) => <SummaryRow key={c.key} label={c.label} value={lineage(adminShakha.id)[c.key]} />)}
       </div>
 
       {step >= 1 && (
@@ -451,6 +453,7 @@ export function FeastRegister({ slug }: { slug: string }) {
               ["Name", form.name], ["House Name", form.houseName || "—"], ["Date of Birth", form.dob],
               ["Gender", form.gender.charAt(0).toUpperCase() + form.gender.slice(1)],
               ["Category", CATEGORY_LABELS[catSlug] || "—"], ["Shakha", adminShakha?.name ?? "—"],
+              ...lineageCols.map((c) => [c.label, lineage(adminShakha?.id)[c.key]]),
               ...(form.phone ? [["Phone", form.phone]] : []),
             ].map(([k, v]) => (
               <div key={k} className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${theme.hairline}` }}>

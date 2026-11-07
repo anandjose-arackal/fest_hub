@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, UserX, Lock, Pencil, Download } from "lucide-react";
-import { useFeast, useOrgHierarchy } from "@/hooks/use-feast";
+import { useFeast, useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { fetchAllIn } from "@/lib/fetch-all";
@@ -20,7 +20,7 @@ interface ParticipantRow {
   shakha: { name: string } | null;
 }
 interface RegRow { id: string; feast_competition_id: string; participant: ParticipantRow | null; }
-interface TeamRow { id: string; feast_competition_id: string; team_name: string; shakhaName: string | null; members: ParticipantRow[]; memberNames: string[]; }
+interface TeamRow { id: string; feast_competition_id: string; team_name: string; shakhaId: string | null; shakhaName: string | null; members: ParticipantRow[]; memberNames: string[]; }
 
 function normGender(g: string | null | undefined) {
   if (!g) return null;
@@ -43,8 +43,9 @@ const GENDER_STYLE: Record<string, { label: string; color: string }> = {
 };
 const ICON_GRADS = [["#7C3AED", "#A855F7"], ["#EC4899", "#F472B6"], ["#F59E0B", "#FCD34D"], ["#10B981", "#34D399"], ["#3B82F6", "#60A5FA"]];
 
-function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked }: {
+function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked, lineageLine }: {
   compName: string; gender: string | null | undefined; catSlug: string | null | undefined; regs: RegRow[]; idx: number; onEdit: (id: string) => void; editLocked: boolean;
+  lineageLine: (shakhaId: string | null) => string;
 }) {
   const [open, setOpen] = useState(false);
   const ng = normGender(gender);
@@ -82,7 +83,7 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12.5px] font-bold" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>
                       {p.house_name && <span>{p.house_name}</span>}
                       {p.house_name && p.shakha?.name && <span style={{ color: theme.faint }}>·</span>}
-                      {p.shakha?.name && <span>{p.shakha.name}</span>}
+                      {p.shakha?.name && <span>{[p.shakha.name, lineageLine(p.shakha_id)].filter(Boolean).join(" · ")}</span>}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -103,8 +104,9 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
   );
 }
 
-function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, onEditTeam, editLocked }: {
+function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, onEditTeam, editLocked, lineageLine }: {
   compName: string; gender: string | null | undefined; catSlug: string | null | undefined; teams: TeamRow[]; showShakha: boolean; idx: number; onEditTeam: (id: string) => void; editLocked: boolean;
+  lineageLine: (shakhaId: string | null) => string;
 }) {
   const [open, setOpen] = useState(false);
   const ng = normGender(gender);
@@ -137,7 +139,7 @@ function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, o
               <div key={team.id} className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: ti < teams.length - 1 ? `1px solid ${theme.hairline}` : undefined, background: ti % 2 === 1 ? "rgba(var(--fp-primary-rgb),0.05)" : undefined }}>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[14.5px] font-extrabold leading-snug" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{team.team_name}</div>
-                  {showShakha && team.shakhaName && <div className="mt-0.5 truncate text-[12.5px] font-bold" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>{team.shakhaName}</div>}
+                  {showShakha && team.shakhaName && <div className="mt-0.5 truncate text-[12.5px] font-bold" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>{[team.shakhaName, lineageLine(team.shakhaId)].filter(Boolean).join(" · ")}</div>}
                   <p className="mt-1 text-xs font-semibold leading-snug" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>{team.memberNames.join(", ") || "No members yet"}</p>
                 </div>
                 {!editLocked && (
@@ -159,6 +161,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
   const { feast, loading: feastLoading } = useFeast(slug);
   const { session, adminScope } = useAuth();
   const orgHierarchy = useOrgHierarchy();
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   // Generalizes the old single myShakhaId: a shakha-scoped admin still
   // covers just themselves, but a meghala/diocese-scoped admin now covers
   // every shakha beneath their node — see src/lib/org-hierarchy.ts.
@@ -199,7 +202,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
           ),
       !scopeShakhaIds?.length || teamIds.length === 0
         ? Promise.resolve({ data: [] })
-        : supabase.from("team_registrations").select("id, feast_competition_id, team_name, shakha:shakhas(name), members:team_registration_members(participant:participants(id, name, house_name, shakha_id, registration_number, gender, shakha:shakhas(name)))").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamIds),
+        : supabase.from("team_registrations").select("id, feast_competition_id, team_name, shakha_id, shakha:shakhas(name), members:team_registration_members(participant:participants(id, name, house_name, shakha_id, registration_number, gender, shakha:shakhas(name)))").in("shakha_id", scopeShakhaIds).in("feast_competition_id", teamIds),
     ])
       .then(([{ data: regData }, { data: teamData }]) => {
         const all = (regData ?? []).map((row) => {
@@ -212,7 +215,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
         setRegs(filtered);
 
         const teams = (teamData ?? []).map((row) => {
-          const t = row as unknown as { id: string; feast_competition_id: string; team_name: string; shakha: { name: string } | { name: string }[] | null; members: { participant: ParticipantRow | ParticipantRow[] | null }[] };
+          const t = row as unknown as { id: string; feast_competition_id: string; team_name: string; shakha_id: string | null; shakha: { name: string } | { name: string }[] | null; members: { participant: ParticipantRow | ParticipantRow[] | null }[] };
           const members = (t.members ?? [])
             .map((m) => {
               const p = Array.isArray(m.participant) ? m.participant[0] : m.participant;
@@ -222,7 +225,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
             .filter((p): p is ParticipantRow => !!p)
             .sort((x, y) => x.name.localeCompare(y.name));
           const teamShakha = Array.isArray(t.shakha) ? t.shakha[0] : t.shakha;
-          return { id: t.id, feast_competition_id: t.feast_competition_id, team_name: t.team_name, shakhaName: teamShakha?.name ?? null, members, memberNames: members.map((p) => p.name) };
+          return { id: t.id, feast_competition_id: t.feast_competition_id, team_name: t.team_name, shakhaId: t.shakha_id, shakhaName: teamShakha?.name ?? null, members, memberNames: members.map((p) => p.name) };
         });
         setTeamRegs(teams);
         setLoading(false);
@@ -291,6 +294,14 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       (buckets[catSlug] ??= []).push(r);
     }
 
+    // Meghala/Diocese columns beside every Shakha; with those tiers a scope can
+    // span shakhas, so individual rows get a Shakha column too.
+    const lineageCells = (shakhaId: string | null) => lineageCols.map((c) => `<td>${esc(lineage(shakhaId)[c.key])}</td>`).join("");
+    const lineageHeads = lineageCols.map((c) => `<th>${c.label}</th>`).join("");
+    const indivShakha = lineageCols.length > 0;
+    const indivSpan = 6 + (indivShakha ? 1 + lineageCols.length : 0);
+    const teamSpan = 6 + lineageCols.length;
+
     let sl = 0;
     const sectionsHtml = [...CATEGORY_ORDER, "other"]
       .filter((s) => buckets[s]?.length)
@@ -301,10 +312,10 @@ export function FeastRegistrations({ slug }: { slug: string }) {
             const p = r.participant!;
             sl += 1;
             const compName = compById[r.feast_competition_id]?.name ?? "";
-            return `<tr><td class="sl">${sl}</td><td class="reg">${esc(p.registration_number ?? "—")}</td><td class="name">${esc(p.name)}</td><td class="house">${esc(p.house_name ?? "—")}</td><td class="bg">${esc(genderLetter(p.gender))}</td><td class="comp">${esc(compName)}</td></tr>`;
+            return `<tr><td class="sl">${sl}</td><td class="reg">${esc(p.registration_number ?? "—")}</td><td class="name">${esc(p.name)}</td><td class="house">${esc(p.house_name ?? "—")}</td><td class="bg">${esc(genderLetter(p.gender))}</td>${indivShakha ? `<td>${esc(p.shakha?.name ?? "—")}</td>${lineageCells(p.shakha_id)}` : ""}<td class="comp">${esc(compName)}</td></tr>`;
           })
           .join("");
-        return `<tr class="cat-head"><td colspan="6">${esc(label)}</td></tr>${rows}`;
+        return `<tr class="cat-head"><td colspan="${indivSpan}">${esc(label)}</td></tr>${rows}`;
       })
       .join("");
 
@@ -315,14 +326,14 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       .map((c) => {
         const ng = normGender(c.gender);
         const detail = [c.competitionCategorySlug ? CATEGORY_LABELS[c.competitionCategorySlug] : null, ng ? GENDER_STYLE[ng].label : null].filter(Boolean).join(" · ");
-        const head = `<tr class="cat-head"><td colspan="6">${esc(c.name)} — Team${detail ? ` <span class="detail">(${esc(detail)})</span>` : ""}</td></tr>`;
+        const head = `<tr class="cat-head"><td colspan="${teamSpan}">${esc(c.name)} — Team${detail ? ` <span class="detail">(${esc(detail)})</span>` : ""}</td></tr>`;
         const teams = teamsByComp[c.id]
           .map((t) => {
-            const teamHead = `<tr class="team-head"><td colspan="6">${esc(t.team_name)}${t.shakhaName ? ` <span class="detail">· ${esc(t.shakhaName)}</span>` : ""} <span class="detail">· ${t.members.length} member${t.members.length === 1 ? "" : "s"}</span></td></tr>`;
+            const teamHead = `<tr class="team-head"><td colspan="${teamSpan}">${esc(t.team_name)}${t.shakhaName ? ` <span class="detail">· ${esc([t.shakhaName, lineageLine(t.shakhaId)].filter(Boolean).join(" · "))}</span>` : ""} <span class="detail">· ${t.members.length} member${t.members.length === 1 ? "" : "s"}</span></td></tr>`;
             const rows = t.members.length === 0
-              ? `<tr><td colspan="6" class="empty">No members yet</td></tr>`
+              ? `<tr><td colspan="${teamSpan}" class="empty">No members yet</td></tr>`
               : t.members
-                  .map((p, i) => `<tr><td class="sl">${i + 1}</td><td class="reg">${esc(p.registration_number ?? "—")}</td><td class="name">${esc(p.name)}</td><td class="house">${esc(p.house_name ?? "—")}</td><td class="bg">${esc(genderLetter(p.gender))}</td><td class="shakha-col">${esc(p.shakha?.name ?? "—")}</td></tr>`)
+                  .map((p, i) => `<tr><td class="sl">${i + 1}</td><td class="reg">${esc(p.registration_number ?? "—")}</td><td class="name">${esc(p.name)}</td><td class="house">${esc(p.house_name ?? "—")}</td><td class="bg">${esc(genderLetter(p.gender))}</td><td class="shakha-col">${esc(p.shakha?.name ?? "—")}</td>${lineageCells(p.shakha_id)}</tr>`)
                   .join("");
             return teamHead + rows;
           })
@@ -353,8 +364,8 @@ export function FeastRegistrations({ slug }: { slug: string }) {
       .noprint { text-align: center; margin: 18px 0; }
       </style></head><body>
       <div class="hdr"><p class="feast">${esc(feast.name)}</p><p class="shakha">Registrations for ${esc(shakhaLabel)}</p></div>
-      ${sectionsHtml ? `<table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Competition</th></tr></thead><tbody>${sectionsHtml}</tbody></table>` : ""}
-      ${teamSectionsHtml ? `${sectionsHtml ? `<h2 class="section">Team Registrations</h2>` : ""}<table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Shakha</th></tr></thead><tbody>${teamSectionsHtml}</tbody></table>` : ""}
+      ${sectionsHtml ? `<table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th>${indivShakha ? `<th>Shakha</th>${lineageHeads}` : ""}<th>Competition</th></tr></thead><tbody>${sectionsHtml}</tbody></table>` : ""}
+      ${teamSectionsHtml ? `${sectionsHtml ? `<h2 class="section">Team Registrations</h2>` : ""}<table><thead><tr><th>SL</th><th>Reg No</th><th>Participant Name</th><th>House Name</th><th>B/G</th><th>Shakha</th>${lineageHeads}</tr></thead><tbody>${teamSectionsHtml}</tbody></table>` : ""}
       <div class="noprint"><button onclick="window.print()">Print / Save as PDF</button></div>
       </body></html>`;
 
@@ -388,9 +399,9 @@ export function FeastRegistrations({ slug }: { slug: string }) {
 
       {feast.competitions.map((c, i) =>
         c.cat === "Team" ? (
-          <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} teams={teamsByComp[c.id] ?? []} showShakha={multiShakha} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} editLocked={editLocked} />
+          <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} teams={teamsByComp[c.id] ?? []} showShakha={multiShakha} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} editLocked={editLocked} lineageLine={lineageLine} />
         ) : (
-          <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} />
+          <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} lineageLine={lineageLine} />
         )
       )}
     </div>

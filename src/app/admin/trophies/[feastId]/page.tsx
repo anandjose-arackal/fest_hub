@@ -38,7 +38,7 @@ function WinnerIdentity({ w }: { w: WinnerEntry }) {
       <span className="fp-ml text-[15px] font-extrabold leading-tight" style={{ color: theme.text }}>{w.name}</span>
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] font-semibold" style={{ color: theme.sub }}>
         {w.houseName && <span className="fp-ml">{w.houseName}</span>}
-        <ShakhaTag shakha={w.shakhaName} meghalaName={w.meghalaName} />
+        <ShakhaTag shakha={w.shakhaName} meghalaName={w.meghalaName} dioceseName={w.dioceseName} />
       </span>
       {w.isTeam && w.members && (
         <span className="fp-ml text-[12px] font-semibold" style={{ color: theme.sub }}>

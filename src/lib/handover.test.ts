@@ -47,6 +47,7 @@ function winner(position: Position, opts: Partial<WinnerEntry> = {}): WinnerEntr
     shakhaName: "Shakha 1",
     meghalaId: "m1",
     meghalaName: "Mekhala 1",
+    dioceseName: null,
     certificateCount: 1,
     trophy: null,
     certificate: null,

@@ -10,9 +10,10 @@ import {
   getStandingsGenderSplit,
   type StandingsRow, type GroupStandingsRow,
 } from "@/actions/results";
-import { useOrgHierarchy } from "@/hooks/use-feast";
+import { useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
+import { buildShakhaLineage, lineageColumns } from "@/lib/org-hierarchy";
 import { emptySplit, splitCategoryTotal, splitGenderTotal, type GenderSplit, type SplitCategory, type SplitGender } from "@/lib/standings-split";
 import type { Diocese, Feast, HierarchyLevel, Meghala, OrgSettings, Shakha } from "@/types";
 
@@ -34,17 +35,20 @@ function buildStandingsHtml(
   orgLine: string,
   shakhaRows: StandingsRow[],
   tier: Tier,
-  hierarchy: { shakhas: Shakha[]; meghalas: Meghala[]; dioceses: Diocese[] }
+  hierarchy: { shakhas: Shakha[]; meghalas: Meghala[]; dioceses: Diocese[]; hierarchyLevel: HierarchyLevel }
 ): string {
   const shakhaMeghalaId = new Map(hierarchy.shakhas.map((s) => [s.id, s.meghala_id]));
   const meghalaById = new Map(hierarchy.meghalas.map((m) => [m.id, m]));
   const dioceseNameById = new Map(hierarchy.dioceses.map((d) => [d.id, d.name]));
   const UNASSIGNED = "__unassigned__";
+  // Flat Shakha tier only — the Meghala/Diocese tiers already group under those headings.
+  const cols = tier === "shakha" ? lineageColumns(hierarchy.hierarchyLevel) : [];
+  const lineage = buildShakhaLineage(hierarchy);
 
   const shakhaTableHtml = (rows: StandingsRow[]) => {
     const sorted = [...rows].sort((a, b) => b.grandTotal - a.grandTotal || a.shakhaName.localeCompare(b.shakhaName));
-    return `<table><thead><tr><th>#</th><th>Shakha</th><th class="num">Total</th></tr></thead><tbody>${sorted
-      .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.shakhaName)}</td><td class="num">${r.grandTotal}</td></tr>`)
+    return `<table><thead><tr><th>#</th><th>Shakha</th>${cols.map((c) => `<th>${c.label}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>${sorted
+      .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.shakhaName)}</td>${cols.map((c) => `<td>${esc(lineage(r.shakhaId)[c.key])}</td>`).join("")}<td class="num">${r.grandTotal}</td></tr>`)
       .join("")}</tbody></table>`;
   };
 
@@ -186,12 +190,16 @@ function BoysGirls({ values, className }: { values: Record<SplitGender, number>;
   );
 }
 
-function StandingsBlock({ rows, loading, emptyText, shakhaColor, groupLabel = "Shakha", split, cat }: {
+type ParentCol = { label: string; value: (id: string) => string };
+
+function StandingsBlock({ rows, loading, emptyText, shakhaColor, groupLabel = "Shakha", parentCols = [], split, cat }: {
   rows: StandingsRow[];
   loading: boolean;
   emptyText: string;
   shakhaColor: (id: string) => string;
   groupLabel?: string;
+  /** Meghala/Diocese a row belongs to, shown beside its name. */
+  parentCols?: ParentCol[];
   /** Boys/Girls/Common per row id — null when there's nothing to split (an external fest's hand-entered totals). */
   split: Record<string, GenderSplit> | null;
   /** Overall, or an age category: rank, points and the B/G figures follow it. */
@@ -272,7 +280,10 @@ function StandingsBlock({ rows, loading, emptyText, shakhaColor, groupLabel = "S
                         <span className="w-6 text-center text-xs font-medium text-gray-400">{rank}</span>
                       )}
                       <span className="h-2 w-2 rounded-full" style={{ background: shakhaColor(s.shakhaId) }} />
-                      {s.shakhaName}
+                      <span>
+                        {s.shakhaName}
+                        {parentCols.length > 0 && <span className="block text-[11px] font-normal text-gray-500">{parentCols.map((c) => c.value(s.shakhaId)).join(" · ")}</span>}
+                      </span>
                     </span>
                     <span className="font-bold" style={{ color: scoreOf(s) > 0 ? "#6B46FF" : "#9CA3AF" }}>{scoreOf(s)}</span>
                   </div>
@@ -332,6 +343,7 @@ function StandingsBlock({ rows, loading, emptyText, shakhaColor, groupLabel = "S
                 <tr>
                   <th rowSpan={span} className={`w-10 px-3 py-2.5 text-left ${th}`}>#</th>
                   <th rowSpan={span} className={`px-3 py-2.5 text-left ${th}`}>{groupLabel}</th>
+                  {parentCols.map((c) => <th key={c.label} rowSpan={span} className={`px-3 py-2.5 text-left ${th}`}>{c.label}</th>)}
                   {AGE_COLS.map((c) =>
                     split ? (
                       <th key={c.key} colSpan={SUB_COLS.length} className={`border-l border-gray-200 px-2 pt-2.5 pb-1 text-center ${th} ${onCat(c.cat) ? "bg-amber-50 text-amber-800" : "text-gray-600"}`}>{c.label}</th>
@@ -395,6 +407,7 @@ function StandingsBlock({ rows, loading, emptyText, shakhaColor, groupLabel = "S
                           <span className="font-semibold text-gray-900">{s.shakhaName}</span>
                         </div>
                       </td>
+                      {parentCols.map((c) => <td key={c.label} className="whitespace-nowrap px-3 py-3 text-gray-700">{c.value(s.shakhaId)}</td>)}
                       {AGE_COLS.map((c) =>
                         split ? (
                           SUB_COLS.map((sc, j) => (
@@ -450,6 +463,17 @@ export default function StandingsPage() {
   const [tier, setTier] = useState<Tier>("shakha");
   const [cat, setCat] = useState<CatFilter>("all");
   const availableTiers = tiersFor(hierarchy.hierarchyLevel);
+  const { lineage, lineageCols } = useShakhaLineage();
+  // Shakha rows get their Meghala/Diocese; Meghala rows (3-tier orgs) their Diocese.
+  const parentCols: ParentCol[] =
+    tier === "shakha"
+      ? lineageCols.map((c) => ({ label: c.label, value: (id: string) => lineage(id)[c.key] }))
+      : tier === "meghala" && hierarchy.hierarchyLevel === "diocese"
+        ? [{ label: "Diocese", value: (id: string) => {
+            const dId = hierarchy.meghalas.find((m) => m.id === id)?.diocese_id;
+            return (dId && hierarchy.dioceses.find((d) => d.id === dId)?.name) || "—";
+          } }]
+        : [];
 
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
@@ -597,7 +621,7 @@ export default function StandingsPage() {
         </button>
       </div>
       <div className="mb-8">
-        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any fest." shakhaColor={rowColor} groupLabel={TIER_LABEL[tier]} split={overallSplit} cat={cat} />
+        <StandingsBlock rows={overall} loading={overallLoading} emptyText="No standings yet across any fest." shakhaColor={rowColor} groupLabel={TIER_LABEL[tier]} parentCols={parentCols} split={overallSplit} cat={cat} />
       </div>
 
       <div className="mb-8 h-px bg-gray-100" />
@@ -627,6 +651,7 @@ export default function StandingsPage() {
         emptyText="No standings yet. Publish some results first."
         shakhaColor={rowColor}
         groupLabel={TIER_LABEL[tier]}
+        parentCols={parentCols}
         split={feasts.find((f) => f.id === feastId)?.is_external ? null : feastSplit}
         cat={cat}
       />

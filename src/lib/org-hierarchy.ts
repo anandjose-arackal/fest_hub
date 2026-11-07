@@ -1,4 +1,40 @@
-import type { HierarchyLevel, Meghala, Shakha } from "@/types";
+import type { Diocese, HierarchyLevel, Meghala, Shakha } from "@/types";
+
+// A shakha's Meghala/Diocese names, "—" when it isn't assigned into that tier.
+export interface ShakhaLineage {
+  meghala: string;
+  diocese: string;
+}
+
+export function buildShakhaLineage(hierarchy: { dioceses: Diocese[]; meghalas: Meghala[]; shakhas: Shakha[] }): (shakhaId: string | null | undefined) => ShakhaLineage {
+  const meghalaOf = new Map(hierarchy.shakhas.map((s) => [s.id, s.meghala_id]));
+  const meghalaById = new Map(hierarchy.meghalas.map((m) => [m.id, m]));
+  const dioceseName = new Map(hierarchy.dioceses.map((d) => [d.id, d.name]));
+  return (shakhaId) => {
+    const mId = shakhaId ? meghalaOf.get(shakhaId) : null;
+    const m = mId ? meghalaById.get(mId) : undefined;
+    return { meghala: m?.name ?? "—", diocese: (m?.diocese_id && dioceseName.get(m.diocese_id)) || "—" };
+  };
+}
+
+// The extra columns every Shakha column and export gets: none at 'shakha',
+// Meghala at 'meghala', Meghala + Diocese at 'diocese'.
+export interface LineageColumn {
+  key: keyof ShakhaLineage;
+  label: string;
+}
+
+export function lineageColumns(level: HierarchyLevel): LineageColumn[] {
+  if (level === "diocese") return [{ key: "meghala", label: "Meghala" }, { key: "diocese", label: "Diocese" }];
+  if (level === "meghala") return [{ key: "meghala", label: "Meghala" }];
+  return [];
+}
+
+// "Kalpetta · Mananthavady" — the lineage as one line, for mobile cards and
+// badges; unassigned tiers are left out rather than shown as "—".
+export function lineageText(l: ShakhaLineage, cols: LineageColumn[]): string {
+  return cols.map((c) => l[c.key]).filter((v) => v !== "—").join(" · ");
+}
 
 // An admin's own assignment (profiles.shakha_id / meghala_id / diocese_id —
 // exactly one is ever set, see profiles_single_scope_check) generalized to
