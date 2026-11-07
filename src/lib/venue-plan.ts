@@ -167,7 +167,9 @@ export function routeSteps(plan: VenuePlan, stage: number, floorLabel: (floor: n
     steps.push({ kind: "floor", text: `Take the ${means} to the ${floorLabel(hit.floor.floor)}` });
   }
   const r = hit.room;
-  steps.push({ kind: "room", text: `Stage ${stage} is ${r.code ? `room ${r.code}` : `the ${r.label || "hall"}`}` });
+  // A room without a code (the main stage, the hall) is named by its label and where it is.
+  const where = annex ? `inside ${annex.name}` : `on the ${floorLabel(hit.floor.floor)}`;
+  steps.push({ kind: "room", text: r.code ? `Stage ${stage} is room ${r.code}` : `Stage ${stage}${r.label ? ` (${r.label})` : ""} is ${where}` });
   for (const h of relatedRooms(plan, stage)) {
     const sameFloor = h.building === hit.building && h.floor === hit.floor.floor;
     steps.push({ kind: "helper", text: `${ROLE[h.room.kind]}: ${h.room.code ?? h.room.label}${sameFloor ? ", same floor" : `, ${floorLabel(h.floor)}`}` });
