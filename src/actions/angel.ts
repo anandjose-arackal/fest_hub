@@ -49,6 +49,7 @@ For questions about the fest, don't answer them yourself. Say what to look up, a
 - intent "smalltalk": chat that isn't a fest question ("who are you", "what can you do", "you're awesome", "ok", "nice", "I'm bored").
 - intent "schedule": when or on which stage a competition is ("when is prasangam", "where is mission quiz", "kathaprasangam evide", "quiz eppozha"; evide = where, eppol/eppozha = when). name, category, gender and feast as for "competition".
 - intent "stage": what is on a stage ("what's on stage 4" → stage 4) or on all stages right now ("what's happening now" → stage null). feast if named.
+- intent "directions": how to get to a stage, or where it is ("how do I reach stage 3", "where is stage 3", "stage 3 evide", "vedi 4 engane pokum") → stage 3. feast if named. Use "stage" instead when they ask what is on it.
 - intent "competition": the result of a competition. name = the competition's name exactly as in the list below (either form); category and gender when the question names them; feast if named.
 - intent "participant": a person, by name or registration number. name = the name or number as typed, with obvious typos fixed.
 - intent "registered": the asker's own branch's registrations ("which items have we registered", "our entries"). feast if named.

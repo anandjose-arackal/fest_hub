@@ -53,6 +53,8 @@ export type AngelIntent =
   | { kind: "schedule"; matches: CompetitionRef[] }
   /** What's on one stage (`number`), or on every stage right now (null). */
   | { kind: "stage"; number: number | null; feastSlug: string | null }
+  /** How to get to a stage: building, floor, room and the way there. */
+  | { kind: "directions"; number: number; feastSlug: string | null }
   /** A signed-in branch admin's own items: already registered, or with places left under the cap. */
   | { kind: "registrations"; mode: "registered" | "left"; feastSlug: string | null }
   | { kind: "choose"; entity: NamedEntity; competitions: CompetitionRef[]; participantQuery: string };
@@ -105,6 +107,11 @@ const SCHEDULE_WORDS = [
   "when", "time", "timing", "timings", "schedule", "scheduled", "where", "venue", "stage", "stages", "vedi",
   "eppol", "eppo", "eppozha", "eppozhanu", "eppolanu", "evide", "evideya", "evidanu", "evideyanu", "samayam",
   "എപ്പോൾ", "എപ്പോഴാണ്", "സമയം", "എവിടെ", "എവിടെയാണ്", "വേദി", "വേദികൾ",
+];
+// "how to reach stage 4", "where is stage 4", "stage 4 evide", "വേദി 4 എങ്ങനെ"
+const WAY_WORDS = [
+  "way", "reach", "route", "direction", "directions", "where", "located", "location", "room", "floor", "go", "get", "find", "navigate",
+  "evide", "evideya", "evidanu", "evideyanu", "engane", "vazhi", "എവിടെ", "എവിടെയാണ്", "എങ്ങനെ", "വഴി",
 ];
 const NOW_WORDS = ["now", "live", "happening", "going", "on", "currently", "running", "ippo", "ഇപ്പോൾ", "നടക്കുന്നത്"];
 // "stage 4", "stage4", "stage no 4", "വേദി 4"
@@ -271,7 +278,11 @@ export function resolveIntent(message: string, ctx: AngelContext): AngelIntent {
 
   // "stage 4" before registration numbers, which "stage4" would look like.
   const stageNumber = joined.match(STAGE_NUMBER);
-  if (stageNumber) return { kind: "stage", number: Number(stageNumber[1]), feastSlug: feastFromHint(words, ctx.feasts) };
+  if (stageNumber) {
+    const number = Number(stageNumber[1]);
+    const feastSlug = feastFromHint(words, ctx.feasts);
+    return has(words, WAY_WORDS, joined) ? { kind: "directions", number, feastSlug } : { kind: "stage", number, feastSlug };
+  }
 
   // A registration number ("F1405", "CML/2026/17547") is always a person.
   if (words.some((w) => /\d/.test(w) && /[a-zഀ-ൿ/]/.test(w)) || /^\d{3,}$/.test(joined)) {
@@ -361,7 +372,7 @@ export function resolveIntent(message: string, ctx: AngelContext): AngelIntent {
 // nothing here trusts that: intentFromAi only accepts names that match the
 // portal's own entities and competitions.
 
-export const AI_INTENTS = ["greeting", "smalltalk", "help", "top", "entity", "competition", "schedule", "stage", "participant", "registered", "left", "unclear"] as const;
+export const AI_INTENTS = ["greeting", "smalltalk", "help", "top", "entity", "competition", "schedule", "stage", "directions", "participant", "registered", "left", "unclear"] as const;
 const MAX_REPLY = 280;
 export const AI_CATEGORIES = ["sub junior", "junior", "senior", "super senior", "elder"] as const;
 
@@ -460,6 +471,8 @@ export function intentFromAi(ai: AngelAiReading, ctx: AngelContext): AngelIntent
     }
     case "stage":
       return { kind: "stage", number: ai.stage, feastSlug };
+    case "directions":
+      return ai.stage != null ? { kind: "directions", number: ai.stage, feastSlug } : null;
     case "participant":
       return ai.name ? { kind: "participant", query: ai.name } : null;
     case "registered":

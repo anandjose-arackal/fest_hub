@@ -19,6 +19,9 @@ import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-da
 import { intentFromAi, resolveIntent, type AngelContext, type AngelIntent, type CompetitionRef, type NamedEntity, type Tier } from "@/lib/angel-intents";
 import { GradeBadge, Medal, MedalCounts, isMedalPos } from "../feast-ui";
 import { AngelMark } from "./angel-mark";
+import { venueFor } from "@/lib/venue-config";
+import { MAIN, buildingName, findStageRoom, routeSteps, type RouteStep } from "@/lib/venue-plan";
+import { floorName } from "@/lib/venue-floors";
 import { OPEN_ANGEL_EVENT } from "./angel-events";
 
 // Angel — the portal's assistant. It reads like a chat, but every answer is
@@ -114,6 +117,15 @@ async function loadSchedule(feastSlug: string): Promise<ScheduleItem[]> {
       progress: fc.progress_pct ?? null,
     };
   });
+}
+
+// Where a stage is, from the fest's venue plan: "1st floor · room IX B", or the hall's name.
+function stageWhere(feastSlug: string, n: number): string | null {
+  const plan = venueFor(feastSlug);
+  const hit = plan && findStageRoom(plan, n);
+  if (!plan || !hit) return null;
+  if (hit.building !== MAIN) return buildingName(plan, hit.building);
+  return [floorName(hit.floor.floor), hit.room.code ? `room ${hit.room.code}` : null].filter(Boolean).join(" · ");
 }
 
 const schedule = (feastSlug: string) => fetchCached(`angel:schedule:${feastSlug}`, () => loadSchedule(feastSlug), SCHEDULE_TTL);
@@ -394,9 +406,10 @@ export default function AngelChat() {
       const groups = lists.map(({ f, items }) => ({ f, items: items.filter((i) => i.stageNumber === number).sort(byTime) })).filter((g) => g.items.length);
       if (groups.length === 0) return { from: "angel", text: `I couldn't find a stage ${number}${feastSlug ? ` in ${feastName(feastSlug)}` : ""}.`, chips };
       const title = groups[0].items[0].stageTitle;
+      const where = groups.length === 1 ? stageWhere(groups[0].f.slug, number) : null;
       return {
         from: "angel",
-        text: `Stage ${number}${title ? ` (${title})` : ""}${groups.length === 1 ? `, ${groups[0].f.name}` : ""}:`,
+        text: `Stage ${number}${title ? ` (${title})` : ""}${groups.length === 1 ? `, ${groups[0].f.name}` : ""}${where ? ` — ${where}` : ""}:`,
         body: (
           <ScheduleList
             rows={groups.flatMap(({ f, items }) => items.map((i) => ({
@@ -407,7 +420,7 @@ export default function AngelChat() {
             })))}
           />
         ),
-        chips,
+        chips: where ? [{ label: "How to get there", send: `how to reach stage ${number}` }, ...chips] : chips,
       };
     }
 
@@ -436,6 +449,25 @@ export default function AngelChat() {
       text: rows.some((r) => r.status.live) ? "On stage now:" : "Nothing is live right now. Next up:",
       body: <ScheduleList rows={rows} />,
       chips,
+    };
+  }, [feasts, feastName]);
+
+  // The way to a stage, step by step from the fest's venue plan (building,
+  // stairs or lift to the floor, the room, its topic / rest rooms).
+  const answerDirections = useCallback(async (number: number, feastSlug: string | null): Promise<Omit<Message, "id">> => {
+    const candidates = feastSlug ? feasts.filter((f) => f.slug === feastSlug) : feasts;
+    const f = candidates.find((x) => { const plan = venueFor(x.slug); return !!plan && !!findStageRoom(plan, number); });
+    if (!f) return { from: "angel", text: `I don't have directions for stage ${number}${feastSlug ? ` in ${feastName(feastSlug)}` : ""} yet.`, chips: [{ label: `What's on stage ${number}`, send: `stage ${number}` }] };
+    const steps = routeSteps(venueFor(f.slug)!, number, floorName);
+    const title = (await schedule(f.slug)).find((i) => i.stageNumber === number)?.stageTitle;
+    return {
+      from: "angel",
+      text: `How to get to Stage ${number}${title ? ` (${title})` : ""}${candidates.length > 1 ? `, ${f.name}` : ""}:`,
+      body: <StepList steps={steps} />,
+      chips: [
+        { label: "Show on venue map", href: `/feast/${f.slug}/stages?view=map` },
+        { label: `What's on stage ${number}`, send: `stage ${number}` },
+      ],
     };
   }, [feasts, feastName]);
 
@@ -482,6 +514,8 @@ export default function AngelChat() {
         return answerSchedule(intent.matches);
       case "stage":
         return answerStage(intent.number, intent.feastSlug);
+      case "directions":
+        return answerDirections(intent.number, intent.feastSlug);
       case "help":
         return { from: "angel", text: "Happy to help! The help page walks you through everything, step by step with pictures.", chips: [{ label: "Open help", href: "/help" }] };
       case "top":
@@ -523,7 +557,7 @@ export default function AngelChat() {
         };
       }
     }
-  }, [answerTop, answerEntity, competitionAnswer, answerParticipant, answerRegistrations, answerSchedule, answerStage, profile, adminScope, feasts, starterChips, push]);
+  }, [answerTop, answerEntity, competitionAnswer, answerParticipant, answerRegistrations, answerSchedule, answerStage, answerDirections, profile, adminScope, feasts, starterChips, push]);
 
   // The AI's reading when it points at something real, else the keyword
   // router's. Greetings go to the AI too, so the reply sounds like a person
@@ -763,6 +797,25 @@ function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function StepList({ steps }: { steps: RouteStep[] }) {
+  let n = 0;
+  return (
+    <ol className="m-0 flex list-none flex-col gap-1.5 p-0">
+      {steps.map((st, i) => (
+        <li key={i} className="flex items-center gap-2.5 px-3 py-2.5" style={CARD}>
+          <span
+            className="fp-num flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[12px]"
+            style={st.kind === "helper" ? { background: "#FFF1C2", color: "#7A5A00" } : { background: "var(--fp-chip-on, var(--fp-primary))", color: "var(--fp-chip-on-fg, #fff)" }}
+          >
+            {st.kind === "helper" ? "•" : ++n}
+          </span>
+          <span className="text-[13.5px] font-bold" style={{ color: st.kind === "helper" ? "var(--fp-sub)" : undefined }}>{st.text}</span>
+        </li>
+      ))}
+    </ol>
   );
 }
 

@@ -64,9 +64,10 @@ test("routeSteps: building, floor by stairs or lift, room, then helper rooms", (
     "Topic room: X A, same floor",
     "Rest room: IV D, F2",
   ]);
-  assert.deepEqual(routeSteps(plan, 10, f).map((s) => s.text), ["Enter Test School by the main entrance", "Take the stairs to the F3", "Stage 10 is the Main"]);
+  assert.deepEqual(routeSteps(plan, 10, f).map((s) => s.text), ["Enter Test School by the main entrance", "Take the stairs to the F3", "Stage 10 (Main) is on the F3"]);
   assert.deepEqual(routeSteps(plan, 9, f).map((s) => s.kind), ["building", "room"]);
   assert.equal(routeSteps(plan, 9, f)[0].text, "Walk to Parish Hall, right of the church");
+  assert.equal(routeSteps(plan, 9, f)[1].text, "Stage 9 (Hall) is inside Parish Hall");
   assert.deepEqual(routeSteps(plan, 99, f), []);
 });
 

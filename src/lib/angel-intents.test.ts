@@ -176,6 +176,11 @@ test("schedule and stage questions", () => {
   assert.deepEqual(resolveIntent("what's on stage 4", ctx), { kind: "stage", number: 4, feastSlug: null });
   assert.deepEqual(resolveIntent("stage4 arts", ctx), { kind: "stage", number: 4, feastSlug: "arts-fest" });
   assert.deepEqual(resolveIntent("വേദി 2", ctx), { kind: "stage", number: 2, feastSlug: null });
+  assert.deepEqual(resolveIntent("how to reach stage 3", ctx), { kind: "directions", number: 3, feastSlug: null });
+  assert.deepEqual(resolveIntent("where is stage 4 arts", ctx), { kind: "directions", number: 4, feastSlug: "arts-fest" });
+  assert.deepEqual(resolveIntent("വേദി 2 എവിടെ", ctx), { kind: "directions", number: 2, feastSlug: null });
+  assert.deepEqual(intentFromAi(reading({ intent: "directions", stage: 5 }), ctx), { kind: "directions", number: 5, feastSlug: null });
+  assert.equal(intentFromAi(reading({ intent: "directions", stage: null }), ctx), null);
   assert.deepEqual(resolveIntent("what's happening now", ctx), { kind: "stage", number: null, feastSlug: null });
   assert.deepEqual(resolveIntent("stage schedule", ctx), { kind: "stage", number: null, feastSlug: null });
   assert.equal(resolveIntent("who is on top", ctx).kind, "top");
