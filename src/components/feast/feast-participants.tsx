@@ -76,7 +76,7 @@ function ParticipantCard({ row, q, delay }: { row: ParticipantSearchRow; q: stri
           {row.houseName && <span className="fp-ml text-[13.5px] font-semibold" style={{ color: theme.sub }}><Hit text={row.houseName} q={q} /></span>}
           <span className="mt-0.5 inline-flex min-w-0 items-center gap-[5px] text-[12.5px] font-extrabold" style={{ color: "var(--fp-link)" }}>
             <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
-            <span className="truncate"><Hit text={row.shakha} q={q} />{row.meghalaName ? ` · ${row.meghalaName}` : ""}</span>
+            <span className="truncate"><Hit text={row.shakha} q={q} />{[row.meghalaName, row.dioceseName].filter(Boolean).map((n) => ` · ${n}`).join("")}</span>
           </span>
         </div>
         {row.regNo && (

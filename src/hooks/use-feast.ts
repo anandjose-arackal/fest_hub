@@ -1,9 +1,11 @@
 "use client";
 
+import { useMemo } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { getOrgSettings } from "@/lib/org-settings";
 import { fetchCached, invalidateCached, useCachedQuery } from "@/lib/client-cache";
 import { fetchAll } from "@/lib/fetch-all";
+import { buildShakhaLineage, lineageColumns, lineageText } from "@/lib/org-hierarchy";
 import type { Stage, Diocese, Meghala, Shakha, HierarchyLevel, OrgSettings } from "@/types";
 
 // Multi-org: no hardcoded per-slug visual config (the source app had a
@@ -349,6 +351,16 @@ const EMPTY_HIERARCHY: OrgHierarchyData = { dioceses: [], meghalas: [], shakhas:
 export function useOrgHierarchy() {
   const { data, loading } = useCachedQuery(isSupabaseConfigured ? "fp:org-hierarchy" : null, loadOrgHierarchy, { staleMs: 15_000 });
   return { ...(data ?? EMPTY_HIERARCHY), loading };
+}
+
+// Meghala/Diocese names for any shakha, plus which of those columns the
+// org's hierarchy level adds next to every Shakha column and export.
+export function useShakhaLineage() {
+  const { dioceses, meghalas, shakhas, hierarchyLevel } = useOrgHierarchy();
+  const lineage = useMemo(() => buildShakhaLineage({ dioceses, meghalas, shakhas }), [dioceses, meghalas, shakhas]);
+  const lineageCols = useMemo(() => lineageColumns(hierarchyLevel), [hierarchyLevel]);
+  const lineageLine = (shakhaId: string | null | undefined) => lineageText(lineage(shakhaId), lineageCols);
+  return { lineage, lineageCols, lineageLine };
 }
 
 export function invalidateOrgHierarchy() {

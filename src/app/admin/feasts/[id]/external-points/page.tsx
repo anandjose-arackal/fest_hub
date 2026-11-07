@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { getFeastStandings, saveExternalFeastPoints, type ExternalFeastPointsRow, type StandingsRow } from "@/actions/results";
 import type { Feast, Shakha } from "@/types";
 import { fetchAll } from "@/lib/fetch-all";
+import { useShakhaLineage } from "@/hooks/use-feast";
 
 type CatKey = Exclude<keyof ExternalFeastPointsRow, "shakhaId">;
 
@@ -26,6 +27,7 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
   const { id: feastId } = use(params);
   const [feast, setFeast] = useState<Feast | null>(null);
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [cells, setCells] = useState<Cells>({});
   // Saved totals with no matching category breakdown (entered when this
   // page took a single total per shakha) — shown so saving doesn't replace
@@ -140,7 +142,10 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
           <div key={s.id} className="rounded-xl border border-neutral-200 bg-white p-3">
             <div className="flex items-center gap-3">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: s.color }} />
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800">{s.name}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-800">
+                {s.name}
+                {lineageCols.length > 0 && <span className="block truncate text-[11px] font-normal text-neutral-500">{lineageLine(s.id)}</span>}
+              </span>
               <span className="text-sm font-bold text-amber-700">{rowTotal(s.id)}</span>
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -161,6 +166,7 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
           <thead>
             <tr className="text-left text-xs font-semibold uppercase text-neutral-500" style={{ background: "linear-gradient(90deg,#fef3c7,#fffbeb)" }}>
               <th className="px-4 py-2">Shakha</th>
+              {lineageCols.map((c) => <th key={c.key} className="px-3 py-2">{c.label}</th>)}
               {CATS.map((c) => <th key={c.key} className="px-3 py-2 text-right">{c.label}</th>)}
               <th className="px-4 py-2 text-right">Total</th>
             </tr>
@@ -174,6 +180,7 @@ export default function ExternalFeastPointsPage({ params }: { params: Promise<{ 
                     {s.name}
                   </span>
                 </td>
+                {lineageCols.map((c) => <td key={c.key} className="whitespace-nowrap px-3 py-2 text-neutral-600">{lineage(s.id)[c.key]}</td>)}
                 {CATS.map((c) => <td key={c.key} className="px-3 py-2 text-right">{pointInput(s, c, "w-20")}</td>)}
                 <td className="px-4 py-2 text-right font-bold text-amber-700">{rowTotal(s.id)}</td>
               </tr>

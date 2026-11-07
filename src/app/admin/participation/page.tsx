@@ -10,7 +10,7 @@ import { CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/competition-categories";
 import { getScoreHeadings } from "@/lib/scoresheet-headings";
 import { getCompetitionSubject } from "@/lib/competition-subjects";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
-import { useOrgHierarchy } from "@/hooks/use-feast";
+import { useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { EMPTY_HIERARCHY_FILTER, filterShakhaIds, HierarchyFilter, type HierarchyFilterValue } from "@/components/admin/hierarchy-picker";
 import type { Competition, CompetitionCategory, Feast, FeastCompetition } from "@/types";
 
@@ -100,6 +100,7 @@ export default function ParticipationPage() {
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [compId, setCompId] = useState("");
   const hierarchy = useOrgHierarchy();
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [hierFilter, setHierFilter] = useState<HierarchyFilterValue>(EMPTY_HIERARCHY_FILTER);
   const [search, setSearch] = useState("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
@@ -444,7 +445,7 @@ export default function ParticipationPage() {
             <table className="w-full text-sm">
               <thead style={{ background: "linear-gradient(90deg,#fce7f3,#fdf2f8)" }}>
                 <tr className="border-b-2" style={{ borderColor: "#f9a8d4" }}>
-                  {(isGroup ? ["Took part", "Chance #", "Team", "Roster", "Members", "Shakha"] : ["Took part", "Chance #", "Reg No", "Participant", "House", "Shakha"]).map((h) => (
+                  {(isGroup ? ["Took part", "Chance #", "Team", "Roster", "Members", "Shakha", ...lineageCols.map((c) => c.label)] : ["Took part", "Chance #", "Reg No", "Participant", "House", "Shakha", ...lineageCols.map((c) => c.label)]).map((h) => (
                     <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#831843" }}>{h}</th>
                   ))}
                 </tr>
@@ -480,6 +481,9 @@ export default function ParticipationPage() {
                       </td>
                       <td className="px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#5B21B6" }}>{row.houseName || "—"}</span></td>
                       <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{row.shakhaName}</span></td>
+                      {lineageCols.map((c) => (
+                        <td key={c.key} className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#374151" }}>{lineage(row.shakhaId)[c.key]}</span></td>
+                      ))}
                     </tr>
                   );
                 })}
@@ -506,6 +510,7 @@ export default function ParticipationPage() {
                       <div className="mt-1 flex flex-wrap items-center gap-1.5">
                         <span className="rounded-md px-2 py-0.5 font-mono text-[12px] font-black tracking-wide text-white" style={{ background: "#831843" }}>{row.regNo}</span>
                         <span className="text-[12px] font-bold" style={{ color: "#374151" }}>{row.shakhaName}</span>
+                        {lineageCols.length > 0 && <span className="text-[10.5px] font-semibold" style={{ color: "#6B7280" }}>{lineageLine(row.shakhaId)}</span>}
                       </div>
                     </div>
                     {!isGroup && row.catSlug && (

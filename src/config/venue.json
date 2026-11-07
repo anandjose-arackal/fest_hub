@@ -1,0 +1,514 @@
+{
+  "arts-fest": {
+    "name": "SanJo Metropolitan Public School",
+    "groundLabels": [
+      "Green rooms",
+      "First aid",
+      "Office",
+      "Enquiry",
+      "Judges",
+      "Gift & Score",
+      "Green rooms"
+    ],
+    "floors": [
+      {
+        "floor": 0,
+        "rooms": [
+          {
+            "label": "Pala",
+            "kind": "green",
+            "row": "back",
+            "x": 0,
+            "w": 7.42,
+            "code": "II A"
+          },
+          {
+            "label": "Kottayam",
+            "kind": "green",
+            "row": "back",
+            "x": 7.42,
+            "w": 8.78,
+            "code": "I A"
+          },
+          {
+            "label": "First aid",
+            "kind": "facility",
+            "row": "back",
+            "x": 16.2,
+            "w": 6.25,
+            "code": "I B"
+          },
+          {
+            "label": "Office 1",
+            "kind": "facility",
+            "row": "back",
+            "x": 22.45,
+            "w": 4.91,
+            "code": "I C"
+          },
+          {
+            "label": "Office 2",
+            "kind": "facility",
+            "row": "back",
+            "x": 27.36,
+            "w": 7.73,
+            "code": "Staff room"
+          },
+          {
+            "label": "Enquiry",
+            "kind": "entrance",
+            "row": "back",
+            "x": 35.09,
+            "w": 7.85,
+            "code": "Reception"
+          },
+          {
+            "label": "Priest",
+            "kind": "facility",
+            "row": "back",
+            "x": 42.94,
+            "w": 5.4,
+            "code": "I E"
+          },
+          {
+            "label": "Judges",
+            "kind": "facility",
+            "row": "back",
+            "x": 48.34,
+            "w": 5.53,
+            "code": "I D"
+          },
+          {
+            "label": "",
+            "kind": "passage",
+            "row": "back",
+            "x": 53.87,
+            "w": 2.82
+          },
+          {
+            "label": "Kannur",
+            "kind": "green",
+            "row": "back",
+            "x": 56.69,
+            "w": 5.4,
+            "code": "LKG B"
+          },
+          {
+            "label": "Mananthavady",
+            "kind": "green",
+            "row": "back",
+            "x": 62.09,
+            "w": 8.46,
+            "code": "UKG A"
+          },
+          {
+            "label": "Thalassery",
+            "kind": "green",
+            "row": "back",
+            "x": 70.55,
+            "w": 7.43,
+            "code": "UKG C"
+          },
+          {
+            "label": "Thamarassery",
+            "kind": "green",
+            "row": "back",
+            "x": 77.98,
+            "w": 10.79,
+            "code": "LKG A"
+          },
+          {
+            "label": "Ernakulam",
+            "kind": "green",
+            "row": "back",
+            "x": 88.77,
+            "w": 7.67,
+            "code": "LKG E"
+          },
+          {
+            "label": "Lift",
+            "kind": "lift",
+            "row": "back",
+            "x": 96.44,
+            "w": 3.56
+          },
+          {
+            "label": "Changanassery",
+            "kind": "green",
+            "row": "front",
+            "x": 0,
+            "w": 16.2,
+            "code": "II B"
+          },
+          {
+            "label": "",
+            "kind": "open",
+            "row": "front",
+            "x": 16.2,
+            "w": 26.74
+          },
+          {
+            "label": "Gift · Score",
+            "kind": "desk",
+            "row": "front",
+            "x": 42.94,
+            "w": 10.93
+          },
+          {
+            "label": "",
+            "kind": "passage",
+            "row": "front",
+            "x": 53.87,
+            "w": 2.82
+          },
+          {
+            "label": "Kochi / Vijayapuram",
+            "kind": "green",
+            "row": "front",
+            "x": 56.69,
+            "w": 13.86,
+            "code": "LKG C"
+          },
+          {
+            "label": "Idukki",
+            "kind": "green",
+            "row": "front",
+            "x": 70.55,
+            "w": 7.43,
+            "code": "UKG B"
+          },
+          {
+            "label": "Kothamangalam",
+            "kind": "green",
+            "row": "front",
+            "x": 77.98,
+            "w": 10.85,
+            "code": "LKG D"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "front",
+            "x": 88.83,
+            "w": 11.17
+          }
+        ]
+      },
+      {
+        "floor": 1,
+        "rooms": [
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "back",
+            "x": 0,
+            "w": 16.2
+          },
+          {
+            "label": "വിഷയം",
+            "kind": "topic",
+            "stage": 2,
+            "row": "back",
+            "x": 16.2,
+            "w": 11.28,
+            "code": "VIII B"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "back",
+            "x": 27.48,
+            "w": 7.61
+          },
+          {
+            "label": "വിഷയം",
+            "kind": "topic",
+            "stage": 1,
+            "row": "back",
+            "x": 35.09,
+            "w": 7.85,
+            "code": "X A"
+          },
+          {
+            "label": "Speech",
+            "kind": "stage",
+            "stage": 2,
+            "row": "back",
+            "x": 42.94,
+            "w": 5.4,
+            "code": "IX A"
+          },
+          {
+            "label": "വിഷയം",
+            "kind": "topic",
+            "stage": 3,
+            "row": "back",
+            "x": 48.34,
+            "w": 8.35,
+            "code": "X B"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "back",
+            "x": 56.69,
+            "w": 32.14
+          },
+          {
+            "label": "Speech",
+            "kind": "stage",
+            "stage": 4,
+            "row": "back",
+            "x": 88.83,
+            "w": 7.61,
+            "code": "XI"
+          },
+          {
+            "label": "Lift",
+            "kind": "lift",
+            "row": "back",
+            "x": 96.44,
+            "w": 3.56
+          },
+          {
+            "label": "Speech",
+            "kind": "stage",
+            "stage": 1,
+            "row": "front",
+            "x": 0,
+            "w": 9.57
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "front",
+            "x": 9.57,
+            "w": 17.91
+          },
+          {
+            "label": "Stair",
+            "kind": "stair",
+            "row": "front",
+            "x": 27.48,
+            "w": 7.61
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "front",
+            "x": 35.09,
+            "w": 21.6
+          },
+          {
+            "label": "Stair",
+            "kind": "stair",
+            "row": "front",
+            "x": 56.69,
+            "w": 5.4
+          },
+          {
+            "label": "വിഷയം",
+            "kind": "topic",
+            "stage": 4,
+            "row": "front",
+            "x": 62.09,
+            "w": 8.46,
+            "code": "VIII C"
+          },
+          {
+            "label": "Speech",
+            "kind": "stage",
+            "stage": 3,
+            "row": "front",
+            "x": 70.55,
+            "w": 8.22,
+            "code": "IX B"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "front",
+            "x": 78.77,
+            "w": 21.23
+          }
+        ]
+      },
+      {
+        "floor": 2,
+        "rooms": [
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "back",
+            "x": 0,
+            "w": 17.49
+          },
+          {
+            "label": "Rest room",
+            "kind": "rest",
+            "stage": 4,
+            "row": "back",
+            "x": 17.49,
+            "w": 8.11,
+            "code": "II D"
+          },
+          {
+            "label": "Light Music · Group Song",
+            "kind": "stage",
+            "stage": 5,
+            "row": "back",
+            "x": 25.6,
+            "w": 9.63,
+            "code": "III D"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "back",
+            "x": 35.23,
+            "w": 26.49
+          },
+          {
+            "label": "Song",
+            "kind": "stage",
+            "stage": 6,
+            "row": "back",
+            "x": 61.72,
+            "w": 8.12,
+            "code": "IV B"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "back",
+            "x": 69.84,
+            "w": 22.56
+          },
+          {
+            "label": "Song",
+            "kind": "stage",
+            "stage": 7,
+            "row": "back",
+            "x": 92.4,
+            "w": 7.6,
+            "code": "V B"
+          },
+          {
+            "label": "Bible Reading · Kathaprasangam",
+            "kind": "stage",
+            "row": "front",
+            "x": 0,
+            "w": 9.89,
+            "code": "II E"
+          },
+          {
+            "label": "Stair",
+            "kind": "stair",
+            "row": "front",
+            "x": 9.89,
+            "w": 7.6
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "front",
+            "x": 17.49,
+            "w": 25.35
+          },
+          {
+            "label": "Rest room",
+            "kind": "rest",
+            "stage": [
+              5,
+              6
+            ],
+            "row": "front",
+            "x": 42.84,
+            "w": 11.28,
+            "code": "IV D"
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "front",
+            "x": 54.12,
+            "w": 30.92
+          },
+          {
+            "label": "Rest room",
+            "kind": "rest",
+            "stage": 7,
+            "row": "front",
+            "x": 85.04,
+            "w": 14.96,
+            "code": "V A"
+          }
+        ]
+      },
+      {
+        "floor": 3,
+        "rooms": [
+          {
+            "label": "Main Stage",
+            "kind": "stage",
+            "stage": 10,
+            "row": "full",
+            "x": 0,
+            "w": 42.84
+          },
+          {
+            "label": "Landing",
+            "kind": "landing",
+            "row": "full",
+            "x": 42.84,
+            "w": 27
+          },
+          {
+            "label": "Quiz",
+            "kind": "stage",
+            "stage": 8,
+            "row": "full",
+            "x": 69.84,
+            "w": 15.2
+          },
+          {
+            "label": "",
+            "kind": "closed",
+            "row": "full",
+            "x": 85.04,
+            "w": 14.96
+          }
+        ]
+      }
+    ],
+    "annexes": [
+      {
+        "id": "hall",
+        "name": "Parish Hall",
+        "directions": "the white hall to the right of the church",
+        "floors": [
+          {
+            "floor": 0,
+            "rooms": [
+              {
+                "label": "Hall",
+                "kind": "stage",
+                "stage": 9,
+                "row": "back",
+                "x": 0,
+                "w": 100
+              },
+              {
+                "label": "Arcade",
+                "kind": "entrance",
+                "row": "front",
+                "x": 0,
+                "w": 100
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

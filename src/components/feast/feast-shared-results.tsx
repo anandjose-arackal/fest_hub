@@ -17,10 +17,16 @@ export interface PublicResultRow {
   houseName: string | null;
   shakha: string;
   meghalaName?: string | null;
+  dioceseName?: string | null;
   grade: "A" | "B" | "C" | null;
   position: number | null;
   totalPoints: number;
   isTeam?: boolean;
+}
+
+function dioceseNameOf(meghala: Record<string, unknown> | undefined): string | null {
+  const d = Array.isArray(meghala?.diocese) ? (meghala?.diocese as Record<string, unknown>[])[0] : (meghala?.diocese as Record<string, unknown> | undefined);
+  return (d?.name as string | undefined) ?? null;
 }
 
 export function sortResults(rows: PublicResultRow[]): PublicResultRow[] {
@@ -36,11 +42,11 @@ export function sortResults(rows: PublicResultRow[]): PublicResultRow[] {
   });
 }
 
-export function ShakhaTag({ shakha, meghalaName, className }: { shakha: string; meghalaName?: string | null; className?: string }) {
+export function ShakhaTag({ shakha, meghalaName, dioceseName, className }: { shakha: string; meghalaName?: string | null; dioceseName?: string | null; className?: string }) {
   return (
     <span className={`inline-flex min-w-0 items-center gap-1 font-extrabold ${className ?? ""}`} style={{ color: "var(--fp-link)" }}>
       <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
-      <span className="truncate">{shakha}{meghalaName ? ` · ${meghalaName}` : ""}</span>
+      <span className="truncate">{[shakha, meghalaName, dioceseName].filter(Boolean).join(" · ")}</span>
     </span>
   );
 }
@@ -67,7 +73,7 @@ export function ResultRow({ row, onGeneratePoster, delay }: { row: PublicResultR
         <span className="fp-ml text-[15.5px] font-extrabold leading-tight" style={{ color: theme.text }}>{row.name}</span>
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] font-semibold" style={{ color: theme.sub }}>
           {row.houseName && !row.isTeam && <span className="fp-ml">{row.houseName}</span>}
-          <ShakhaTag shakha={row.shakha} meghalaName={row.meghalaName} />
+          <ShakhaTag shakha={row.shakha} meghalaName={row.meghalaName} dioceseName={row.dioceseName} />
         </span>
         {row.isTeam && row.houseName && (
           <span className="fp-ml text-[12px] font-semibold" style={{ color: theme.sub }}>
@@ -123,6 +129,7 @@ export function mapResultRow(r: Record<string, unknown>, isTeam: boolean): Publi
       houseName: members.join(", "),
       shakha: (shakha?.name as string) ?? "—",
       meghalaName: (shakhaMeghala?.name as string | undefined) ?? null,
+      dioceseName: dioceseNameOf(shakhaMeghala),
       grade: r.grade as PublicResultRow["grade"],
       position: r.position as number | null,
       totalPoints: r.total_points as number,
@@ -139,6 +146,7 @@ export function mapResultRow(r: Record<string, unknown>, isTeam: boolean): Publi
     houseName: (participant?.house_name as string) ?? null,
     shakha: (shakha?.name as string) ?? "—",
     meghalaName: (shakhaMeghala?.name as string | undefined) ?? null,
+    dioceseName: dioceseNameOf(shakhaMeghala),
     grade: r.grade as PublicResultRow["grade"],
     position: r.position as number | null,
     totalPoints: r.total_points as number,
@@ -252,7 +260,7 @@ export function AwardCard({ rows, accentColor, onPoster, header, footer }: {
                 {w.isTeam && w.houseName && <span className="fp-ml line-clamp-2 text-[12.5px] font-semibold" style={{ color: AWARD.sub }}>{w.houseName}</span>}
                 <span className="mt-[3px] inline-flex min-w-0 items-center gap-1 text-[12.5px] font-extrabold" style={{ color: AWARD.link }}>
                   <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
-                  <span className="truncate">{w.shakha}{w.meghalaName ? ` · ${w.meghalaName}` : ""}</span>
+                  <span className="truncate">{[w.shakha, w.meghalaName, w.dioceseName].filter(Boolean).join(" · ")}</span>
                 </span>
               </span>
               {pos && !w.isTeam && onPoster && (

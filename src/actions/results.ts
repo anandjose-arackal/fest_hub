@@ -489,7 +489,7 @@ const cachedPublishedResults = unstable_cache(
       getSupabaseAdmin()
         .from("competition_results")
         .select(
-          "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(name, meghala:meghalas(name))))"
+          "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name)))))"
         )
         .eq("feast_competition_id", feastCompetitionId)
         .not("published_at", "is", null);
@@ -498,7 +498,7 @@ const cachedPublishedResults = unstable_cache(
     const { data } = await getSupabaseAdmin()
       .from("competition_results")
       .select(
-        "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))"
+        "id, score, grade, position, total_points, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name)))))"
       )
       .eq("feast_competition_id", feastCompetitionId)
       .not("published_at", "is", null);
@@ -507,7 +507,7 @@ const cachedPublishedResults = unstable_cache(
   },
   // Bump when the select's shape changes, so cached rows without the new
   // fields aren't served.
-  ["fp-published-results-v2"],
+  ["fp-published-results-v3"],
   { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.standard },
 );
 
@@ -758,6 +758,7 @@ export interface ParticipantSearchRow {
   houseName: string | null;
   shakha: string;
   meghalaName: string | null;
+  dioceseName: string | null;
   regNo: string;
   category: string | null;
   results: {
@@ -782,7 +783,7 @@ export async function searchParticipantResults(
   const { data, error } = await getSupabaseAdmin()
     .from("participants")
     .select(
-      "id, name, house_name, registration_number, feast:feasts!inner(slug), competition_category:competition_categories(slug), shakha:shakhas(name, meghala:meghalas(name)), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
+      "id, name, house_name, registration_number, feast:feasts!inner(slug), competition_category:competition_categories(slug), shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name))), participant_registrations(id, feast_competition:feast_competitions(id, competition:competitions(name)), competition_results(grade, position, total_points, published_at))"
     )
     .eq("feast.slug", feastSlug)
     .or(`name.ilike.%${term}%,house_name.ilike.%${term}%,registration_number.ilike.%${term}%`)
@@ -812,6 +813,7 @@ export async function searchParticipantResults(
       houseName: p.house_name,
       shakha: shakha?.name ?? "—",
       meghalaName: shakhaMeghala?.name ?? null,
+      dioceseName: (Array.isArray(shakhaMeghala?.diocese) ? shakhaMeghala?.diocese[0] : shakhaMeghala?.diocese)?.name ?? null,
       regNo: p.registration_number ?? "",
       category: cat?.slug ?? null,
       results,
@@ -999,7 +1001,7 @@ async function readGroupResults(feastSlug: string, level: GroupLevel, groupId: s
 // ── /screen big-display data ──────────────────────────────────────────────
 // For a team entry `name` is the team name and `houseName` its members.
 // `photoUrl` is the registration photo (individual entries only).
-export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; photoUrl: string | null; }
+export interface ScreenAchiever { name: string; houseName: string | null; shakha: string; meghalaName: string | null; dioceseName: string | null; photoUrl: string | null; }
 export interface ScreenPosition extends ScreenAchiever { place: 1 | 2 | 3; }
 export interface ScreenCompetitionResult {
   competitionId: string;
@@ -1027,7 +1029,7 @@ const cachedScreenData = unstable_cache(
   // v3: entries carry `gender` and `isTeam`, and team results are included;
   // v4: entries carry `photoUrl`; v5: `competitionNameEn`. The bump keeps
   // older cached shapes out.
-  ["fp-screen-data-v5"],
+  ["fp-screen-data-v6"],
   { tags: [TAG.results, TAG.hierarchy], revalidate: TTL.live },
 );
 
@@ -1048,7 +1050,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     fetchAllIn(ids, (chunk, from, to) =>
       admin
         .from("competition_results")
-        .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(name, meghala:meghalas(name))))")
+        .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, photo_url, shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name)))))")
         .in("feast_competition_id", chunk)
         .not("published_at", "is", null)
         .order("id")
@@ -1059,7 +1061,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     fetchAllIn(ids, (chunk, from, to) =>
       admin
         .from("competition_results")
-        .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name))))")
+        .select("id, feast_competition_id, grade, position, participant_registration:participant_registrations(participant:participants(name, house_name, shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name)))))")
         .in("feast_competition_id", chunk)
         .not("published_at", "is", null)
         .order("id")
@@ -1070,7 +1072,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     fetchAllIn(ids, (chunk, from, to) =>
       admin
         .from("team_results")
-        .select("id, feast_competition_id, grade, position, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name)), team_registration_members(participant:participants(name)))")
+        .select("id, feast_competition_id, grade, position, team_registration:team_registrations(team_name, shakha:shakhas(name, meghala:meghalas(name, diocese:dioceses(name))), team_registration_members(participant:participants(name)))")
         .in("feast_competition_id", chunk)
         .not("published_at", "is", null)
         .order("id")
@@ -1091,7 +1093,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     const shakha = one(participant.shakha);
     rows.push({
       fcId: r.feast_competition_id, grade: r.grade, position: r.position,
-      entry: { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null, photoUrl: participant.photo_url ?? null },
+      entry: { name: participant.name, houseName: participant.house_name, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null, dioceseName: one(one(shakha?.meghala)?.diocese)?.name ?? null, photoUrl: participant.photo_url ?? null },
     });
   }
   for (const r of team.data) {
@@ -1101,7 +1103,7 @@ async function readScreenData(feastSlug: string): Promise<{ data?: ScreenData; e
     const members = (reg.team_registration_members ?? []).map((m) => one(m.participant)?.name).filter(Boolean).join(", ");
     rows.push({
       fcId: r.feast_competition_id, grade: r.grade, position: r.position,
-      entry: { name: reg.team_name, houseName: members || null, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null, photoUrl: null },
+      entry: { name: reg.team_name, houseName: members || null, shakha: shakha?.name ?? "—", meghalaName: one(shakha?.meghala)?.name ?? null, dioceseName: one(one(shakha?.meghala)?.diocese)?.name ?? null, photoUrl: null },
     });
   }
 

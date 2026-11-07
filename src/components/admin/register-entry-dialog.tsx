@@ -20,7 +20,7 @@ import { ParticipantPhotoField } from "@/components/feast/participant-photo-fiel
 import { registerTeam } from "@/actions/team";
 import { CATEGORY_LABELS, fetchCompetitionCategories, formatCompetitionOptionLabel, getCategorySlug } from "@/lib/competition-categories";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
-import { useOrgHierarchy } from "@/hooks/use-feast";
+import { useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
 import type { CompetitionCategory } from "@/types";
 
@@ -148,13 +148,12 @@ export function RegisterEntryDialog({
   }, [open, participants, target.feastId]);
 
   const shakhaById = useMemo(() => new Map(hierarchy.shakhas.map((s) => [s.id, s])), [hierarchy.shakhas]);
-  const meghalaById = useMemo(() => new Map(hierarchy.meghalas.map((m) => [m.id, m])), [hierarchy.meghalas]);
+  const { lineageLine } = useShakhaLineage();
   const showMeghala = hierarchy.hierarchyLevel !== "shakha" && hierarchy.meghalas.length > 0;
   const shakhaLabel = (shakhaId: string | null) => {
     const s = shakhaId ? shakhaById.get(shakhaId) : undefined;
     if (!s) return "—";
-    const m = showMeghala && s.meghala_id ? meghalaById.get(s.meghala_id) : undefined;
-    return m ? `${s.name} · ${m.name}` : s.name;
+    return [s.name, lineageLine(s.id)].filter(Boolean).join(" · ");
   };
 
   const categorySlugOf = (catId: string | null, dob: string | null): string => {

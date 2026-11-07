@@ -58,6 +58,7 @@ interface ResultEntry {
   shakhaName: string;
   meghalaId: string | null;
   meghalaName: string | null;
+  dioceseName: string | null;
   certificateCount: number;
 }
 
@@ -93,7 +94,7 @@ async function loadPublishedItems(admin: Admin, feastIds: string[]): Promise<{ i
   return { items, printedAt: new Map(prints.data.map((p) => [p.feast_competition_id, p.printed_at])), error: undefined };
 }
 
-const SHAKHA_SELECT = "id, name, meghala_id, meghala:meghalas(id, name)";
+const SHAKHA_SELECT = "id, name, meghala_id, meghala:meghalas(id, name, diocese:dioceses(name))";
 
 // Published results that earn a trophy (placedOnly) or any certificate
 // (a 1st–3rd place or an A/B/C grade).
@@ -147,6 +148,7 @@ async function loadResults(admin: Admin, fcIds: string[], placedOnly: boolean): 
       shakhaName: shakha?.name ?? "—",
       meghalaId: shakha?.meghala_id ?? null,
       meghalaName: meghala?.name ?? null,
+      dioceseName: one(meghala?.diocese)?.name ?? null,
       certificateCount: 1,
     });
   }
@@ -169,6 +171,7 @@ async function loadResults(admin: Admin, fcIds: string[], placedOnly: boolean): 
       shakhaName: shakha?.name ?? "—",
       meghalaId: shakha?.meghala_id ?? null,
       meghalaName: meghala?.name ?? null,
+      dioceseName: one(meghala?.diocese)?.name ?? null,
       certificateCount: Math.max(1, memberNames.length),
     });
   }
@@ -404,6 +407,7 @@ export async function getTrophyBoard(feastId: string): Promise<{ data?: { feast:
       shakhaName: r.shakhaName,
       meghalaId: r.meghalaId,
       meghalaName: r.meghalaName,
+      dioceseName: r.dioceseName,
       certificateCount: r.certificateCount,
       trophy,
       certificate: certByKey.get(key) ?? null,

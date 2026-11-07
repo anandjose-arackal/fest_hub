@@ -769,7 +769,7 @@ function LogoBackdrop() {
 // ── Shell — full-bleed page wrapper every screen renders inside ─────────
 export function FeastShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fp-shell relative min-h-dvh w-full overflow-hidden" style={{ background: theme.pageBg, color: theme.text, fontFamily: theme.ui }}>
+    <div className="fp-shell relative min-h-dvh w-full overflow-clip" style={{ background: theme.pageBg, color: theme.text, fontFamily: theme.ui }}>
       <LogoBackdrop />
       <Blobs />
       <FeastSideNav />

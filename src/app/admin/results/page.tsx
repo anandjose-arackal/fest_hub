@@ -16,13 +16,13 @@ import {
 } from "@/lib/result-calculator";
 import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
 import { formatCompetitionOptionLabel, genderDisplayWord } from "@/lib/competition-categories";
-import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
+import { loadOrgSettingsCached as getOrgSettings, useShakhaLineage } from "@/hooks/use-feast";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import { getCertificateTemplate, getCertificateRosterForCompetition } from "@/actions/certificates";
 import { getPrintedItems, markItemsPrinted, setItemPrinted } from "@/actions/handover";
 import { RegisterEntryDialog, type AddedEntry } from "@/components/admin/register-entry-dialog";
 import { downloadCertificatesPdf } from "@/lib/certificate-pdf";
-import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, Meghala, OrgSettings, Shakha, CertificateRosterRow } from "@/types";
+import type { Competition, CompetitionCategory, Feast, FeastCompetition, OrgSettings, Shakha, CertificateRosterRow } from "@/types";
 
 type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
 
@@ -57,7 +57,7 @@ interface ResultColumns {
   meghala: boolean;
   diocese: boolean;
 }
-const DEFAULT_RESULT_COLUMNS: ResultColumns = { point: true, grade: true, shakha: true, meghala: false, diocese: false };
+const DEFAULT_RESULT_COLUMNS: ResultColumns = { point: true, grade: true, shakha: true, meghala: true, diocese: true };
 
 // Same "who gets included" filters as /admin/certificates' print-confirm
 // dialog — a row prints if it matches ANY checked filter.
@@ -133,8 +133,7 @@ export default function ResultsPage() {
   const [feastComps, setFeastComps] = useState<FCRow[]>([]);
   const [compId, setCompId] = useState("");
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
-  const [meghalas, setMeghalas] = useState<Meghala[]>([]);
-  const [dioceses, setDioceses] = useState<Diocese[]>([]);
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [shakhaFilter, setShakhaFilter] = useState("");
   const [resultColumns, setResultColumns] = useState<ResultColumns>(DEFAULT_RESULT_COLUMNS);
   const [statusFilter, setStatusFilter] = useState<"" | "draft" | "published">("");
@@ -176,8 +175,6 @@ export default function ResultsPage() {
       if (data && data.length > 0) setFeastId(data[0].id);
     });
     fetchAll((from, to) => supabase.from("shakhas").select("*").order("name").order("id").range(from, to)).then(({ data }) => setShakhas(data));
-    supabase.from("meghalas").select("*").order("name").then(({ data }) => setMeghalas(data ?? []));
-    supabase.from("dioceses").select("*").order("name").then(({ data }) => setDioceses(data ?? []));
   }, []);
 
   useEffect(() => {
@@ -579,25 +576,17 @@ export default function ResultsPage() {
     }
   }
 
-  // Meghala/Diocese names for a row's shakha — used by the optional PDF
-  // columns. Falls back to "—" when the shakha isn't assigned into that
-  // tier yet, same convention as the results/standings "__unassigned__" group.
   function hierarchyNamesFor(shakhaId: string): { meghalaName: string; dioceseName: string } {
-    const shakha = shakhas.find((s) => s.id === shakhaId);
-    const meghala = shakha?.meghala_id ? meghalas.find((m) => m.id === shakha.meghala_id) : null;
-    const diocese = meghala?.diocese_id ? dioceses.find((d) => d.id === meghala.diocese_id) : null;
-    return { meghalaName: meghala?.name ?? "—", dioceseName: diocese?.name ?? "—" };
+    const l = lineage(shakhaId);
+    return { meghalaName: l.meghala, dioceseName: l.diocese };
   }
 
-  // On-screen "Shakha" column/badge: the meghala name as a second, smaller
-  // line underneath — only once the org has opted into that hierarchy tier,
-  // and only when this particular shakha is actually assigned into one.
-  function meghalaNameFor(shakhaId: string): string | null {
-    if (!org?.hierarchy_level || org.hierarchy_level === "shakha") return null;
-    const shakha = shakhas.find((s) => s.id === shakhaId);
-    const meghala = shakha?.meghala_id ? meghalas.find((m) => m.id === shakha.meghala_id) : null;
-    return meghala?.name ?? null;
-  }
+  // Meghala/Diocese print by default, but only for an org that has that tier.
+  const pdfColumns: ResultColumns = {
+    ...resultColumns,
+    meghala: resultColumns.meghala && lineageCols.some((c) => c.key === "meghala"),
+    diocese: resultColumns.diocese && lineageCols.some((c) => c.key === "diocese"),
+  };
 
   function toggleResultColumn(key: keyof ResultColumns) {
     setResultColumns((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -684,7 +673,7 @@ export default function ResultsPage() {
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(feast?.name ?? "", [
       { title: selectedFc.competition.name, subtitle: pdfCompetitionSubtitle(selectedFc.competition.competition_category?.name, selectedFc.competition.gender), rows: sorted, isGroup },
-    ], orgLine, "continuous", resultColumns);
+    ], orgLine, "continuous", pdfColumns);
     openPrintWindow(html);
   }
 
@@ -762,7 +751,7 @@ export default function ResultsPage() {
     }
     const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
-    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine, layout, resultColumns);
+    const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine, layout, pdfColumns);
     openPrintWindow(html);
   }
 
@@ -951,7 +940,7 @@ export default function ResultsPage() {
             <table className="w-full min-w-[780px] text-sm">
               <thead style={{ background: "linear-gradient(90deg,#ede9fe,#f5f3ff)" }}>
                 <tr className="border-b-2" style={{ borderColor: "#c4b5fd" }}>
-                  {["#", isGroup ? "Team" : "Reg No", ...(isGroup ? [] : ["Chance #"]), `Score / ${maxScore ?? "?"}`, isGroup ? "Members" : "Participant", "Shakha", "Grade", "Position", "Total"].map((h) => (
+                  {["#", isGroup ? "Team" : "Reg No", ...(isGroup ? [] : ["Chance #"]), `Score / ${maxScore ?? "?"}`, isGroup ? "Members" : "Participant", "Shakha", ...lineageCols.map((c) => c.label), "Grade", "Position", "Total"].map((h) => (
                     <th key={h} className="whitespace-nowrap px-3 py-3 text-left text-[11px] font-black uppercase tracking-wider" style={{ color: "#1e1b4b" }}>{h}</th>
                   ))}
                 </tr>
@@ -960,7 +949,7 @@ export default function ResultsPage() {
                 {entries.map((e, i) => {
                   const p = preview.get(e.regId);
                   const val = typedScores[e.regId] ?? (e.savedScore != null ? String(e.savedScore) : "");
-                  const meghalaName = meghalaNameFor(e.shakhaId);
+                  const l = lineage(e.shakhaId);
                   const isEven = i % 2 === 0;
                   return (
                     <tr
@@ -1002,10 +991,10 @@ export default function ResultsPage() {
                           </>
                         )}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3">
-                        {meghalaName && <span className="block text-[13px] font-black" style={{ color: "#4B5563" }}>{meghalaName}</span>}
-                        <span className={`block ${meghalaName ? "text-[11px] font-semibold" : "text-[13px] font-semibold"}`} style={{ color: "#4B5563" }}>{e.shakhaName}</span>
-                      </td>
+                      <td className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#4B5563" }}>{e.shakhaName}</span></td>
+                      {lineageCols.map((c) => (
+                        <td key={c.key} className="whitespace-nowrap px-3 py-3"><span className="text-[13px] font-semibold" style={{ color: "#4B5563" }}>{l[c.key]}</span></td>
+                      ))}
                       <td className="px-3 py-3 text-center"><GradeCell grade={p?.grade ?? null} pts={p?.gradePoints ?? 0} /></td>
                       <td className="px-3 py-3 text-center"><PosCell pos={p?.position ?? null} pts={p?.positionPoints ?? 0} /></td>
                       <td className="px-3 py-3">
@@ -1028,7 +1017,7 @@ export default function ResultsPage() {
             {entries.map((e, i) => {
               const p = preview.get(e.regId);
               const val = typedScores[e.regId] ?? (e.savedScore != null ? String(e.savedScore) : "");
-              const meghalaName = meghalaNameFor(e.shakhaId);
+              const line = lineageLine(e.shakhaId);
               return (
                 <div key={e.regId} className="overflow-hidden rounded-xl" style={{ border: "1.5px solid #ddd6fe", boxShadow: "0 2px 8px rgba(107,70,255,0.08)" }}>
                   <div className="flex items-center gap-2.5 bg-white px-3.5 pb-2.5 pt-3">
@@ -1042,8 +1031,8 @@ export default function ResultsPage() {
                           <span className="rounded-md px-2 py-0.5 font-mono text-[12px] font-black tracking-wide text-white" style={{ background: "#6B46FF" }}>#{e.chanceNo}</span>
                         )}
                         <span className="flex flex-col" style={{ color: "#374151" }}>
-                          {meghalaName && <span className="text-[12px] font-black">{meghalaName}</span>}
-                          <span className={meghalaName ? "text-[10.5px] font-semibold" : "text-[12px] font-bold"}>{e.shakhaName}</span>
+                          <span className="text-[12px] font-bold">{e.shakhaName}</span>
+                          {line && <span className="text-[10.5px] font-semibold">{line}</span>}
                         </span>
                       </div>
                     </div>

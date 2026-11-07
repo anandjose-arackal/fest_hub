@@ -46,6 +46,7 @@ export interface WinnerEntry {
   shakhaName: string;
   meghalaId: string | null;
   meghalaName: string | null;
+  dioceseName: string | null;
   /** Physical certificates this entry gets — 1, or one per team member. */
   certificateCount: number;
   trophy: TrophyStamp | null;

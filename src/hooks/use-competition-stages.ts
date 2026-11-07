@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { CATEGORY_COLORS, CATEGORY_LABELS } from "@/lib/competition-categories";
+import { venueFor } from "@/lib/venue-config";
+import { MAIN, buildingName, stagePlacement, stageRoomText, type VenuePlan } from "@/lib/venue-plan";
 
 export type RunState = "upcoming" | "running" | "completed";
 
@@ -24,6 +26,14 @@ export interface CompetitionStage {
   stageNumber: number;
   title: string;
   venue: string | null;
+  /** "main" or an annex id (e.g. "hall"); null = not on the venue plan. */
+  building: string | null;
+  /** Annex name (e.g. "Parish Hall"); null for the main building. */
+  buildingName: string | null;
+  /** Floor of the main building (0 = ground); null for annexes and unplaced stages. */
+  floor: number | null;
+  /** Where along its building (0 = left end, 100 = right end), from the venue plan. */
+  mapPosition: number | null;
   scheduledTime: string | null;
   competitions: StageCompetition[];
   completedCount: number;
@@ -65,7 +75,24 @@ function buildLabel(compName: string, gender: string | null, categorySlug: strin
   return compName;
 }
 
-function deriveStage(key: string, number: number, title: string, venue: string | null, items: StageCompetition[]): CompetitionStage {
+/** Where a stage sits on the venue map: main-building floor, or another building on the campus. */
+export interface StagePlace {
+  /** "main" or an annex id (e.g. "hall"); null = not on the venue plan. */
+  building: string | null;
+  /** Annex name (e.g. "Parish Hall"); null for the main building. */
+  buildingName: string | null;
+  floor: number | null;
+  mapPosition: number | null;
+}
+
+export function placeOf(plan: VenuePlan | null, stage: number): StagePlace {
+  const p = stagePlacement(plan, stage);
+  if (!plan || !p) return { building: null, buildingName: null, floor: null, mapPosition: null };
+  const annex = p.building !== MAIN;
+  return { building: p.building, buildingName: annex ? buildingName(plan, p.building) : null, floor: annex ? null : p.floor, mapPosition: p.position };
+}
+
+function deriveStage(key: string, number: number, title: string, venue: string | null, place: StagePlace, items: StageCompetition[]): CompetitionStage {
   for (const item of items) item.label = buildLabel(item.compName, item.gender, item.categorySlug);
   const sorted = [...items].sort((a, b) => a.order - b.order);
   const completedCount = sorted.filter((c) => c.status === "completed").length;
@@ -86,6 +113,7 @@ function deriveStage(key: string, number: number, title: string, venue: string |
     stageNumber: number,
     title,
     venue,
+    ...place,
     scheduledTime,
     competitions: sorted,
     completedCount,
@@ -108,6 +136,8 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
   const pollIntervalMs = options?.intervalMs ?? POLL_MS;
   const [stages, setStages] = useState<CompetitionStage[]>([]);
   const [loading, setLoading] = useState(isSupabaseConfigured);
+  // Same object per slug (module-level JSON), so it's a stable dependency.
+  const plan = venueFor(slug);
 
   const load = useCallback(async (silent: boolean) => {
     if (!isSupabaseConfigured) { setLoading(false); return; }
@@ -124,7 +154,7 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
         .order("display_order");
       if (fcErr) { console.error("[useCompetitionStages]", fcErr.message); setLoading(false); return; }
 
-      const groups = new Map<string, { number: number; title: string; venue: string | null; items: StageCompetition[] }>();
+      const groups = new Map<string, { number: number; title: string; venue: string | null; place: StagePlace; items: StageCompetition[] }>();
       for (const fc of fcs ?? []) {
         const stage = Array.isArray(fc.stage) ? fc.stage[0] : fc.stage;
         if (!stage) continue;
@@ -144,19 +174,22 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
           order: fc.display_order ?? 0,
           itemProgressPct: fc.progress_pct,
         };
-        if (!groups.has(stage.id)) groups.set(stage.id, { number: stage.number, title: stage.title, venue: stage.venue, items: [] });
+        if (!groups.has(stage.id)) {
+          // Building, floor, position and rooms come from the venue plan (src/config/venue.json).
+          groups.set(stage.id, { number: stage.number, title: stage.title, venue: stage.venue ?? stageRoomText(plan, stage.number), place: placeOf(plan, stage.number), items: [] });
+        }
         groups.get(stage.id)!.items.push(item);
       }
 
       const built = [...groups.entries()]
-        .map(([key, g]) => deriveStage(key, g.number, g.title, g.venue, g.items))
+        .map(([key, g]) => deriveStage(key, g.number, g.title, g.venue, g.place, g.items))
         .sort((a, b) => a.stageNumber - b.stageNumber);
 
       setStages(built);
     } finally {
       setLoading(false);
     }
-  }, [slug]);
+  }, [slug, plan]);
 
   useEffect(() => {
     load(false);
@@ -183,5 +216,5 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
     }
   }
 
-  return { stages, loading, totalCount, completedCount, overallPct, runningItems, upNext };
+  return { stages, plan, loading, totalCount, completedCount, overallPct, runningItems, upNext };
 }
