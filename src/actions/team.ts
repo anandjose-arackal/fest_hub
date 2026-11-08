@@ -215,8 +215,8 @@ export async function setTeamParticipation(
 export async function setTeamChanceNo(teamRegistrationId: string, chanceNo: number | null): Promise<{ error?: string }> {
   const auth = await requireRole("attendance.write");
   if ("error" in auth) return { error: auth.error };
-  if (chanceNo !== null && (!Number.isInteger(chanceNo) || chanceNo < 1 || chanceNo > 10000)) {
-    return { error: "Chance number must be between 1 and 10000." };
+  if (chanceNo !== null && (!Number.isInteger(chanceNo) || chanceNo < 1 || chanceNo > 99999)) {
+    return { error: "Chance number must be between 1 and 99999." };
   }
   const { error } = await getSupabaseAdmin()
     .from("team_registrations")
