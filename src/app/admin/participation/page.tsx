@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { ClipboardCheck, Check, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { fetchAllIn, groupBy } from "@/lib/fetch-all";
@@ -109,6 +109,8 @@ export default function ParticipationPage() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
   const [savingAll, setSavingAll] = useState(false);
+  const savingAllRef = useRef(false);
+  const [saveAllMsg, setSaveAllMsg] = useState<{ text: string; error?: boolean } | null>(null);
 
   useEffect(() => {
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
@@ -229,8 +231,8 @@ export default function ParticipationPage() {
 
   async function saveChance(row: EntryRow) {
     const next = row.chanceNo;
-    if (next != null && (next < 1 || next > 10000)) {
-      showBanner("Chance number must be between 1 and 10000.", true);
+    if (next != null && (next < 1 || next > 99999)) {
+      showBanner("Chance number must be between 1 and 99999.", true);
       loadEntries();
       return;
     }
@@ -256,22 +258,39 @@ export default function ParticipationPage() {
 
   // Reuses the per-row guarded actions; failed rows stay dirty so they can be retried.
   async function saveAllChances() {
+    if (savingAllRef.current) return; // a second click before the re-render lands
     const rows = dirtyRows;
-    if (rows.some((r) => r.chanceNo != null && (r.chanceNo < 1 || r.chanceNo > 10000))) {
-      showBanner("Chance number must be between 1 and 10000.", true);
+    const showResult = (text: string, error = false) => {
+      setSaveAllMsg({ text, error });
+      showBanner(text, error);
+      setTimeout(() => setSaveAllMsg(null), 4000);
+    };
+    if (rows.some((r) => r.chanceNo != null && (r.chanceNo < 1 || r.chanceNo > 99999))) {
+      showResult("Chance number must be between 1 and 99999.", true);
       return;
     }
+    savingAllRef.current = true;
     setSavingAll(true);
-    const results = await Promise.all(
-      rows.map((r) => (r.isTeam ? setTeamChanceNo(r.regId, r.chanceNo) : setChanceNo(r.regId, r.chanceNo)))
-    );
-    setSavingAll(false);
-    const saved = new Map(rows.filter((_, i) => !results[i].error).map((r) => [r.regId, r.chanceNo]));
-    setEntries((prev) =>
-      prev.map((r) => (saved.has(r.regId) ? { ...r, savedChanceNo: saved.get(r.regId) ?? null } : r)).sort(sortByChance)
-    );
-    const failed = results.find((r) => r.error);
-    showBanner(failed ? `${rows.length - saved.size} not saved: ${failed.error}` : `Saved ${saved.size} chance number${saved.size === 1 ? "" : "s"}.`, !!failed);
+    setSaveAllMsg(null);
+    try {
+      const results = await Promise.all(
+        rows.map((r) => (r.isTeam ? setTeamChanceNo(r.regId, r.chanceNo) : setChanceNo(r.regId, r.chanceNo)))
+      );
+      const saved = new Map(rows.filter((_, i) => !results[i].error).map((r) => [r.regId, r.chanceNo]));
+      setEntries((prev) =>
+        prev.map((r) => (saved.has(r.regId) ? { ...r, savedChanceNo: saved.get(r.regId) ?? null } : r)).sort(sortByChance)
+      );
+      const failed = results.find((r) => r.error);
+      showResult(
+        failed ? `${rows.length - saved.size} not saved: ${failed.error}` : `Saved ${saved.size} chance number${saved.size === 1 ? "" : "s"}.`,
+        !!failed
+      );
+    } catch {
+      showResult("Could not save. Check the connection and try again.", true);
+    } finally {
+      savingAllRef.current = false;
+      setSavingAll(false);
+    }
   }
 
   // Two batched reads (chunked and paged) for every competition in the fest,
@@ -551,16 +570,25 @@ export default function ParticipationPage() {
             })}
           </div>
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
+            {saveAllMsg && (
+              <p
+                role="status"
+                className={`rounded-md px-3 py-2 text-sm font-semibold ${saveAllMsg.error ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}
+              >
+                {saveAllMsg.text}
+              </p>
+            )}
             <button
               type="button"
               onClick={saveAllChances}
               disabled={dirtyRows.length === 0 || savingAll}
-              className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black text-white transition-opacity disabled:opacity-40 sm:w-auto"
+              aria-busy={savingAll}
+              className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
               style={{ background: "#BE185D" }}
             >
               {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={3} />}
-              Save all{dirtyRows.length > 0 ? ` (${dirtyRows.length})` : ""}
+              {savingAll ? `Saving ${dirtyRows.length}…` : `Save all${dirtyRows.length > 0 ? ` (${dirtyRows.length})` : ""}`}
             </button>
           </div>
         </>
