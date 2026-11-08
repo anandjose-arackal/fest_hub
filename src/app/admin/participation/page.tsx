@@ -108,6 +108,7 @@ export default function ParticipationPage() {
   const [banner, setBanner] = useState<{ text: string; error?: boolean } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [justSavedId, setJustSavedId] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   useEffect(() => {
     supabase.from("feasts").select("*").order("start_date").then(({ data }) => {
@@ -249,6 +250,28 @@ export default function ParticipationPage() {
       setJustSavedId((id) => (id === row.regId ? null : id));
       setEntries((prev) => [...prev].sort(sortByChance));
     }, 900);
+  }
+
+  const dirtyRows = entries.filter((r) => r.chanceNo !== r.savedChanceNo);
+
+  // Reuses the per-row guarded actions; failed rows stay dirty so they can be retried.
+  async function saveAllChances() {
+    const rows = dirtyRows;
+    if (rows.some((r) => r.chanceNo != null && (r.chanceNo < 1 || r.chanceNo > 10000))) {
+      showBanner("Chance number must be between 1 and 10000.", true);
+      return;
+    }
+    setSavingAll(true);
+    const results = await Promise.all(
+      rows.map((r) => (r.isTeam ? setTeamChanceNo(r.regId, r.chanceNo) : setChanceNo(r.regId, r.chanceNo)))
+    );
+    setSavingAll(false);
+    const saved = new Map(rows.filter((_, i) => !results[i].error).map((r) => [r.regId, r.chanceNo]));
+    setEntries((prev) =>
+      prev.map((r) => (saved.has(r.regId) ? { ...r, savedChanceNo: saved.get(r.regId) ?? null } : r)).sort(sortByChance)
+    );
+    const failed = results.find((r) => r.error);
+    showBanner(failed ? `${rows.length - saved.size} not saved: ${failed.error}` : `Saved ${saved.size} chance number${saved.size === 1 ? "" : "s"}.`, !!failed);
   }
 
   // Two batched reads (chunked and paged) for every competition in the fest,
@@ -526,6 +549,19 @@ export default function ParticipationPage() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={saveAllChances}
+              disabled={dirtyRows.length === 0 || savingAll}
+              className="flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black text-white transition-opacity disabled:opacity-40 sm:w-auto"
+              style={{ background: "#BE185D" }}
+            >
+              {savingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={3} />}
+              Save all{dirtyRows.length > 0 ? ` (${dirtyRows.length})` : ""}
+            </button>
           </div>
         </>
       )}
