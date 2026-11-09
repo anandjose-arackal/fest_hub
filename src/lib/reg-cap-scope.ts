@@ -1,6 +1,6 @@
 import { getOrgSettings } from "@/lib/org-settings";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchAllIn } from "@/lib/fetch-all";
+import { fetchAll, fetchAllIn } from "@/lib/fetch-all";
 
 // Shared by individual-registration caps (competitions.max_per_shakha, see
 // src/actions/feast.ts) and the team-registration "one team per shakha"
@@ -23,33 +23,31 @@ export async function resolveCapScopeShakhaIds(client: SupabaseClient, shakhaId:
 export interface CapScope { shakhaIds: string[]; name: string }
 
 export async function resolveCapScope(client: SupabaseClient, shakhaId: string): Promise<CapScope> {
-  const [{ hierarchy_level }, { data: shakha }] = await Promise.all([
+  const [{ hierarchy_level }, { data: shakha, error: shakhaError }] = await Promise.all([
     getOrgSettings(),
-    client.from("shakhas").select("name, meghala_id").eq("id", shakhaId).single(),
+    client.from("shakhas")
+      .select("name, meghala_id, meghala:meghalas(name, diocese_id, diocese:dioceses(name))")
+      .eq("id", shakhaId).single(),
   ]);
+  if (shakhaError) throw new Error(shakhaError.message);
   const own: CapScope = { shakhaIds: [shakhaId], name: shakha?.name ?? "" };
   if (hierarchy_level === "shakha" || !shakha?.meghala_id) return own;
+
   const meghalaId: string = shakha.meghala_id;
-
-  const meghalaScope = async (): Promise<CapScope> => {
-    const [{ data: meghala }, { data: siblings }] = await Promise.all([
-      client.from("meghalas").select("name").eq("id", meghalaId).single(),
-      client.from("shakhas").select("id").eq("meghala_id", meghalaId),
-    ]);
-    return { shakhaIds: siblings?.length ? siblings.map((s) => s.id) : [shakhaId], name: meghala?.name ?? own.name };
+  const meghala = Array.isArray(shakha.meghala) ? shakha.meghala[0] : shakha.meghala;
+  const diocese = Array.isArray(meghala?.diocese) ? meghala.diocese[0] : meghala?.diocese;
+  const dioceseId = hierarchy_level === "diocese" ? meghala?.diocese_id : null;
+  const { data: siblings, error } = await fetchAll((from, to) => {
+    const query = dioceseId
+      ? client.from("shakhas").select("id, meghala:meghalas!inner(diocese_id)").eq("meghala.diocese_id", dioceseId)
+      : client.from("shakhas").select("id").eq("meghala_id", meghalaId);
+    return query.order("id").range(from, to);
+  });
+  if (error) throw new Error(error);
+  return {
+    shakhaIds: siblings.length ? siblings.map((s) => s.id) : [shakhaId],
+    name: (dioceseId ? diocese?.name : meghala?.name) ?? own.name,
   };
-  if (hierarchy_level === "meghala") return meghalaScope();
-
-  const { data: meghala } = await client.from("meghalas").select("diocese_id").eq("id", meghalaId).single();
-  if (!meghala?.diocese_id) return meghalaScope();
-
-  const [{ data: diocese }, { data: meghalasInDiocese }] = await Promise.all([
-    client.from("dioceses").select("name").eq("id", meghala.diocese_id).single(),
-    client.from("meghalas").select("id").eq("diocese_id", meghala.diocese_id),
-  ]);
-  const meghalaIds = (meghalasInDiocese ?? []).map((m) => m.id);
-  const { data: siblings } = await client.from("shakhas").select("id").in("meghala_id", meghalaIds);
-  return { shakhaIds: siblings?.length ? siblings.map((s) => s.id) : [shakhaId], name: diocese?.name ?? own.name };
 }
 
 // Each team event's team for one cap scope, with its member count. A scope

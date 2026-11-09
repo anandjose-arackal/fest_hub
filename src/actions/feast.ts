@@ -92,6 +92,14 @@ export type RegOutput = { regNo: string };
 export type RegError = { error: string };
 
 export async function registerParticipant(input: RegInput): Promise<RegOutput | RegError> {
+  const started = performance.now();
+  let phaseStarted = started;
+  const timings: Record<string, number> = {};
+  const recordPhase = (name: string) => {
+    const now = performance.now();
+    timings[name] = Math.round(now - phaseStarted);
+    phaseStarted = now;
+  };
   try {
     if (!isSupabaseConfigured) {
       const fakeNum = 100 + Math.floor(Math.random() * 900);
@@ -101,33 +109,37 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     // The portal only offers registration to a signed-in branch admin
     // (feast-details.tsx's canRegister) — enforce the same here.
     const auth = await requireRole("registration.write");
+    recordPhase("auth");
     if ("error" in auth) return { error: auth.error };
-    const denied = await checkShakhaAccess(auth, [input.shakhaId]);
-    if (denied) return { error: denied };
     const photo = checkPhotoUrl(input.photoUrl);
     if (!photo.ok) return { error: BAD_PHOTO };
     // Server-only writes: the anon key can no longer insert registrations
     // (migration 020), so every write here goes through the service role.
     const admin = getSupabaseAdmin();
 
-    const [feastResult, scopeShakhaIds, categories] = await Promise.all([
+    const [denied, feastResult, scopeShakhaIds, categories] = await Promise.all([
+      checkShakhaAccess(auth, [input.shakhaId]),
       admin.from("feasts").select("id, requires_dob").eq("slug", input.feastSlug).single(),
       input.feastCompetitionIds.length > 0
         ? resolveCapScopeShakhaIds(admin, input.shakhaId)
         : Promise.resolve([]),
       input.dob ? fetchCompetitionCategories() : Promise.resolve([]),
     ]);
+    recordPhase("registrationReads");
+    if (denied) return { error: denied };
     const { data: feast, error: feastErr } = feastResult;
     if (feastErr || !feast) return { error: "Fest not found." };
     if (feast.requires_dob && !input.dob) return { error: "Date of birth is required." };
 
     const teamPlan = await prepareTeamJoin(feast.id, input.shakhaId, input.teamCompetitionIds ?? []);
+    recordPhase("teamPlan");
     if ("error" in teamPlan) return { error: teamPlan.error };
 
     const catSlug = getCategorySlug(input.dob, categories);
     const category = categories.find((c) => c.slug === catSlug);
 
     const { data: nextNum, error: rpcErr } = await admin.rpc("next_reg_number", { p_feast_id: feast.id });
+    recordPhase("registrationNumber");
     if (rpcErr || nextNum == null) return { error: "Could not allocate a registration number." };
 
     const regNo = formatRegNumber(nextNum);
@@ -148,12 +160,15 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
       })
       .select("id")
       .single();
+    recordPhase("participantInsert");
     if (insertErr || !participant) return { error: "Something went wrong. Please try again." };
 
     // All or nothing: if their items or a team can't take them after all,
     // the participant is removed again so the form can be resubmitted.
     const entries = await insertCappedEntries(admin, participant.id, input.shakhaId, input.feastCompetitionIds, scopeShakhaIds);
+    recordPhase("cappedEntries");
     const joined = entries.error ? { error: entries.error } : await teamPlan.join(participant.id);
+    recordPhase("teamJoin");
     if (joined.error) {
       await admin.from("participants").delete().eq("id", participant.id);
       return { error: joined.error };
@@ -163,6 +178,9 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
   } catch (err) {
     console.error("[registerParticipant]", err);
     return { error: "Something went wrong. Please try again." };
+  } finally {
+    const totalMs = Math.round(performance.now() - started);
+    if (totalMs >= 2000) console.warn("[registerParticipant] slow submission (ms)", { totalMs, ...timings });
   }
 }
 

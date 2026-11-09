@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { fetchAllIn } from "@/lib/fetch-all";
 import { isAllowed, type PermissionKey } from "@/lib/permissions";
 import type { UserRole } from "@/types";
 
@@ -59,21 +60,16 @@ export async function checkShakhaAccess(caller: Caller, shakhaIds: (string | nul
   if (!caller.scope) return "Your account isn't assigned to a branch yet.";
   if (shakhaIds.some((id) => !id)) return denied;
 
+  const scope = caller.scope;
+  if (scope.level === "shakha") return shakhaIds.every((id) => id === scope.id) ? null : denied;
+
+  const requested = [...new Set(shakhaIds as string[])];
   const admin = getSupabaseAdmin();
-  let allowed: string[];
-  if (caller.scope.level === "shakha") {
-    allowed = [caller.scope.id];
-  } else {
-    let meghalaIds = [caller.scope.id];
-    if (caller.scope.level === "diocese") {
-      const { data } = await admin.from("meghalas").select("id").eq("diocese_id", caller.scope.id);
-      meghalaIds = (data ?? []).map((m) => m.id);
-    }
-    const { data } = meghalaIds.length
-      ? await admin.from("shakhas").select("id").in("meghala_id", meghalaIds)
-      : { data: [] as { id: string }[] };
-    allowed = (data ?? []).map((s) => s.id);
-  }
-  const set = new Set(allowed);
-  return shakhaIds.every((id) => set.has(id as string)) ? null : denied;
+  const { data, error } = await fetchAllIn(requested, (ids, from, to) => {
+    const query = scope.level === "diocese"
+      ? admin.from("shakhas").select("id, meghala:meghalas!inner(diocese_id)").eq("meghala.diocese_id", scope.id)
+      : admin.from("shakhas").select("id").eq("meghala_id", scope.id);
+    return query.in("id", ids).order("id").range(from, to);
+  });
+  return !error && data.length === requested.length ? null : denied;
 }
