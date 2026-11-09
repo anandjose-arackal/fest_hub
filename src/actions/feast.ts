@@ -48,17 +48,18 @@ const CAP_FULL = "The registration limit has been reached for one of the selecte
 
 // Writes a participant's item entries through insert_capped_registrations
 // (migration 020), which re-checks each item's cap and inserts under one
-// lock — the check above alone let two admins both take an item's last slot.
+// lock — a read-side cap check alone lets two admins take an item's last slot.
 // Returns feast_competition_id → new participant_registrations.id. Entries
 // the participant already has are skipped. No shakha = no cap, as above.
 async function insertCappedEntries(
   admin: SupabaseClient,
   participantId: string,
   shakhaId: string | null,
-  feastCompetitionIds: string[]
+  feastCompetitionIds: string[],
+  scopeShakhaIds?: string[]
 ): Promise<{ ids: Record<string, string>; error?: string }> {
   if (feastCompetitionIds.length === 0) return { ids: {} };
-  const scope = shakhaId ? await resolveCapScopeShakhaIds(admin, shakhaId) : [];
+  const scope = scopeShakhaIds ?? (shakhaId ? await resolveCapScopeShakhaIds(admin, shakhaId) : []);
   const { data, error } = await admin.rpc("insert_capped_registrations", {
     p_participant_id: participantId,
     p_fc_ids: feastCompetitionIds,
@@ -109,27 +110,20 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
     // (migration 020), so every write here goes through the service role.
     const admin = getSupabaseAdmin();
 
-    const { data: feast, error: feastErr } = await admin
-      .from("feasts")
-      .select("id, requires_dob")
-      .eq("slug", input.feastSlug)
-      .single();
+    const [feastResult, scopeShakhaIds, categories] = await Promise.all([
+      admin.from("feasts").select("id, requires_dob").eq("slug", input.feastSlug).single(),
+      input.feastCompetitionIds.length > 0
+        ? resolveCapScopeShakhaIds(admin, input.shakhaId)
+        : Promise.resolve([]),
+      input.dob ? fetchCompetitionCategories() : Promise.resolve([]),
+    ]);
+    const { data: feast, error: feastErr } = feastResult;
     if (feastErr || !feast) return { error: "Fest not found." };
     if (feast.requires_dob && !input.dob) return { error: "Date of birth is required." };
-
-    if (input.feastCompetitionIds.length > 0) {
-      const full = await findFullCompetitionsForShakha(admin, input.feastCompetitionIds, input.shakhaId);
-      if (full.length > 0) {
-        return {
-          error: "The registration limit has been reached for one of the selected competitions. Please deselect it and choose another.",
-        };
-      }
-    }
 
     const teamPlan = await prepareTeamJoin(feast.id, input.shakhaId, input.teamCompetitionIds ?? []);
     if ("error" in teamPlan) return { error: teamPlan.error };
 
-    const categories = await fetchCompetitionCategories();
     const catSlug = getCategorySlug(input.dob, categories);
     const category = categories.find((c) => c.slug === catSlug);
 
@@ -158,7 +152,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
 
     // All or nothing: if their items or a team can't take them after all,
     // the participant is removed again so the form can be resubmitted.
-    const entries = await insertCappedEntries(admin, participant.id, input.shakhaId, input.feastCompetitionIds);
+    const entries = await insertCappedEntries(admin, participant.id, input.shakhaId, input.feastCompetitionIds, scopeShakhaIds);
     const joined = entries.error ? { error: entries.error } : await teamPlan.join(participant.id);
     if (joined.error) {
       await admin.from("participants").delete().eq("id", participant.id);
