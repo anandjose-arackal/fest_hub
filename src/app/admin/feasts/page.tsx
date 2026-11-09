@@ -28,6 +28,9 @@ const emptyForm = {
   registration_deadline: "",
   description: "",
   is_external: false,
+  include_in_overall: true,
+  requires_dob: true,
+  house_label: "House Name",
 };
 
 export default function FeastsPage() {
@@ -80,6 +83,9 @@ export default function FeastsPage() {
       registration_deadline: f.registration_deadline ?? "",
       description: f.description ?? "",
       is_external: f.is_external ?? false,
+      include_in_overall: f.include_in_overall ?? true,
+      requires_dob: f.requires_dob ?? true,
+      house_label: f.house_label ?? "House Name",
     });
     setError(null);
     setModalOpen(true);
@@ -103,6 +109,9 @@ export default function FeastsPage() {
       registration_deadline: form.registration_deadline || null,
       description: form.description || null,
       is_external: form.is_external,
+      include_in_overall: form.include_in_overall,
+      requires_dob: form.requires_dob,
+      house_label: form.house_label.trim() || "House Name",
     };
     const { error } = editId
       ? await supabase.from("feasts").update(payload).eq("id", editId)
@@ -249,6 +258,17 @@ export default function FeastsPage() {
               <Field label="Description">
                 <textarea className="input" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </Field>
+              <Field label="Participant house field label">
+                <input className="input" value={form.house_label} onChange={(e) => setForm({ ...form, house_label: e.target.value })} />
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={form.requires_dob} onChange={(e) => setForm({ ...form, requires_dob: e.target.checked })} />
+                Require date of birth and age category
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={form.include_in_overall} onChange={(e) => setForm({ ...form, include_in_overall: e.target.checked })} />
+                Include this fest in Overall Standings
+              </label>
               <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 <input
                   type="checkbox"

@@ -111,10 +111,11 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
 
     const { data: feast, error: feastErr } = await admin
       .from("feasts")
-      .select("id")
+      .select("id, requires_dob")
       .eq("slug", input.feastSlug)
       .single();
     if (feastErr || !feast) return { error: "Fest not found." };
+    if (feast.requires_dob && !input.dob) return { error: "Date of birth is required." };
 
     if (input.feastCompetitionIds.length > 0) {
       const full = await findFullCompetitionsForShakha(admin, input.feastCompetitionIds, input.shakhaId);
@@ -144,7 +145,7 @@ export async function registerParticipant(input: RegInput): Promise<RegOutput | 
         shakha_id: input.shakhaId,
         name: input.name,
         house_name: input.houseName || null,
-        date_of_birth: input.dob,
+        date_of_birth: input.dob || null,
         gender: input.gender,
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,
@@ -199,6 +200,10 @@ export async function createParticipantAdmin(
   try {
     const admin = getSupabaseAdmin();
 
+    const { data: feast } = await admin.from("feasts").select("requires_dob").eq("id", input.feastId).single();
+    if (!feast) return { error: "Fest not found." };
+    if (feast.requires_dob && !input.dob) return { error: "Date of birth is required." };
+
     if (input.feastCompetitionIds.length > 0) {
       const full = await findFullCompetitionsForShakha(admin, input.feastCompetitionIds, input.shakhaId);
       if (full.length > 0) {
@@ -227,7 +232,7 @@ export async function createParticipantAdmin(
         shakha_id: input.shakhaId,
         name: input.name,
         house_name: input.houseName || null,
-        date_of_birth: input.dob,
+        date_of_birth: input.dob || null,
         gender: input.gender,
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,
@@ -325,6 +330,9 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       .eq("id", input.participantId)
       .single();
     if (!existing) return { error: "Participant not found." };
+    const { data: feast } = await admin.from("feasts").select("requires_dob").eq("id", existing.feast_id).single();
+    if (!feast) return { error: "Fest not found." };
+    if (feast.requires_dob && !input.dob) return { error: "Date of birth is required." };
     const denied = await checkShakhaAccess(auth, [existing.shakha_id]);
     if (denied) return { error: denied };
 
@@ -393,7 +401,7 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       .update({
         name: input.name,
         house_name: input.houseName || null,
-        date_of_birth: input.dob,
+        date_of_birth: input.dob || null,
         gender: input.gender,
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,

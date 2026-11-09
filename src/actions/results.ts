@@ -85,7 +85,7 @@ export async function getFeastStandings(feastId: string): Promise<StandingsRow[]
 export async function getOverallStandings(): Promise<StandingsRow[]> {
   const admin = getSupabaseAdmin();
   const { data } = await fetchAll((from, to) =>
-    admin.from("shakha_feast_standings").select(STANDINGS_SELECT).order("id").range(from, to)
+    admin.from("shakha_feast_standings").select(`${STANDINGS_SELECT}, feast:feasts!inner(include_in_overall)`).eq("feast.include_in_overall", true).order("id").range(from, to)
   );
   const bucket = new Map<string, StandingsRow>();
   for (const raw of data) {
@@ -358,9 +358,10 @@ async function readGenderSplit(scope: { feastId?: string; feastSlug?: string }, 
     fetchAll((from, to) => {
       let q = admin
         .from("shakha_point_ledger")
-        .select("shakha_id, category_slug, total_points, feast_competition:feast_competitions(competition:competitions(gender)), feast:feasts!inner(slug)");
+        .select("shakha_id, category_slug, total_points, feast_competition:feast_competitions(competition:competitions(gender)), feast:feasts!inner(slug,include_in_overall)");
       if (scope.feastId) q = q.eq("feast_id", scope.feastId);
       if (scope.feastSlug) q = q.eq("feast.slug", scope.feastSlug);
+      if (!scope.feastId && !scope.feastSlug) q = q.eq("feast.include_in_overall", true);
       return q.order("id").range(from, to);
     }),
     tier === "shakha" ? Promise.resolve(null) : getShakhaGroupMap(tier),
@@ -646,7 +647,7 @@ export async function publishResults(feastCompetitionId: string): Promise<{ erro
   const category = Array.isArray(competition?.competition_category)
     ? competition?.competition_category[0]
     : competition?.competition_category;
-  const categorySlug = category?.slug ?? "unknown";
+  const categorySlug = category?.slug ?? "common";
 
   const ledgerRows = (external ? [] : draftRows)
     .map((r, i) => {

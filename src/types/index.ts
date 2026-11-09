@@ -74,6 +74,9 @@ export interface Feast {
   registration_edit_deadline: string | null;
   registration_deadline: string | null;
   is_external: boolean;
+  include_in_overall: boolean;
+  requires_dob: boolean;
+  house_label: string;
   created_at: string;
   updated_at: string;
 }
