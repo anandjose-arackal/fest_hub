@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { Check, UserPlus, ArrowRight } from "lucide-react";
 import { GlassPanel, GlowBtn, theme, CATEGORY_LABELS, catStyle } from "./feast-shared";
+import { useFeast } from "@/hooks/use-feast";
 
 interface ConfettiPiece {
   left: number; delay: number; duration: number; color: string; size: number; rotation: number; round: boolean;
@@ -29,6 +30,7 @@ function useConfetti(): ConfettiPiece[] {
 }
 
 export function FeastSuccess({ slug }: { slug: string }) {
+  const { feast } = useFeast(slug);
   const router = useRouter();
   const params = useSearchParams();
   const confetti = useConfetti();
@@ -92,7 +94,7 @@ export function FeastSuccess({ slug }: { slug: string }) {
 
       <GlassPanel strong className="mt-6 p-[18px]">
         {[
-          ["Participant", r.name], ["House Name", r.houseName || "—"], ["Shakha", r.shakha], ["Date of Birth", r.dob],
+          ["Participant", r.name], [feast?.houseLabel ?? "House Name", r.houseName || "—"], ["Shakha", r.shakha], ...(feast?.requiresDob !== false ? [["Date of Birth", r.dob]] : []),
           ["Gender", r.gender ? r.gender.charAt(0).toUpperCase() + r.gender.slice(1) : "—"],
           ["Category", CATEGORY_LABELS[r.category] || "—"],
           ...(r.phone ? [["Phone", r.phone]] : []),

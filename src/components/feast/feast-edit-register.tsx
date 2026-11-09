@@ -106,7 +106,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   const toggleTeam = (c: FeastCompetitionUI) =>
     setPickedTeams((p) => (p.includes(c.id) ? p.filter((x) => x !== c.id) : (teamCounts[c.id] ?? 0) >= (c.maxTeamSize ?? DEFAULT_MAX_TEAM_MEMBERS) ? p : [...p, c.id]));
 
-  const step1ok = !!(form.name.trim() && form.dob && form.gender);
+  const step1ok = !!(form.name.trim() && (form.dob || feast?.requiresDob === false) && form.gender);
   const step2ok = picked.length + pickedTeams.length > 0;
 
   function submit() {
@@ -171,9 +171,9 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
         <div>
           <GlassPanel className="mb-3.5 p-4">
             <TextField label="Full Name" value={form.name} onChange={(v) => set("name", v)} placeholder="e.g. Ann Maria Joy" />
-            <TextField label="House Name" value={form.houseName} onChange={(v) => set("houseName", v)} placeholder="e.g. Thekkedath House" />
-            <DateField label="Date of Birth" value={form.dob} onChange={(v) => { set("dob", v); setPicked([]); }} />
-            <CategoryPill slug={catSlug} />
+            <TextField label={feast.houseLabel} value={form.houseName} onChange={(v) => set("houseName", v)} placeholder={feast.houseLabel} />
+            {feast.requiresDob && <DateField label="Date of Birth" value={form.dob} onChange={(v) => { set("dob", v); setPicked([]); }} />}
+            {feast.requiresDob && <CategoryPill slug={catSlug} />}
             <GenderPicker value={form.gender} onChange={(v) => { set("gender", v); setPicked([]); }} />
             <TextField label="Phone (optional)" value={form.phone} onChange={(v) => set("phone", v.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit mobile" type="tel" />
           </GlassPanel>
@@ -236,7 +236,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
         <div>
           <GlassPanel strong className="mb-3.5 p-[18px]">
             <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider" style={{ color: theme.gold }}>Review changes</div>
-            {[["Name", form.name], ["House Name", form.houseName || "—"], ["Date of Birth", form.dob], ["Gender", form.gender.charAt(0).toUpperCase() + form.gender.slice(1)], ["Category", CATEGORY_LABELS[catSlug] || "—"]].map(([k, v]) => (
+            {[["Name", form.name], [feast.houseLabel, form.houseName || "—"], ...(feast.requiresDob ? [["Date of Birth", form.dob]] : []), ["Gender", form.gender.charAt(0).toUpperCase() + form.gender.slice(1)], ...(feast.requiresDob ? [["Category", CATEGORY_LABELS[catSlug] || "—"]] : [])].map(([k, v]) => (
               <div key={k} className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${theme.hairline}` }}>
                 <span className="text-[12.5px]" style={{ color: theme.faint }}>{k}</span>
                 <span className="text-[13.5px] font-semibold" style={{ color: k === "Category" ? CATEGORY_COLORS[catSlug] || theme.text : theme.text }}>{v}</span>

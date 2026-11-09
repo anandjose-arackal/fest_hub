@@ -327,6 +327,7 @@ export default function ParticipantsPage() {
   const [org, setOrg] = useState<OrgSettings | null>(null);
   const [feasts, setFeasts] = useState<Feast[]>([]);
   const [feastId, setFeastId] = useState("");
+  const selectedFeast = feasts.find((feast) => feast.id === feastId);
   const hierarchy = useOrgHierarchy();
   const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [categories, setCategories] = useState<CompetitionCategory[]>([]);
@@ -618,8 +619,8 @@ export default function ParticipantsPage() {
   }
 
   async function handleSaveParticipant() {
-    if (!form.name.trim() || !form.dob || !form.gender || !form.shakhaId) {
-      setPanelError("Name, DOB, gender and shakha are required.");
+    if (!form.name.trim() || (selectedFeast?.requires_dob !== false && !form.dob) || !form.gender || !form.shakhaId) {
+      setPanelError("Fill in the required participant fields.");
       return;
     }
     if (saving) return;
@@ -1273,11 +1274,11 @@ export default function ParticipantsPage() {
                     <input id="reg-name" className="input" placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                   </div>
                   <div>
-                    <label htmlFor="reg-house" className="reg-field-label">House name</label>
-                    <input id="reg-house" className="input" placeholder="House name" value={form.houseName} onChange={(e) => setForm({ ...form, houseName: e.target.value })} />
+                    <label htmlFor="reg-house" className="reg-field-label">{selectedFeast?.house_label ?? "House Name"}</label>
+                    <input id="reg-house" className="input" placeholder={selectedFeast?.house_label ?? "House Name"} value={form.houseName} onChange={(e) => setForm({ ...form, houseName: e.target.value })} />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
+                    {selectedFeast?.requires_dob !== false && <div>
                       <label htmlFor="reg-dob" className="reg-field-label">Date of birth <span className="text-red-500">*</span></label>
                       <input id="reg-dob" type="date" className="input" value={form.dob} onChange={(e) => handleDobOrGenderChange({ dob: e.target.value })} />
                       {catSlug && (
@@ -1285,7 +1286,7 @@ export default function ParticipantsPage() {
                           {CATEGORY_LABELS[catSlug]}
                         </span>
                       )}
-                    </div>
+                    </div>}
                     <div>
                       <span className="reg-field-label" id="reg-gender-label">Gender <span className="text-red-500">*</span></span>
                       <div role="group" aria-labelledby="reg-gender-label" className="grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1">
@@ -1325,7 +1326,7 @@ export default function ParticipantsPage() {
                 <p className="mb-3 text-[11px] text-neutral-500">
                   {!form.shakhaId
                     ? "Pick a shakha first — limits are counted per " + (hierarchy.hierarchyLevel === "shakha" ? "shakha" : hierarchy.hierarchyLevel) + "."
-                    : !form.dob || !form.gender
+                    : (selectedFeast?.requires_dob !== false && !form.dob) || !form.gender
                       ? "Enter date of birth and gender to see the items this person can enter."
                       : selectedComps.length >= 2
                         ? "Maximum 2 items. Deselect one to change."

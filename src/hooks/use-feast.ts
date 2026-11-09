@@ -123,6 +123,8 @@ export interface FeastUI {
   id: string;
   slug: string;
   name: string;
+  requiresDob: boolean;
+  houseLabel: string;
   type: string;
   year: string;
   icon: string;
@@ -155,7 +157,7 @@ export interface UseFeastsOptions {
 async function loadFeasts(): Promise<FeastUI[]> {
   const { data, error } = await supabase
     .from("feasts")
-    .select("id, slug, name, type, year, status, start_date, end_date, venue, description, registration_edit_deadline, registration_deadline")
+    .select("id, slug, name, type, year, status, start_date, end_date, venue, description, registration_edit_deadline, registration_deadline, requires_dob, house_label")
     .neq("status", "draft")
     .order("start_date");
   if (error) throw new Error(error.message);
@@ -180,6 +182,8 @@ async function loadFeasts(): Promise<FeastUI[]> {
         id: row.id,
         slug: row.slug,
         name: row.name,
+        requiresDob: row.requires_dob,
+        houseLabel: row.house_label,
         type: row.type,
         year: row.year,
         icon: cfg.icon,
@@ -264,6 +268,8 @@ async function loadFeast(slug: string): Promise<FeastUI | null> {
     id: feastRow.id,
     slug: feastRow.slug,
     name: feastRow.name,
+    requiresDob: feastRow.requires_dob,
+    houseLabel: feastRow.house_label,
     type: feastRow.type,
     year: feastRow.year,
     icon: cfg.icon,

@@ -1,6 +1,6 @@
 ---
 name: feast-data-import
-description: Import feast registrations and results from a PDF or Excel/CSV sheet into Feast Hub by generating a reviewed, re-runnable SQL script that matches the schema. Use when the user shares a registration list or result sheet (age category, boy/girl, competition, shakha, name, house name, optionally grade/position) and names the feast it belongs to. Nothing is generated or written until the user replies "approved".
+description: Import feast registrations and results from a PDF or Excel/CSV sheet into Feast Hub by generating a reviewed, re-runnable SQL script that matches the schema. Use when the user shares a registration list or result sheet (age category, boy/girl, competition, shakha, name, house name, optionally grade/position), or a score sheet keyed by chance number (chance no + marks/sum) for an existing competition, and names the feast it belongs to. Nothing is generated or written until the user replies "approved".
 ---
 
 # Feast registration & result import
@@ -10,8 +10,9 @@ creates participants, registrations, teams and **draft** scores for a given
 feast. Two helper scripts do the deterministic parts. You do the reading and
 mapping.
 
-- `scripts/fetch-reference.mjs`: read-only dump of the feast's competitions, shakhas, age categories and existing participants.
+- `scripts/fetch-reference.mjs`: read-only dump of the feast's competitions, shakhas, age categories, existing participants, and every registration's chance number.
 - `scripts/build-import-sql.mjs`: dedup, duplicate flagging, score assignment, report, and (only with `--approved`) the SQL.
+- `scripts/build-score-import.mjs`: score-only mode — matches a sheet's chance numbers to registrations and writes draft scores (see [Score-only import](#score-only-import-chance-numbers)).
 
 ## Approval gate (non-negotiable)
 
@@ -162,6 +163,100 @@ Then tell the user:
 - to run it in the Supabase SQL editor for the same project the reference came from. It's one transaction, guarded, and safe to re-run.
 - that scores land as **drafts**, so they should open `/admin/results` and **Publish** each competition. That computes grade, position, points, the shakha ledger and standings through the app's own logic (`publishResults` / `publishTeamResults`).
 
+## Score-only import (chance numbers)
+
+Use this when the sheet has **chance numbers and marks** for a competition that
+is already registered — not names/shakhas. It does not create participants,
+registrations or teams: it matches each chance number to an existing
+`participant_registrations` (or `team_registrations`) row of that competition
+and writes the mark as a **draft** `competition_results` / `team_results` score.
+
+Prerequisite: chance numbers must already be assigned on `/admin/participation`.
+Rows without one can't be matched.
+
+### 1. Fetch reference (same as above)
+
+```bash
+node --env-file=.env.local .claude/skills/feast-data-import/scripts/fetch-reference.mjs <feast> <scratchpad>/reference.json
+```
+
+The dump now includes `registrations[]` and `team_registrations[]` with
+`chance_no`, plus existing `results[]` / `team_results[]`.
+
+### 2. Read the sheet
+
+One CSV per competition is typical. Identify which competition it belongs to —
+the 29 literature items are variants of a few names split by **gender + age
+category**, so name alone is often ambiguous. If the file name doesn't say,
+ask; never guess.
+
+Columns are usually `chance_no | mark1 | mark2 | mark3 | sum`. Import the
+**sum** as `score`. If the sum isn't in the file, add the marks yourself.
+`score_max` is the maximum possible sum (e.g. `30` for three marks out of 10,
+or `100` if the sheet is already out of 100).
+
+### 3. Write the normalized input
+
+```json
+{
+  "feast": "literature-fest",
+  "source": "poetry-junior-boys.csv",
+  "competition": {
+    "name": "കവിത",
+    "name_en": "Poetry writing",
+    "gender": "boy",
+    "category": "junior"
+  },
+  "score_max": 30,
+  "entries": [
+    { "chance_no": 101, "score": 27, "row": "csv:2" }
+  ]
+}
+```
+
+- `competition` may be a plain string when the name is unambiguous, with
+  `gender` / `category` at the top level.
+- `entries[].score` is the **sum**; `entries[].row` is a pointer back to the
+  sheet (defaults to `csv:<line>`).
+- `"set_max_score": false` keeps an existing `feast_competitions.max_score`
+  and scales the sheet's marks to it (`score × max_score / score_max`)
+  instead of setting `max_score = score_max` when it is unset. Default is to
+  set it.
+
+### 4. Build the review (no SQL yet)
+
+```bash
+node .claude/skills/feast-data-import/scripts/build-score-import.mjs \
+  --input <scratchpad>/normalized-score.json \
+  --ref <scratchpad>/reference.json \
+  --out supabase/imports/<feast-slug>-<yyyymmdd>-<competition>-scores.sql
+```
+
+This writes only `<…>.report.md`. Exit code 2 means blocking errors — an
+unmatched or duplicated chance number, an ambiguous competition, a score
+outside `0..score_max`, or results already published. Fix the input (or ask
+the user) and re-run.
+
+### 5. Review with the user
+
+Summarise: matched / unmatched counts, the competition resolved, the
+`max_score` plan (set to `score_max` vs scaled), the preview grades and
+positions, and every blocking error. Ask the user to reply **approved**.
+
+### 6. Generate the SQL (only after "approved")
+
+Re-run step 4 with `--approved`. Then tell the user:
+
+- the SQL path and report path;
+- to run it in the Supabase SQL editor for the same project the reference
+  came from — one transaction, guarded, safe to re-run;
+- that scores land as **drafts**; open `/admin/results` and **Publish** the
+  competition so the app computes grade, position, points and standings.
+
+The SQL refuses to run if a chance number is missing/duplicated, if the item
+belongs to another feast, or if it is already published. It upserts only while
+the result is still a draft.
+
 ## Rules the script applies
 
 **Same person.** Rows match when name, house name, age category and shakha
@@ -221,3 +316,5 @@ refused: unpublish first.
 If the schema changes (`supabase/migrations/001_schema.sql`) or scoring changes
 (`src/lib/result-calculator.ts`, `src/actions/results.ts`, `src/actions/team-results.ts`),
 update `build-import-sql.mjs`'s SQL template and `BUCKET` table to match.
+`build-score-import.mjs`'s SQL template and grade preview mirror the same
+tables and `calcGrade()` thresholds — update them together.

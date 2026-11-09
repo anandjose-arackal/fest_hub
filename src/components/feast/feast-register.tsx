@@ -220,7 +220,7 @@ export function FeastRegister({ slug }: { slug: string }) {
     return () => { cancelled = true; };
   }, [adminShakha, feast]);
 
-  const step1ok = !!(form.name.trim() && form.dob && form.gender && adminShakha);
+  const step1ok = !!(form.name.trim() && (form.dob || feast?.requiresDob === false) && form.gender && adminShakha);
 
   function submit() {
     if (!feast) return;
@@ -290,7 +290,7 @@ export function FeastRegister({ slug }: { slug: string }) {
         ) : (
           <p className="text-[12px]" style={{ color: theme.faint }}>Fill in the form to see your registration summary here.</p>
         )}
-        {form.houseName && <SummaryRow label="House Name" value={form.houseName} />}
+        {form.houseName && <SummaryRow label={feast.houseLabel} value={form.houseName} />}
         {form.dob && <SummaryRow label="Date of Birth" value={form.dob} />}
         {catSlug && <SummaryRow label="Category" value={CATEGORY_LABELS[catSlug] ?? catSlug} color={CATEGORY_COLORS[catSlug]} />}
         {form.gender && <SummaryRow label="Gender" value={form.gender.charAt(0).toUpperCase() + form.gender.slice(1)} />}
@@ -330,9 +330,9 @@ export function FeastRegister({ slug }: { slug: string }) {
         <div>
           <GlassPanel className="mb-3.5 p-4">
             <TextField label="Full Name" value={form.name} onChange={(v) => set("name", v)} placeholder="e.g. Ann Maria Joy" icon={User} />
-            <TextField label="House Name" value={form.houseName} onChange={(v) => set("houseName", v)} placeholder="e.g. Thekkedath House" />
-            <DateField label="Date of Birth" value={form.dob} onChange={(v) => set("dob", v)} />
-            <CategoryPill slug={catSlug} />
+            <TextField label={feast.houseLabel} value={form.houseName} onChange={(v) => set("houseName", v)} placeholder={feast.houseLabel} />
+            {feast.requiresDob && <DateField label="Date of Birth" value={form.dob} onChange={(v) => set("dob", v)} />}
+            {feast.requiresDob && <CategoryPill slug={catSlug} />}
             <GenderPicker value={form.gender} onChange={(v) => set("gender", v)} />
             <TextField label="Phone (optional)" value={form.phone} onChange={(v) => set("phone", v.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit mobile" type="tel" icon={Phone} />
             {adminScope?.level === "shakha" && adminShakha && (
@@ -354,7 +354,7 @@ export function FeastRegister({ slug }: { slug: string }) {
           <GlowBtn variant="primary" size="lg" className="w-full" disabled={!step1ok} onClick={() => setStep(1)}>Continue</GlowBtn>
           {!step1ok && (
             <p className="mt-2.5 text-center text-[11.5px]" style={{ color: theme.faint }}>
-              {!adminShakha && adminScope?.level !== "shakha" ? "Select your Shakha, and fill in name, date of birth and gender" : "Name, date of birth and gender are required"}
+              {!adminShakha && adminScope?.level !== "shakha" ? "Select your Shakha, then fill in the required fields" : "Fill in the required fields"}
             </p>
           )}
         </div>
@@ -450,7 +450,7 @@ export function FeastRegister({ slug }: { slug: string }) {
               )}
             </div>
             {[
-              ["Name", form.name], ["House Name", form.houseName || "—"], ["Date of Birth", form.dob],
+              ["Name", form.name], [feast.houseLabel, form.houseName || "—"], ...(feast.requiresDob ? [["Date of Birth", form.dob]] : []),
               ["Gender", form.gender.charAt(0).toUpperCase() + form.gender.slice(1)],
               ["Category", CATEGORY_LABELS[catSlug] || "—"], ["Shakha", adminShakha?.name ?? "—"],
               ...lineageCols.map((c) => [c.label, lineage(adminShakha?.id)[c.key]]),
