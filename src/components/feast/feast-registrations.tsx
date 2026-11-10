@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Loader2, UserX, Lock, Pencil, Download } from "lucide-react";
+import { ChevronDown, Loader2, UserX, UserPlus, Lock, Pencil, Download } from "lucide-react";
 import { useFeast, useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
@@ -104,8 +104,8 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
   );
 }
 
-function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, onEditTeam, editLocked, lineageLine }: {
-  compName: string; gender: string | null | undefined; catSlug: string | null | undefined; teams: TeamRow[]; showShakha: boolean; idx: number; onEditTeam: (id: string) => void; editLocked: boolean;
+function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, onEditTeam, onAddTeam, editLocked, lineageLine }: {
+  compName: string; gender: string | null | undefined; catSlug: string | null | undefined; teams: TeamRow[]; showShakha: boolean; idx: number; onEditTeam: (id: string) => void; /** No team yet: build one from this admin's participants. */ onAddTeam: () => void; editLocked: boolean;
   lineageLine: (shakhaId: string | null) => string;
 }) {
   const [open, setOpen] = useState(false);
@@ -133,7 +133,15 @@ function TeamAccordionRow({ compName, gender, catSlug, teams, showShakha, idx, o
       {open && (
         <div style={{ borderTop: `1px solid ${theme.hairline}` }}>
           {teams.length === 0 ? (
-            <div className="flex flex-col items-center gap-1.5 py-5"><UserX className="h-[22px] w-[22px]" style={{ color: theme.faint }} /><p className="text-[12.5px]" style={{ color: theme.faint }}>{showShakha ? "No teams registered from your shakhas" : "No team registered from your shakha"}</p></div>
+            <div className="flex flex-col items-center gap-1.5 py-5">
+              <UserX className="h-[22px] w-[22px]" style={{ color: theme.faint }} />
+              <p className="text-[12.5px]" style={{ color: theme.faint }}>{showShakha ? "No teams registered from your shakhas" : "No team registered from your shakha"}</p>
+              {!editLocked && (
+                <button onClick={onAddTeam} className="mt-1.5 flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white" style={{ background: `linear-gradient(135deg, ${a}, ${b})` }}>
+                  <UserPlus className="h-4 w-4" aria-hidden="true" /> Add participants
+                </button>
+              )}
+            </div>
           ) : (
             teams.map((team, ti) => (
               <div key={team.id} className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: ti < teams.length - 1 ? `1px solid ${theme.hairline}` : undefined, background: ti % 2 === 1 ? "rgba(var(--fp-primary-rgb),0.05)" : undefined }}>
@@ -399,7 +407,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
 
       {feast.competitions.map((c, i) =>
         c.cat === "Team" ? (
-          <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} teams={teamsByComp[c.id] ?? []} showShakha={multiShakha} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} editLocked={editLocked} lineageLine={lineageLine} />
+          <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} teams={teamsByComp[c.id] ?? []} showShakha={multiShakha} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} onAddTeam={() => router.push(`/feast/${slug}/registrations/new-team/${c.id}`)} editLocked={editLocked} lineageLine={lineageLine} />
         ) : (
           <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} lineageLine={lineageLine} />
         )

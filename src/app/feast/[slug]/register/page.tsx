@@ -5,7 +5,10 @@ export default async function RegisterPage({ params }: { params: Promise<{ slug:
   const { slug } = await params;
   return (
     <FeastShell>
-      <FeastRegister slug={slug} />
+      {/* Centred column: forms read badly stretched across a laptop screen. */}
+      <div className="mx-auto w-full max-w-[1000px]">
+        <FeastRegister slug={slug} />
+      </div>
     </FeastShell>
   );
 }

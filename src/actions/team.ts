@@ -61,14 +61,19 @@ export async function registerTeam(input: RegisterTeamInput): Promise<{ error?: 
     .in("shakha_id", scopeShakhaIds);
   if (existingTeams?.length) return { error: "A team has already been registered for this competition." };
 
+  // A team speaks for its whole cap scope (as in updateTeam): at
+  // meghala/diocese level its members may come from any shakha in it.
   const { data: members } = await admin
     .from("participants")
     .select("id, shakha_id, feast_id")
     .in("id", participantIds);
-  const allBelong = (members ?? []).every((m) => m.shakha_id === input.shakhaId && m.feast_id === input.feastId);
+  const inScope = new Set(scopeShakhaIds);
+  const allBelong = (members ?? []).every((m) => inScope.has(m.shakha_id) && m.feast_id === input.feastId);
   if (!allBelong || (members?.length ?? 0) !== participantIds.length) {
     return { error: "All members must belong to your Shakha." };
   }
+  const memberDenied = await checkShakhaAccess(auth, [...new Set((members ?? []).map((m) => m.shakha_id as string))]);
+  if (memberDenied) return { error: memberDenied };
 
   const { data: clashes } = await admin
     .from("team_registration_members")

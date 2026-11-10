@@ -5,7 +5,9 @@ export default async function EditRegistrationPage({ params }: { params: Promise
   const { slug, participantId } = await params;
   return (
     <FeastShell>
-      <FeastEditRegister slug={slug} participantId={participantId} />
+      <div className="mx-auto w-full max-w-[640px]">
+        <FeastEditRegister slug={slug} participantId={participantId} />
+      </div>
     </FeastShell>
   );
 }
