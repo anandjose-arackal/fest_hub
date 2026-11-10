@@ -24,13 +24,16 @@ export interface HelpGuide {
   steps: HelpStep[];
 }
 
-export const HELP_HEADER: Record<Lang, { title: string; subtitle: string; index: string; askAngel: string; askAngelHint: string }> = {
+export const HELP_HEADER: Record<Lang, { title: string; subtitle: string; index: string; askAngel: string; askAngelHint: string; contactTitle: string; contactText: string; contactCta: string }> = {
   en: {
     title: "Help",
     subtitle: "Step-by-step guides for registering, results and sharing.",
     index: "Guides",
     askAngel: "Ask Angel",
     askAngelHint: "Can't find it? Ask Angel about a participant, shakha, meghala or competition.",
+    contactTitle: "About this portal",
+    contactText: "Built by Anand Jose, Cherupushpa Mission League, Kalpetta Meghala. For any query, call me or visit my website.",
+    contactCta: "anandjose.com",
   },
   ml: {
     title: "സഹായം",
@@ -38,6 +41,9 @@ export const HELP_HEADER: Record<Lang, { title: string; subtitle: string; index:
     index: "ഗൈഡുകൾ",
     askAngel: "Angel-നോട് ചോദിക്കൂ",
     askAngelHint: "കണ്ടെത്താനായില്ലേ? ഒരു പങ്കാളി, ശാഖ, മേഖല അല്ലെങ്കിൽ മത്സരത്തെക്കുറിച്ച് Angel-നോട് ചോദിക്കൂ.",
+    contactTitle: "ഈ പോർട്ടലിനെക്കുറിച്ച്",
+    contactText: "നിർമ്മിച്ചത് ആനന്ദ് ജോസ്, ചെറുപുഷ്പ മിഷൻ ലീഗ്, കൽപ്പറ്റ മേഖല. എന്ത് സംശയത്തിനും വിളിക്കുകയോ വെബ്സൈറ്റ് സന്ദർശിക്കുകയോ ചെയ്യാം.",
+    contactCta: "anandjose.com",
   },
 };
 

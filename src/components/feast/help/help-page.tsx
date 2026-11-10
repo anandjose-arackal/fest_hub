@@ -5,6 +5,8 @@ import { HELP_GUIDES, HELP_HEADER, type Lang } from "./help-content";
 import { HelpScene } from "./help-illustrations";
 import { AngelMark } from "../angel/angel-mark";
 import { OPEN_ANGEL_EVENT } from "../angel/angel-events";
+import { ExternalLink, Globe, Phone } from "lucide-react";
+import { DEVELOPER_PHONE, DEVELOPER_URL } from "../feast-shared";
 
 // /help — the Fest Portal's guides. One section per task, each step with a
 // drawn screen (help-illustrations.tsx) showing what to tap. Sections are
@@ -55,6 +57,35 @@ export function HelpPage() {
           ))}
         </div>
       </header>
+
+      {/* Developer contact */}
+      <section aria-labelledby="help-contact-title" className="mt-5 flex flex-wrap items-center gap-4 rounded-[24px] p-4 sm:p-5" style={{ background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" }}>
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--fp-surface-3)", color: "var(--fp-primary-light)" }}>
+          <Globe className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1" style={{ minWidth: "200px" }}>
+          <h2 id="help-contact-title" className="fp-ml m-0 text-[16px] font-extrabold">{header.contactTitle}</h2>
+          <p className="fp-ml m-0 mt-1 text-[13.5px] font-semibold leading-relaxed" style={{ color: "var(--fp-sub)" }}>{header.contactText}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+        <a
+          href={DEVELOPER_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[14px] font-extrabold"
+          style={{ background: "var(--fp-btn)", color: "var(--fp-btn-fg)" }}
+        >
+          {header.contactCta} <ExternalLink className="h-4 w-4" aria-hidden="true" />
+        </a>
+        <a
+          href={`tel:${DEVELOPER_PHONE}`}
+          className="inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[14px] font-extrabold"
+          style={{ background: "var(--fp-surface-3)", color: "var(--fp-ink)", border: "1px solid var(--fp-line-2)" }}
+        >
+          <Phone className="h-4 w-4" aria-hidden="true" /> 90484 77943
+        </a>
+        </div>
+      </section>
 
       <div className="mt-6 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start lg:gap-8">
         {/* Index — chips on phones, a sticky list beside the guides on desktop */}
@@ -129,6 +160,7 @@ export function HelpPage() {
               {header.askAngel}
             </button>
           </section>
+
         </div>
       </div>
 

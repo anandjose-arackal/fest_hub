@@ -557,9 +557,13 @@ export function FeastTabs({
 // (was a full-width "Signed in as … Logout" panel eating prime space on the
 // home page; now one persistent, compact affordance across every portal
 // page since FeastShell renders it once for the whole Feast Portal).
+/** The developer's site: the "About" link here and the contact card on /help. */
+export const DEVELOPER_URL = "https://anandjose.com/";
+/** Developer's phone (shown on /help as a call button). */
+export const DEVELOPER_PHONE = "+919048477943";
 const CREDIT_LINKS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "https://github.com/anandjose-arackal/fest_hub", label: "GitHub Repo", icon: Code2 },
-  { href: "https://anandjose-arackal.github.io/", label: "Developer", icon: Globe },
+  { href: DEVELOPER_URL, label: "About the developer · Anand Jose", icon: Globe },
 ];
 
 // ── HelpButton — same fixed top-right corner ProfileMenu occupies, but only
