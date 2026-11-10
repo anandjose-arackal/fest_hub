@@ -22,6 +22,8 @@ export interface PublicResultRow {
   position: number | null;
   totalPoints: number;
   isTeam?: boolean;
+  // Registration photo (individual entries only) — prefills the share poster.
+  photoUrl?: string | null;
 }
 
 function dioceseNameOf(meghala: Record<string, unknown> | undefined): string | null {
@@ -55,7 +57,8 @@ export function ResultRow({ row, onGeneratePoster, delay }: { row: PublicResultR
   const pos = isMedalPos(row.position) ? row.position : null;
   // Team results don't carry a single winner photo/name to build a personal
   // poster from — the camera button only ever shows for individual entries.
-  const showPosterButton = pos && !row.isTeam && onGeneratePoster;
+  // Grade-only winners (no 1st/2nd/3rd) get a poster too.
+  const showPosterButton = (pos || row.grade) && !row.isTeam && onGeneratePoster;
 
   return (
     <li
@@ -150,11 +153,20 @@ export function mapResultRow(r: Record<string, unknown>, isTeam: boolean): Publi
     grade: r.grade as PublicResultRow["grade"],
     position: r.position as number | null,
     totalPoints: r.total_points as number,
+    photoUrl: (participant?.photo_url as string | null | undefined) ?? null,
   };
 }
 
 export function genderLabel(g: string | null): "Girls" | "Boys" | null {
   return g === "girl" ? "Girls" : g === "boy" ? "Boys" : null;
+}
+
+// Poster wording: adult categories read Men/Women rather than Boys/Girls.
+const ADULT_CATEGORIES = new Set(["super_senior", "elder"]);
+export function posterCategoryLabel(comp: { cat: string; competitionCategorySlug: string | null; gender: string | null }): string {
+  const adult = ADULT_CATEGORIES.has(comp.competitionCategorySlug ?? "");
+  const g = comp.gender === "girl" ? (adult ? "Women" : "Girls") : comp.gender === "boy" ? (adult ? "Men" : "Boys") : null;
+  return [CATEGORY_LABELS[comp.competitionCategorySlug ?? ""] ?? (comp.cat === "Team" ? "Team" : null), g].filter(Boolean).join(" · ");
 }
 
 export function competitionCategoryLabel(comp: { cat: string; competitionCategorySlug: string | null; gender: string | null }): string {
@@ -314,7 +326,7 @@ export function CompetitionResults({ rows, accentColor, onPoster }: {
       <div className={placed.length > 0 && graded.length > 0 ? "@2xl:grid @2xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] @2xl:items-start @2xl:gap-4" : undefined}>
         {placed.length > 0 && <AwardCard rows={placed} accentColor={accentColor} onPoster={onPoster} />}
         <div className={placed.length > 0 ? "mt-1 @2xl:mt-0" : undefined}>
-          <ResultTable title="Graded entries" rows={graded} color={theme.sub} />
+          <ResultTable title="Graded entries" rows={graded} color={theme.sub} onGeneratePoster={onPoster} />
         </div>
       </div>
     </div>

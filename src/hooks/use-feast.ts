@@ -157,7 +157,8 @@ export interface UseFeastsOptions {
 async function loadFeasts(): Promise<FeastUI[]> {
   const { data, error } = await supabase
     .from("feasts")
-    .select("id, slug, name, type, year, status, start_date, end_date, venue, description, registration_edit_deadline, registration_deadline, requires_dob, house_label")
+    // "*" so a database without migration 024 (requires_dob, house_label) still lists its fests.
+    .select("*")
     .neq("status", "draft")
     .order("start_date");
   if (error) throw new Error(error.message);
@@ -182,8 +183,8 @@ async function loadFeasts(): Promise<FeastUI[]> {
         id: row.id,
         slug: row.slug,
         name: row.name,
-        requiresDob: row.requires_dob,
-        houseLabel: row.house_label,
+        requiresDob: row.requires_dob ?? true,
+        houseLabel: row.house_label ?? "House Name",
         type: row.type,
         year: row.year,
         icon: cfg.icon,
@@ -268,8 +269,8 @@ async function loadFeast(slug: string): Promise<FeastUI | null> {
     id: feastRow.id,
     slug: feastRow.slug,
     name: feastRow.name,
-    requiresDob: feastRow.requires_dob,
-    houseLabel: feastRow.house_label,
+    requiresDob: feastRow.requires_dob ?? true,
+    houseLabel: feastRow.house_label ?? "House Name",
     type: feastRow.type,
     year: feastRow.year,
     icon: cfg.icon,

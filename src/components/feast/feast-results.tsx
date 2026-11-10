@@ -7,8 +7,8 @@ import { Loader2, ChevronRight, Trophy, Search, BookOpen, Clock, Users } from "l
 import { showsResults, useFeast, useFeasts, type FeastCompetitionUI } from "@/hooks/use-feast";
 import { FeastTopBar, catStyle, mix, theme } from "./feast-shared";
 import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
-import { CompetitionResults, competitionCategoryLabel, genderLabel, loadCompetitionResults, type PublicResultRow } from "./feast-shared-results";
-import { Chip, Eyebrow, Medal } from "./feast-ui";
+import { CompetitionResults, competitionCategoryLabel, genderLabel, loadCompetitionResults, posterCategoryLabel, type PublicResultRow } from "./feast-shared-results";
+import { Chip, Eyebrow, Medal, isMedalPos } from "./feast-ui";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 
 const CAT_TABS = [
@@ -153,14 +153,15 @@ function FeastContent({ slug, festChips, onGeneratePoster }: { slug: string; fes
 
   const handlePoster = (comp: FeastCompetitionUI) => (row: PublicResultRow) =>
     onGeneratePoster({
-      rank: row.position as 1 | 2 | 3,
+      rank: isMedalPos(row.position) ? row.position : null,
+      photoUrl: row.photoUrl ?? null,
       grade: row.grade,
       winnerName: row.name,
       houseName: row.houseName,
       shakhaName: row.shakha,
       meghalaName: row.meghalaName ?? null,
       competitionName: comp.name,
-      categoryLabel: competitionCategoryLabel(comp),
+      categoryLabel: posterCategoryLabel(comp),
       feastName: feast ? feastPosterHeading(feast) : "",
       feastSubtitle: feast ? feastPosterSubtitle(feast) : null,
     });

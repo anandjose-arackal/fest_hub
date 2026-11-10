@@ -9,8 +9,8 @@ import { Loader2 } from "lucide-react";
 import { getGroupResults, type GroupLevel, type GroupResultCompetition, type GroupResultEntry } from "@/actions/results";
 import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { CATEGORY_LABELS, catStyle, mix, theme } from "./feast-shared";
-import { ResultRow, competitionCategoryLabel, type PublicResultRow } from "./feast-shared-results";
-import { GradeBadge, MedalCounts } from "./feast-ui";
+import { ResultRow, competitionCategoryLabel, posterCategoryLabel, type PublicResultRow } from "./feast-shared-results";
+import { GradeBadge, MedalCounts, isMedalPos } from "./feast-ui";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 
 export const GROUP_LEVEL_LABEL: Record<GroupLevel, { one: string; many: string }> = {
@@ -157,14 +157,15 @@ export function GroupResults({ feast, level, group }: {
                           delay={Math.min(i, 6) * 0.04}
                           onGeneratePoster={(row) =>
                             setPoster({
-                              rank: row.position as 1 | 2 | 3,
+                              rank: isMedalPos(row.position) ? row.position : null,
+                              photoUrl: null,
                               grade: row.grade,
                               winnerName: row.name,
                               houseName: row.houseName,
                               shakhaName: row.shakha,
                               meghalaName: row.meghalaName ?? null,
                               competitionName: c.name,
-                              categoryLabel: label,
+                              categoryLabel: posterCategoryLabel({ cat: c.isTeam ? "Team" : "Individual", competitionCategorySlug: c.categorySlug, gender: c.gender }),
                               feastName: feastPosterHeading(feast),
                               feastSubtitle: feastPosterSubtitle(feast),
                             })

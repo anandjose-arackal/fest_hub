@@ -4,11 +4,13 @@ import { useCallback, useRef, useState } from "react";
 import type { Area, Point } from "react-easy-crop";
 import { getCroppedImageDataUrl } from "./crop-image";
 import { dataUrlToFile, downloadDataUrl, exportPosterNode, posterFilename } from "./export-poster";
-import { PHOTO_W, PHOTO_H, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT } from "./social-poster";
+import { PHOTO_W, PHOTO_H } from "./social-poster";
 
 export type PosterStep = "upload" | "crop" | "preview";
 
-export function useSocialPosterGenerator(competitionName: string, winnerName: string) {
+// `size` is the export size of whichever poster node `posterRef` is on;
+// `initialPhoto` (the registration photo, if any) seeds the photo slot.
+export function useSocialPosterGenerator(competitionName: string, winnerName: string, size: { width: number; height: number }, initialPhoto: string | null = null) {
   // Starts on the preview step (with a placeholder photo circle) rather than
   // forcing an upload first — the poster is downloadable without a photo,
   // and "Add Photo" from there is what drives into the upload/crop flow.
@@ -18,7 +20,7 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [photoSrc, setPhotoSrc] = useState<string | null>(null);
+  const [photoSrc, setPhotoSrc] = useState<string | null>(initialPhoto);
   const [isCropping, setIsCropping] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
@@ -80,14 +82,14 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     setIsExporting(true);
     setError(null);
     try {
-      const dataUrl = await exportPosterNode(posterRef.current, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT);
+      const dataUrl = await exportPosterNode(posterRef.current, size.width, size.height);
       downloadDataUrl(dataUrl, posterFilename(competitionName, winnerName));
     } catch {
-      setError("Couldn't generate the poster. Please try again.");
+      setError(photoSrc?.startsWith("http") ? "Couldn't load the saved photo into the poster. Tap Change Photo and pick it again." : "Couldn't generate the poster. Please try again.");
     } finally {
       setIsExporting(false);
     }
-  }, [competitionName, winnerName]);
+  }, [competitionName, winnerName, size.width, size.height, photoSrc]);
 
   // Share the poster with its details. Phones (Web Share with files) open
   // the share sheet with the image attached — WhatsApp is one tap from
@@ -101,7 +103,7 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     setError(null);
     setShareNote(null);
     try {
-      const dataUrl = await exportPosterNode(posterRef.current, SOCIAL_POSTER_WIDTH, SOCIAL_POSTER_HEIGHT);
+      const dataUrl = await exportPosterNode(posterRef.current, size.width, size.height);
       const filename = posterFilename(competitionName, winnerName);
       const file = await dataUrlToFile(dataUrl, filename);
       if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
@@ -121,7 +123,7 @@ export function useSocialPosterGenerator(competitionName: string, winnerName: st
     } finally {
       setIsSharing(false);
     }
-  }, [competitionName, winnerName]);
+  }, [competitionName, winnerName, size.width, size.height]);
 
   return {
     step,

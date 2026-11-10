@@ -10,12 +10,12 @@ import {
 import { useFeast } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { GlowBtn, FeastTopBar, LoginSheet, catStyle, mix, theme } from "./feast-shared";
-import { CompetitionResults, competitionCategoryLabel, loadCompetitionResults, type PublicResultRow } from "./feast-shared-results";
+import { CompetitionResults, competitionCategoryLabel, loadCompetitionResults, posterCategoryLabel, type PublicResultRow } from "./feast-shared-results";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { venueFor } from "@/lib/venue-config";
 import { stagePlacement } from "@/lib/venue-plan";
-import { Chip } from "./feast-ui";
+import { Chip, isMedalPos } from "./feast-ui";
 
 const CAT_CONFIG: { slug: string; label: string }[] = [
   { slug: "sub_junior", label: "Sub Junior" },
@@ -336,14 +336,15 @@ export function FeastDetails({ slug }: { slug: string }) {
                 delay={Math.min(i, 10) * 0.04}
                 onPoster={(row) =>
                   setPosterWinner({
-                    rank: row.position as 1 | 2 | 3,
+                    rank: isMedalPos(row.position) ? row.position : null,
+                    photoUrl: row.photoUrl ?? null,
                     grade: row.grade,
                     winnerName: row.name,
                     houseName: row.houseName,
                     shakhaName: row.shakha,
                     meghalaName: row.meghalaName ?? null,
                     competitionName: c.name,
-                    categoryLabel: competitionCategoryLabel(c),
+                    categoryLabel: posterCategoryLabel(c),
                     feastName: feastPosterHeading(feast),
                     feastSubtitle: feastPosterSubtitle(feast),
                   })

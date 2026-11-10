@@ -22,6 +22,8 @@ export const SOCIAL_POSTER_HEIGHT = (SOCIAL_POSTER_WIDTH / ART_W) * ART_H; // 16
 // for the Latin lines on the card.
 const anekCondensed = Anek_Malayalam({ subsets: ["malayalam", "latin"], axes: ["wdth"], variable: "--font-poster-anek", display: "swap" });
 const serif = Libre_Baskerville({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-poster-serif", display: "swap" });
+// Root class that makes the poster font variables resolve (shared with story-poster.tsx).
+export const POSTER_FONT_CLASS = `${anekCondensed.variable} ${serif.variable}`;
 
 const ANEK_CONDENSED = "var(--font-poster-anek), var(--font-anek), sans-serif";
 const SERIF = "var(--font-poster-serif), var(--font-anek), serif";
@@ -68,7 +70,7 @@ export interface SocialPosterProps {
 // Same "measure a detached off-screen node" approach as the admin result
 // poster's heading fit (see poster-render.tsx) — kept as a separate local
 // copy rather than a shared import since the two posters are free to diverge.
-function useFitFontSize(text: string, maxWidth: number, family: string, weight: number, min: number, max: number, stretch = "normal"): number {
+export function useFitFontSize(text: string, maxWidth: number, family: string, weight: number, min: number, max: number, stretch = "normal"): number {
   const [size, setSize] = useState(max);
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +108,7 @@ function useFitFontSize(text: string, maxWidth: number, family: string, weight: 
 }
 
 // "Charity" → "Charity Shakha", unless the name already says it.
-function withSuffix(name: string, suffix: string): string {
+export function withSuffix(name: string, suffix: string): string {
   return name.toLowerCase().includes(suffix.toLowerCase()) ? name : `${name} ${suffix}`;
 }
 

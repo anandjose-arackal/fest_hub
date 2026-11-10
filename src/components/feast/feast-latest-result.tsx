@@ -11,7 +11,7 @@ import { ArrowRight, Award, Clock, Trophy } from "lucide-react";
 import { getLatestResult, type LatestResult } from "@/actions/results";
 import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
 import { catStyle, mix, theme } from "./feast-shared";
-import { AWARD, AwardCard, competitionCategoryLabel, mapResultRow, sortResults, timeAgo } from "./feast-shared-results";
+import { AWARD, AwardCard, competitionCategoryLabel, mapResultRow, posterCategoryLabel, sortResults, timeAgo } from "./feast-shared-results";
 import { isMedalPos } from "./feast-ui";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 
@@ -57,14 +57,15 @@ export function LatestResultWidget() {
           accentColor={cs.color}
           onPoster={(row) =>
             setPoster({
-              rank: row.position as 1 | 2 | 3,
+              rank: isMedalPos(row.position) ? row.position : null,
+              photoUrl: row.photoUrl ?? null,
               grade: row.grade,
               winnerName: row.name,
               houseName: row.houseName,
               shakhaName: row.shakha,
               meghalaName: row.meghalaName ?? null,
               competitionName: data.competitionName,
-              categoryLabel: label,
+              categoryLabel: posterCategoryLabel({ cat: data.isTeam ? "Team" : "Individual", competitionCategorySlug: data.categorySlug, gender: data.gender }),
               feastName: feastPosterHeading({ type: data.feastType, name: data.feastName }),
               feastSubtitle: feastPosterSubtitle({ type: data.feastType }),
             })
