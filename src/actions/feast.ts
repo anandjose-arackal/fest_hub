@@ -320,7 +320,8 @@ export interface UpdateInput {
   dob: string;
   gender: string;
   phone?: string;
-  feastCompetitionIds: string[];
+  // Omitted when saving personal details from a team roster.
+  feastCompetitionIds?: string[];
   // Team events this participant should be on. Omitted = leave their teams
   // as they are (the admin Participants page manages teams separately).
   teamCompetitionIds?: string[];
@@ -354,23 +355,23 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
     // fix) and left the other entries' published positions with a hole —
     // 2nd missing, the real 3rd stuck at no position. Registrations still
     // selected keep their id (and with it score, chance_no, participated).
-    const { data: currentRegs, error: currentErr } = await admin
-      .from("participant_registrations")
-      .select(REG_WITH_RESULT_SELECT)
-      .eq("participant_id", input.participantId);
+    const { data: currentRegs, error: currentErr } = input.feastCompetitionIds
+      ? await admin.from("participant_registrations").select(REG_WITH_RESULT_SELECT).eq("participant_id", input.participantId)
+      : { data: [], error: null };
     if (currentErr) return { error: currentErr.message };
 
-    const wanted = new Set(input.feastCompetitionIds);
+    const requested = input.feastCompetitionIds ?? [];
+    const wanted = new Set(requested);
     const removed = (currentRegs ?? []).filter((r) => !wanted.has(r.feast_competition_id));
     const lockedError = publishedResultError(removed, "removed from");
     if (lockedError) return { error: lockedError };
     const kept = new Set((currentRegs ?? []).map((r) => r.feast_competition_id));
-    const added = input.feastCompetitionIds.filter((id) => !kept.has(id));
+    const added = requested.filter((id) => !kept.has(id));
 
-    if (input.feastCompetitionIds.length > 0 && existing.shakha_id) {
+    if (requested.length > 0 && existing.shakha_id) {
       const full = await findFullCompetitionsForShakha(
         admin,
-        input.feastCompetitionIds,
+        requested,
         existing.shakha_id,
         input.participantId
       );

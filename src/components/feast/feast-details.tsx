@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Loader2, MapPin, Clock, Lock, Ticket, Layers, Medal, ClipboardList, Trophy, Calendar,
@@ -12,6 +13,8 @@ import { GlowBtn, FeastTopBar, LoginSheet, catStyle, mix, theme } from "./feast-
 import { CompetitionResults, competitionCategoryLabel, loadCompetitionResults, type PublicResultRow } from "./feast-shared-results";
 import { SocialPosterOverlay, type SocialPosterWinner } from "./social-poster/social-poster-overlay";
 import { feastPosterHeading, feastPosterSubtitle } from "@/lib/feast-data";
+import { venueFor } from "@/lib/venue-config";
+import { stagePlacement } from "@/lib/venue-plan";
 import { Chip } from "./feast-ui";
 
 const CAT_CONFIG: { slug: string; label: string }[] = [
@@ -80,7 +83,7 @@ function QuickTile({ icon: Icon, label, color, onClick }: { icon: LucideIcon; la
 
 type FeastComp = NonNullable<ReturnType<typeof useFeast>["feast"]>["competitions"][number];
 
-function CompetitionCard({ comp, delay, onPoster }: { comp: FeastComp; delay: number; onPoster: (row: PublicResultRow) => void }) {
+function CompetitionCard({ comp, delay, onPoster, venueMapHref }: { comp: FeastComp; delay: number; onPoster: (row: PublicResultRow) => void; venueMapHref?: string }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [results, setResults] = useState<PublicResultRow[] | null>(null);
@@ -151,6 +154,12 @@ function CompetitionCard({ comp, delay, onPoster }: { comp: FeastComp; delay: nu
       {(comp.stage || comp.scheduledTime || comp.venue) && (
         <div className="fp-ml mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold" style={{ color: theme.sub }}>
           {comp.stage && <span>Stage {comp.stage.number} — {comp.stage.title}</span>}
+          {comp.stage && venueMapHref && (
+            <Link href={venueMapHref} className="inline-flex min-h-8 items-center gap-1 rounded font-bold text-[var(--fp-link)] underline underline-offset-2">
+              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+              Venue map
+            </Link>
+          )}
           {comp.scheduledTime && <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" aria-hidden="true" />{comp.scheduledTime}</span>}
           {comp.venue && <span className="inline-flex items-center gap-1"><MapPin className="h-3.5 w-3.5" aria-hidden="true" />{comp.venue}</span>}
         </div>
@@ -224,6 +233,10 @@ export function FeastDetails({ slug }: { slug: string }) {
 
   const resultsOut = feast.competitions.filter((c) => c.compStatus === "published").length;
   const live = feast.status === "Ongoing";
+  const venuePlan = venueFor(slug);
+  const venueMapHref = feast.competitions.some((c) => c.stage && stagePlacement(venuePlan, c.stage.number))
+    ? `/feast/${slug}/stages?view=map`
+    : undefined;
 
   return (
     <div className="pb-6">
@@ -319,6 +332,7 @@ export function FeastDetails({ slug }: { slug: string }) {
               <CompetitionCard
                 key={c.id}
                 comp={c}
+                venueMapHref={venueMapHref}
                 delay={Math.min(i, 10) * 0.04}
                 onPoster={(row) =>
                   setPosterWinner({

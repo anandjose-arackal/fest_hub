@@ -2,15 +2,28 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Trash2, Users } from "lucide-react";
+import { Check, Loader2, Pencil, Trash2, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { updateParticipant } from "@/actions/feast";
 import { updateTeam, deleteTeam } from "@/actions/team";
 import { resolveCapScopeShakhaIds } from "@/lib/reg-cap-scope";
 import { GlassPanel, GlowBtn, FeastTopBar, ProcessingOverlay, theme, useSubmitLock } from "./feast-shared";
+import { DateField, GenderPicker, normGender, TextField } from "./feast-register";
+import { ParticipantPhotoField } from "./participant-photo-field";
 
 const DEFAULT_MAX_TEAM_MEMBERS = 7;
 
 interface Participant { id: string; name: string; houseName: string | null; }
+interface MemberDraft {
+  participantId: string;
+  name: string;
+  houseName: string;
+  dob: string;
+  gender: string;
+  phone: string;
+  photoUrl: string | null;
+  originalPhotoUrl: string | null;
+}
 
 export function FeastEditTeam({ slug, teamId }: { slug: string; teamId: string }) {
   const router = useRouter();
@@ -25,16 +38,20 @@ export function FeastEditTeam({ slug, teamId }: { slug: string; teamId: string }
   const { busy: submitting, run } = useSubmitLock(setServerError);
   const [busyLabel, setBusyLabel] = useState("Saving changes…");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [feast, setFeast] = useState<{ id: string; requires_dob: boolean; house_label: string; registration_edit_deadline: string | null } | null>(null);
+  const [memberDraft, setMemberDraft] = useState<MemberDraft | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data: team } = await supabase
         .from("team_registrations")
-        .select("team_name, shakha_id, feast_id, feast_competition_id, feast_competition:feast_competitions(competition:competitions(name, max_team_size))")
+        .select("team_name, shakha_id, feast_id, feast_competition_id, feast:feasts(id, requires_dob, house_label, registration_edit_deadline), feast_competition:feast_competitions(competition:competitions(name, max_team_size))")
         .eq("id", teamId)
         .single();
       if (!team) { setLoaded(true); return; }
       setTeamName(team.team_name);
+      setFeast((Array.isArray(team.feast) ? team.feast[0] : team.feast) ?? null);
       const fc = Array.isArray(team.feast_competition) ? team.feast_competition[0] : team.feast_competition;
       const comp = Array.isArray(fc?.competition) ? fc?.competition[0] : fc?.competition;
       setCompName(comp?.name ?? "—");
@@ -57,6 +74,62 @@ export function FeastEditTeam({ slug, teamId }: { slug: string; teamId: string }
 
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= maxTeamSize ? p : [...p, id]));
   const canSave = teamName.trim() && picked.length > 0;
+  const canEditMembers = feast && (!feast.registration_edit_deadline || Date.now() < Date.parse(feast.registration_edit_deadline));
+
+  function openMember(participantId: string) {
+    if (!feast || !canEditMembers) return;
+    run(async () => {
+      setBusyLabel("Loading participant…");
+      setServerError("");
+      const { data, error } = await supabase
+        .from("participants")
+        .select("name, house_name, date_of_birth, gender, phone, photo_url")
+        .eq("feast_id", feast.id)
+        .eq("id", participantId)
+        .single();
+      if (error || !data) {
+        setServerError("Could not load participant details.");
+      } else {
+        setMemberDraft({
+          participantId,
+          name: data.name,
+          houseName: data.house_name ?? "",
+          dob: data.date_of_birth ?? "",
+          gender: normGender(data.gender) ?? data.gender ?? "",
+          phone: data.phone ?? "",
+          photoUrl: data.photo_url ?? null,
+          originalPhotoUrl: data.photo_url ?? null,
+        });
+      }
+      return "release";
+    });
+  }
+
+  function changeMember(patch: Partial<MemberDraft>) {
+    setMemberDraft((draft) => draft && { ...draft, ...patch });
+  }
+
+  function saveMember() {
+    if (!memberDraft || !canEditMembers || photoBusy) return;
+    const name = memberDraft.name.trim();
+    if (!name || (feast.requires_dob && !memberDraft.dob)) return;
+    run(async () => {
+      setBusyLabel("Saving participant details…");
+      setServerError("");
+      const houseName = memberDraft.houseName.trim();
+      const { originalPhotoUrl, photoUrl, ...details } = memberDraft;
+      const result = await updateParticipant({
+        ...details, name, houseName, photoUrl: photoUrl === originalPhotoUrl ? undefined : photoUrl,
+      });
+      if (result.error) {
+        setServerError(result.error);
+      } else {
+        setEligible((people) => people.map((p) => p.id === memberDraft.participantId ? { ...p, name, houseName } : p));
+        setMemberDraft(null);
+      }
+      return "release";
+    });
+  }
 
   function submit() {
     run(async () => {
@@ -105,22 +178,46 @@ export function FeastEditTeam({ slug, teamId }: { slug: string; teamId: string }
         {eligible.map((p) => {
           const on = picked.includes(p.id);
           return (
-            <div key={p.id} onClick={() => toggle(p.id)} className="mb-2 flex cursor-pointer items-center gap-3 rounded-xl p-3" style={{ background: "var(--fp-input)", border: on ? `1px solid ${theme.lavender}` : "1px solid rgba(255,255,255,0.8)" }}>
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "rgba(var(--fp-primary-rgb),0.10)" }}><Users className="h-4 w-4" style={{ color: theme.lavender }} /></div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13.5px] font-semibold" style={{ color: theme.text }}>{p.name}</div>
-                {p.houseName && <div className="text-[11px]" style={{ color: theme.sub }}>{p.houseName}</div>}
+            <div key={p.id} className="mb-2 rounded-xl" style={{ background: "var(--fp-input)", border: on ? `1px solid ${theme.lavender}` : "1px solid rgba(255,255,255,0.8)" }}>
+              <div className="flex items-center gap-1 pr-2">
+                <button type="button" aria-pressed={on} onClick={() => toggle(p.id)} disabled={submitting || (!on && picked.length >= maxTeamSize)} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 text-left">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: "rgba(var(--fp-primary-rgb),0.10)" }}><Users className="h-4 w-4" style={{ color: theme.lavender }} aria-hidden="true" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold" style={{ color: theme.text }}>{p.name}</span>
+                    {p.houseName && <span className="block text-[11px]" style={{ color: theme.sub }}>{p.houseName}</span>}
+                  </span>
+                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-accent))" } : { background: "var(--fp-input)", border: `1px solid ${theme.hairline}` }}>
+                    {on && <Check className="h-[15px] w-[15px] text-white" />}
+                  </span>
+                </button>
+                {canEditMembers && (
+                  <button type="button" aria-label={`Edit details for ${p.name}`} aria-expanded={memberDraft?.participantId === p.id} onClick={() => openMember(p.id)} disabled={submitting || !!memberDraft} className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-[var(--fp-link)] disabled:opacity-50">
+                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Edit
+                  </button>
+                )}
               </div>
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={on ? { background: "linear-gradient(135deg,var(--fp-primary),var(--fp-accent))" } : { background: "var(--fp-input)", border: `1px solid ${theme.hairline}` }}>
-                {on && <Check className="h-[15px] w-[15px] text-white" />}
-              </div>
+              {feast && memberDraft?.participantId === p.id && (
+                <section aria-label={`Edit details for ${p.name}`} className="border-t border-[var(--fp-line-2)] p-3">
+                  <TextField label="Full Name" placeholder="Participant name" value={memberDraft.name} onChange={(name) => changeMember({ name })} />
+                  <TextField label={feast.house_label} placeholder={feast.house_label} value={memberDraft.houseName} onChange={(houseName) => changeMember({ houseName })} />
+                  {feast.requires_dob && <DateField label="Date of Birth" value={memberDraft.dob} onChange={(dob) => changeMember({ dob })} />}
+                  <GenderPicker value={memberDraft.gender} onChange={(gender) => changeMember({ gender })} />
+                  <TextField label="Phone (optional)" placeholder="10-digit mobile" type="tel" value={memberDraft.phone} onChange={(phone) => changeMember({ phone: phone.replace(/\D/g, "").slice(0, 10) })} />
+                  <ParticipantPhotoField feastId={feast.id} value={memberDraft.photoUrl} onChange={(photoUrl) => changeMember({ photoUrl })} onBusyChange={setPhotoBusy} personName={memberDraft.name} />
+                  {serverError && <p role="alert" className="mt-2 text-xs text-[var(--fp-warn)]">{serverError}</p>}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <GlowBtn variant="primary" disabled={!canEditMembers || submitting || photoBusy || !memberDraft.name.trim() || (feast.requires_dob && !memberDraft.dob)} onClick={saveMember}>Save participant</GlowBtn>
+                    <button type="button" disabled={submitting || photoBusy} onClick={() => { setMemberDraft(null); setServerError(""); }} className="rounded-lg px-3 text-sm font-semibold text-[var(--fp-ink)]">Cancel</button>
+                  </div>
+                </section>
+              )}
             </div>
           );
         })}
       </GlassPanel>
 
-      {serverError && <p className="mb-3 rounded-xl px-2 py-2 text-center text-xs" style={{ color: "#ef4444", background: "#fee2e2" }}>{serverError}</p>}
-      <GlowBtn variant="gold" size="lg" className="w-full" disabled={!canSave} loading={submitting} onClick={submit}>{submitting ? "Saving…" : "Save Changes"}</GlowBtn>
+      {serverError && !memberDraft && <p className="mb-3 rounded-xl px-2 py-2 text-center text-xs" style={{ color: "#ef4444", background: "#fee2e2" }}>{serverError}</p>}
+      <GlowBtn variant="gold" size="lg" className="w-full" disabled={!canSave || !!memberDraft} loading={submitting} onClick={submit}>Save Team Changes</GlowBtn>
 
       {!confirmingDelete ? (
         <button onClick={() => setConfirmingDelete(true)} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[14px] py-2.5 text-sm font-semibold" style={{ background: "#fee2e2", color: "#ef4444" }}>
