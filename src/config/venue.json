@@ -1,6 +1,6 @@
 {
   "arts-fest": {
-    "name": "SanJo Metropolitan Public School",
+    "name": "Sanjos Metropolitan School",
     "groundLabels": [
       "Green rooms",
       "First aid",
@@ -483,8 +483,8 @@
     "annexes": [
       {
         "id": "hall",
-        "name": "Parish Hall",
-        "directions": "the white hall to the right of the church",
+        "name": "Seminary",
+        "directions": "the white building to the right of the church",
         "floors": [
           {
             "floor": 0,

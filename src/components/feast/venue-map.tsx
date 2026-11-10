@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { CompetitionStage, RunState } from "@/hooks/use-competition-stages";
 import { floorCount, floorName, placeOnFloor } from "@/lib/venue-floors";
 import {
-  Box, C, CHURCH, Church, CompoundWall, GROUNDS, Grounds, H, HALL, Hall, K, L, PARAPET, Palm, Statue, Tree, poly, pt, type Pt,
+  Box, C, CHURCH, CampusDefs, Church, CompoundWall, FACADE_SLOPE, SCHOOL_SPAN, WX, GROUNDS, Grounds, H, HALL, Hall, L, PARAPET, Palm, GREEN_ROOMS, GreenRooms, Statue, Tree, poly, pt, spt, type Pt,
 } from "./venue-campus";
 
 // Isometric (dimetric) illustration of the fest venue campus, as in the venue
@@ -101,18 +101,19 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
   const hallFocus = focusBuilding === HALL_ID;
   const floorFocus = !hallFocus && focusFloor != null && focusFloor < floors;
   const dimmed = (f: number) => hallFocus || (floorFocus && f !== focusFloor);
-  const band = (f: number) => poly(pt(0, 0, f * H), pt(L, 0, f * H), pt(L, 0, (f + 1) * H), pt(0, 0, (f + 1) * H));
-  const sideBand = (f: number) => poly(pt(0, 0, f * H), pt(0, 1, f * H), pt(0, 1, (f + 1) * H), pt(0, 0, (f + 1) * H));
+  const band = (f: number) => poly(spt(0, 0, f * H), spt(L, 0, f * H), spt(L, 0, (f + 1) * H), spt(0, 0, (f + 1) * H));
+  const sideBand = (f: number) => poly(spt(0, 0, f * H), spt(0, 1, f * H), spt(0, 1, (f + 1) * H), spt(0, 0, (f + 1) * H));
   const hallFront = poly(pt(HALL.a0, HALL.b0, 0), pt(HALL.a1, HALL.b0, 0), pt(HALL.a1, HALL.b0, HALL.z), pt(HALL.a0, HALL.b0, HALL.z));
 
   // View boxes: the whole campus, the school (with its floor names), the hall.
-  const schoolTop = pt(L, 1, top + PARAPET)[1] - 70;
+  const schoolTop = spt(L, 1, top + PARAPET)[1] - 70;
   const roadFront = GROUNDS.front - 0.42;
   const box = (x0: number, y0: number, x1: number, y1: number) => `${x0.toFixed(0)} ${y0.toFixed(0)} ${(x1 - x0).toFixed(0)} ${(y1 - y0).toFixed(0)}`;
   const views = {
-    campus: box(pt(-60, 1.35, 0)[0] - 10, Math.min(schoolTop, pt(CHURCH.a1, CHURCH.b0, CHURCH.tower + 80)[1]), pt(GROUNDS.a1, roadFront, 0)[0] + 10, pt(GROUNDS.a0, roadFront, 0)[1] + 10),
-    school: box(pt(-60, 1.35, 0)[0] - 10, schoolTop, L + 240, pt(-60, GROUNDS.front - 0.1, 0)[1] + 10),
-    hall: box(pt(HALL.a0 - 140, HALL.b1 + 0.2, 0)[0], pt(HALL.a1, HALL.b1, HALL.ridge)[1] - 110, pt(HALL.a1 + 60, GROUNDS.front, 0)[0], pt(HALL.a0 - 140, GROUNDS.front + 0.2, 0)[1]),
+    // Framed on the school, church and seminary; the green rooms behind may crop.
+    campus: box(spt(0, 1, 0)[0] - 70, Math.min(schoolTop, pt(CHURCH.a1, CHURCH.b0 + 0.3, CHURCH.tower + 90)[1], pt(HALL.a1, HALL.b1, HALL.ridge + 80)[1]), pt(HALL.a1, HALL.b1, 0)[0] + 80, pt(0, roadFront, 0)[1] + 10),
+    school: box(spt(0, 1, 0)[0] - 40, schoolTop, spt(L, 0, 0)[0] + 240, pt(0, GROUNDS.front - 0.1, 0)[1] + 10),
+    hall: box(pt(HALL.a0 - 80, HALL.b0 - 1.4, 0)[0], pt(HALL.a1, HALL.b1, HALL.ridge)[1] - 110, pt(HALL.a1 + 80, HALL.b1, 0)[0] + 20, pt(0, HALL.b0 - 1.4, 0)[1]),
   };
   const viewBox = zoomable && hallFocus ? views.hall : zoomable && floorFocus ? views.school : views.campus;
 
@@ -132,7 +133,7 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
   // School pins stop short of the facade's end (floor names sit past it);
   // hall pins may run a little past the hall's end.
   const pins: Pin[] = [
-    ...[...byFloor.entries()].flatMap(([floor, list]) => rowPins(list, L, `f${floor}`, -40, (t) => pt(t * L, -0.1, (floor + 0.5) * H))),
+    ...[...byFloor.entries()].flatMap(([floor, list]) => rowPins(list, L, `f${floor}`, -40, (t) => spt(t * L, -0.1, (floor + 0.5) * H))),
     ...rowPins(inHall, hallLen, HALL_ID, 60, (t) => pt(HALL.a0 + t * hallLen, HALL.b0 - 0.12, HALL.z * 0.5)),
   ];
   const pinDimmed = (p: Pin) => (p.group === HALL_ID ? floorFocus : dimmed(Number(p.group.slice(1))));
@@ -155,14 +156,16 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
     const left = i < leftCount;
     const [from, to, n] = left ? sides[0] : sides[1];
     const idx = left ? i : i - leftCount;
-    return { name, lift: idx % 2 ? 62 : 24, tip: pt((from + ((to - from) * (idx + 0.5)) / n) * L, 0, H * 0.24) };
+    return { name, lift: idx % 2 ? 62 : 24, tip: spt((from + ((to - from) * (idx + 0.5)) / n) * L, 0, H * 0.24) };
   });
 
   // Roof sign: the name in white on a red board along the parapet, slanted
   // with the facade; the font shrinks so a long name stays within 90% of it.
   const sign = venueName?.trim().toUpperCase() || null;
-  const signFont = sign ? Math.min(34, (0.86 * L) / (sign.length * 0.64)) : 0;
-  const signW = sign ? sign.length * signFont * 0.64 + signFont * 1.6 : 0;
+  // The facade is foreshortened: one unit along it is FX screen px across.
+  const FX = (WX * SCHOOL_SPAN) / L;
+  const signFont = sign ? Math.min(30, (0.86 * L * FX) / (sign.length * 0.64)) : 0;
+  const signW = sign ? (sign.length * signFont * 0.64 + signFont * 1.6) / FX : 0;
   const signH = signFont * 1.5;
   const hallName = inHall[0]?.buildingName ?? null;
 
@@ -199,27 +202,30 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
           @media (prefers-reduced-motion:reduce){.vm-pulse{animation:none;opacity:.35}.vm-sweep{animation:none;stroke-dashoffset:0}.vm-glow,.vm-pop,.vm-bounce{animation:none}.vm-veil,.vm-dim{transition:none}}
         `}</style>
 
+        <CampusDefs />
         <Grounds />
         {/* Palms behind the buildings */}
-        {[[-40, 1.9, 1], [CHURCH.a0 - 60, 2.0, 1.1], [CHURCH.a1 + 50, 2.0, 1], [HALL.a0 + 120, 1.8, 0.9], [HALL.a1 - 40, 1.9, 1.05]].map(([a, b, s]) => <Palm key={a} a={a} b={b} s={s} />)}
+        {[[-250, 3.4, 1.1], [-120, 4.6, 1], [CHURCH.a0 - 70, CHURCH.b1 + 0.2, 1.1], [CHURCH.a1 + 20, CHURCH.b1 + 0.35, 1], [GREEN_ROOMS.a0 + 40, GREEN_ROOMS.b1 + 0.2, 0.95], [GREEN_ROOMS.a1 - 30, GREEN_ROOMS.b1 + 0.15, 1.1], [GROUNDS.a1 - 30, HALL.b0 - 0.2, 0.9]].map(([a, b, s]) => <Palm key={a} a={a} b={b} s={s} />)}
 
         {/* ── School ── */}
         {/* Left end wall */}
-        <polygon points={poly(pt(0, 0, 0), pt(0, 1, 0), pt(0, 1, top), pt(0, 0, top))} fill={C.wallSide} />
+        <polygon points={poly(spt(0, 0, 0), spt(0, 1, 0), spt(0, 1, top), spt(0, 0, top))} fill={C.wallSide} />
+        <polygon points={poly(spt(0, 0, 0), spt(0, 1, 0), spt(0, 1, top), spt(0, 0, top))} fill="url(#vc-side)" />
         {Array.from({ length: floors }, (_, f) => (
           <g key={`sw${f}`}>
             {[0.3, 0.62].map((b) => (
-              <polygon key={b} points={poly(pt(0, b, f * H + 30), pt(0, b + 0.16, f * H + 30), pt(0, b + 0.16, f * H + 66), pt(0, b, f * H + 66))} fill={C.glass} />
+              <polygon key={b} points={poly(spt(0, b, f * H + 30), spt(0, b + 0.16, f * H + 30), spt(0, b + 0.16, f * H + 66), spt(0, b, f * H + 66))} fill="url(#vc-glass)" />
             ))}
           </g>
         ))}
 
         {/* Facade, with its orange bands and the blue stair-tower strip */}
-        <polygon points={poly(pt(0, 0, 0), pt(L, 0, 0), pt(L, 0, top), pt(0, 0, top))} fill={C.wall} />
+        <polygon points={poly(spt(0, 0, 0), spt(L, 0, 0), spt(L, 0, top), spt(0, 0, top))} fill={C.wall} />
+        <polygon points={poly(spt(0, 0, 0), spt(L, 0, 0), spt(L, 0, top), spt(0, 0, top))} fill="url(#vc-front)" />
         {bands.map(([t0, t1]) => (
-          <polygon key={t0} points={poly(pt(t0 * L, 0, 0), pt(t1 * L, 0, 0), pt(t1 * L, 0, top), pt(t0 * L, 0, top))} fill={C.band} />
+          <polygon key={t0} points={poly(spt(t0 * L, 0, 0), spt(t1 * L, 0, 0), spt(t1 * L, 0, top), spt(t0 * L, 0, top))} fill={C.band} />
         ))}
-        <polygon points={poly(pt(0.37 * L, 0, 0), pt(0.395 * L, 0, 0), pt(0.395 * L, 0, top), pt(0.37 * L, 0, top))} fill={C.stair} />
+        <polygon points={poly(spt(0.37 * L, 0, 0), spt(0.395 * L, 0, 0), spt(0.395 * L, 0, top), spt(0.37 * L, 0, top))} fill={C.stair} />
 
         {/* Windows */}
         {Array.from({ length: floors }, (_, f) =>
@@ -229,9 +235,9 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
             const z = f * H + 28;
             return (
               <g key={`w${f}-${i}`}>
-                <polygon points={poly(pt(a, 0, z), pt(a + 26, 0, z), pt(a + 26, 0, z + 40), pt(a, 0, z + 40))} fill={C.glass} />
-                <polygon points={poly(pt(a + 3, 0, z + 22), pt(a + 12, 0, z + 37), pt(a + 3, 0, z + 37))} fill={C.glassHi} opacity={0.55} />
-                <polygon points={poly(pt(a - 3, 0, z + 40), pt(a + 29, 0, z + 40), pt(a + 29, 0, z + 45), pt(a - 3, 0, z + 45))} fill={C.trim} opacity={0.85} />
+                <polygon points={poly(spt(a, 0, z), spt(a + 26, 0, z), spt(a + 26, 0, z + 40), spt(a, 0, z + 40))} fill="url(#vc-glass)" />
+                <polygon points={poly(spt(a + 3, 0, z + 22), spt(a + 12, 0, z + 37), spt(a + 3, 0, z + 37))} fill={C.glassHi} opacity={0.55} />
+                <polygon points={poly(spt(a - 3, 0, z + 40), spt(a + 29, 0, z + 40), spt(a + 29, 0, z + 45), spt(a - 3, 0, z + 45))} fill={C.trim} opacity={0.85} />
               </g>
             );
           }),
@@ -242,37 +248,37 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
           const z = (i + 1) * H;
           return (
             <g key={`fl${z}`}>
-              <polygon points={poly(pt(0, 0, z - 4), pt(L, 0, z - 4), pt(L, 0, z + 4), pt(0, 0, z + 4))} fill={C.trim} />
-              <polygon points={poly(pt(0, 0, z - 4), pt(0, 1, z - 4), pt(0, 1, z + 4), pt(0, 0, z + 4))} fill={C.trimSide} />
+              <polygon points={poly(spt(0, 0, z - 4), spt(L, 0, z - 4), spt(L, 0, z + 4), spt(0, 0, z + 4))} fill={C.trim} />
+              <polygon points={poly(spt(0, 0, z - 4), spt(0, 1, z - 4), spt(0, 1, z + 4), spt(0, 0, z + 4))} fill={C.trimSide} />
             </g>
           );
         })}
 
         {/* Parapet and roof, with two rooftop rooms */}
-        <Box a0={0} a1={L} b0={0} b1={1} z0={top} z1={top + PARAPET} front={C.trim} side={C.trimSide} top={C.roofEdge} />
-        <polygon points={poly(pt(10, 0.08, top + PARAPET), pt(L - 10, 0.08, top + PARAPET), pt(L - 10, 0.92, top + PARAPET), pt(10, 0.92, top + PARAPET))} fill={C.roof} />
-        <Box a0={0.2 * L} a1={0.27 * L} b0={0.35} b1={0.7} z0={top + PARAPET} z1={top + PARAPET + 42} front={C.wall} side={C.wallSide} top={C.trim} />
-        <Box a0={0.8 * L} a1={0.9 * L} b0={0.3} b1={0.75} z0={top + PARAPET} z1={top + PARAPET + 54} front={C.wall} side={C.wallSide} top={C.trim} />
+        <Box p={spt} sideAt="a0" a0={0} a1={L} b0={0} b1={1} z0={top} z1={top + PARAPET} front={C.trim} side={C.trimSide} top={C.roofEdge} />
+        <polygon points={poly(spt(10, 0.08, top + PARAPET), spt(L - 10, 0.08, top + PARAPET), spt(L - 10, 0.92, top + PARAPET), spt(10, 0.92, top + PARAPET))} fill={C.roof} />
+        <Box p={spt} sideAt="a0" a0={0.2 * L} a1={0.27 * L} b0={0.35} b1={0.7} z0={top + PARAPET} z1={top + PARAPET + 42} front={C.wall} side={C.wallSide} top={C.trim} />
+        <Box p={spt} sideAt="a0" a0={0.8 * L} a1={0.9 * L} b0={0.3} b1={0.75} z0={top + PARAPET} z1={top + PARAPET + 54} front={C.wall} side={C.wallSide} top={C.trim} />
 
         {sign && (
           <g>
-            <Box a0={L / 2 - signW / 2} a1={L / 2 + signW / 2} b0={0.02} b1={0.07} z0={top + PARAPET - 4} z1={top + PARAPET + signH} front={C.trim} side={C.trimSide} top={C.trimSide} />
+            <Box p={spt} sideAt="a0" a0={L / 2 - signW / 2} a1={L / 2 + signW / 2} b0={0.02} b1={0.07} z0={top + PARAPET - 4} z1={top + PARAPET + signH} front={C.trim} side={C.trimSide} top={C.trimSide} />
             {(() => {
-              const [x, y] = pt(L / 2, 0.02, top + PARAPET - 4 + signH / 2);
+              const [x, y] = spt(L / 2, 0.02, top + PARAPET - 4 + signH / 2);
               return (
-                <text transform={`matrix(1 ${-K} 0 1 ${x} ${y})`} textAnchor="middle" y={signFont * 0.36} fontSize={signFont} fontWeight={900} fill="#FFFFFF" style={{ letterSpacing: ".03em" }}>{sign}</text>
+                <text transform={`matrix(1 ${FACADE_SLOPE} 0 1 ${x} ${y})`} textAnchor="middle" y={signFont * 0.36} fontSize={signFont} fontWeight={900} fill="#FFFFFF" style={{ letterSpacing: ".03em" }}>{sign}</text>
               );
             })()}
           </g>
         )}
 
         {/* Entrance porch */}
-        <Box a0={porchA0} a1={porchA1} b0={-0.42} b1={0} z0={0} z1={H * 0.82} front={C.porch} side={C.porchSide} top={C.porchTop} />
+        <Box p={spt} sideAt="a0" a0={porchA0} a1={porchA1} b0={-0.42} b1={0} z0={0} z1={H * 0.82} front={C.porch} side={C.porchSide} top={C.porchTop} />
         {[0.08, 0.36, 0.64, 0.92].map((t) => {
           const a = porchA0 + (porchA1 - porchA0) * t - 6;
-          return <polygon key={t} points={poly(pt(a, -0.42, 0), pt(a + 12, -0.42, 0), pt(a + 12, -0.42, H * 0.6), pt(a, -0.42, H * 0.6))} fill={C.column} />;
+          return <polygon key={t} points={poly(spt(a, -0.42, 0), spt(a + 12, -0.42, 0), spt(a + 12, -0.42, H * 0.6), spt(a, -0.42, H * 0.6))} fill={C.column} />;
         })}
-        <Tree a={-30} b={-0.75} s={0.9} />
+        <Tree a={140} b={-0.2} s={0.9} />
 
         {/* Floor focus: a veil over every other floor, then the chosen floor's
             outline draws itself round its band and keeps a soft glow. */}
@@ -294,10 +300,13 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
         {/* ── Church and hall ── */}
         <g className="vm-dim" opacity={floorFocus ? 0.4 : 1}>
           <Church />
+          <GreenRooms />
           <Statue />
           <Hall />
+          {/* The building behind the seminary holds the green rooms (no stages). */}
+          <Label x={pt(GREEN_ROOMS.a0 + 150, GREEN_ROOMS.b0, 0)[0]} y={pt(GREEN_ROOMS.a0 + 150, GREEN_ROOMS.b0, GREEN_ROOMS.z + 20)[1]} text="Green Rooms" size={22} />
           {hallName && (
-            <Label x={pt((HALL.a0 + HALL.a1) / 2, HALL.b0, HALL.ridge + 40)[0]} y={pt((HALL.a0 + HALL.a1) / 2, (HALL.b0 + HALL.b1) / 2, HALL.ridge + 34)[1]} text={hallName} size={22} />
+            <Label x={pt((HALL.a0 + HALL.a1) / 2, HALL.b0, 0)[0]} y={pt((HALL.a0 + HALL.a1) / 2, HALL.b0, HALL.z + 32)[1]} text={hallName} size={22} />
           )}
         </g>
         {hallFocus && (
@@ -311,7 +320,7 @@ export function VenueMap({ stages, facilities = [], minFloors = 1, venueName, fo
 
         {/* Floor names, level with each band at the school facade's right end */}
         {Array.from({ length: floors }, (_, f) => {
-          const [x, y] = pt(L, 0, (f + 0.5) * H);
+          const [x, y] = spt(L, 0, (f + 0.5) * H);
           const text = floorName(f);
           const on = floorFocus && f === focusFloor;
           const ink = on ? "#F59E0B" : "var(--fp-sub, #6B5E52)";
