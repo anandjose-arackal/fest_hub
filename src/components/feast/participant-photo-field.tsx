@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import type { Area, Point } from "react-easy-crop";
 import { Camera, ImagePlus, Loader2, RefreshCw, Trash2, UserRound, X } from "lucide-react";
@@ -150,14 +151,14 @@ export function ParticipantPhotoField({
       </div>
       {error && !cropSrc && <p role="alert" className="mt-2 text-[12px] font-semibold" style={{ color: "#dc2626" }}>{error}</p>}
 
-      {cropSrc && (
+      {cropSrc && createPortal(
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" onClick={uploading ? undefined : closeCrop}>
           <div
             {...scope}
             role="dialog"
             aria-modal="true"
             aria-label="Crop photo"
-            className="flex max-h-[92vh] w-full max-w-sm flex-col rounded-2xl p-4"
+            className="flex max-h-[92dvh] w-full max-w-sm flex-col rounded-2xl p-4"
             style={{ background: "var(--fp-surface, #fff)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -197,7 +198,9 @@ export function ParticipantPhotoField({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        // Portal: an ancestor with transform/backdrop-filter makes `fixed` relative to it, pushing the buttons off-screen.
+        document.body,
       )}
     </div>
   );
