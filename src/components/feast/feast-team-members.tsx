@@ -3,16 +3,18 @@
 // Shared by Add Team (feast-new-team.tsx) and Edit Team (feast-edit-team.tsx):
 // while the team is under its size cap, "Add participant" opens a search over
 // the admin's own participants; anyone not registered yet can be created
-// here (createParticipantAdmin) and goes straight onto the team.
+// here (createParticipantAdmin) and goes straight onto the team. My
+// Registrations reuses it to add someone to an individual item.
 
 import { useMemo, useState } from "react";
 import { Check, Search, UserPlus, X } from "lucide-react";
 import { createParticipantAdmin } from "@/actions/feast";
 import { GlowBtn, theme } from "./feast-shared";
 import { DateField, GenderPicker, TextField } from "./feast-register";
+import { ParticipantPhotoField } from "./participant-photo-field";
 
 export interface TeamPerson { id: string; name: string; houseName: string | null; regNo: string | null; shakhaId: string }
-interface NewPerson { name: string; houseName: string; dob: string; gender: string; phone: string; shakhaId: string }
+interface NewPerson { name: string; houseName: string; dob: string; gender: string; phone: string; shakhaId: string; photoUrl: string | null }
 
 const norm = (s: string | null | undefined) => (s ?? "").toLowerCase().trim();
 const MAX_LIST = 40;
@@ -39,6 +41,7 @@ export function AddMemberPanel({ feast, candidates, full, maxTeam, scopeShakhas,
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<NewPerson | null>(null);
   const [saving, setSaving] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [error, setError] = useState("");
   const multi = scopeShakhas.length > 1;
   const names = useMemo(() => (multi ? new Map(scopeShakhas.map((s) => [s.id, s.name])) : null), [multi, scopeShakhas]);
@@ -55,7 +58,7 @@ export function AddMemberPanel({ feast, candidates, full, maxTeam, scopeShakhas,
   }
 
   function openNew() {
-    setDraft({ name: query.trim(), houseName: "", dob: "", gender: defaultGender === "boy" || defaultGender === "girl" ? defaultGender : "", phone: "", shakhaId: scopeShakhas.length === 1 ? scopeShakhas[0].id : "" });
+    setDraft({ name: query.trim(), houseName: "", dob: "", gender: defaultGender === "boy" || defaultGender === "girl" ? defaultGender : "", phone: "", shakhaId: scopeShakhas.length === 1 ? scopeShakhas[0].id : "", photoUrl: null });
     setSearching(false);
     setError("");
   }
@@ -67,7 +70,7 @@ export function AddMemberPanel({ feast, candidates, full, maxTeam, scopeShakhas,
     try {
       const res = await createParticipantAdmin({
         feastId: feast.id, shakhaId: draft.shakhaId, name: draft.name.trim(), houseName: draft.houseName.trim(),
-        dob: draft.dob, gender: draft.gender, phone: draft.phone || undefined, feastCompetitionIds: [],
+        dob: draft.dob, gender: draft.gender, phone: draft.phone || undefined, feastCompetitionIds: [], photoUrl: draft.photoUrl,
       });
       if (res.error || !res.participantId) {
         setError(res.error ?? "Couldn't register the participant.");
@@ -103,9 +106,10 @@ export function AddMemberPanel({ feast, candidates, full, maxTeam, scopeShakhas,
             </select>
           </label>
         )}
+        <ParticipantPhotoField feastId={feast.id} value={draft.photoUrl} onChange={(photoUrl) => setDraft((d) => (d ? { ...d, photoUrl } : d))} onBusyChange={setPhotoBusy} personName={draft.name} />
         {error && <p role="alert" className="mt-1 text-xs text-[var(--fp-warn)]">{error}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <GlowBtn variant="primary" disabled={!valid || saving || disabled} loading={saving} onClick={saveNew}>Register &amp; add</GlowBtn>
+          <GlowBtn variant="primary" disabled={!valid || saving || photoBusy || disabled} loading={saving} onClick={saveNew}>Register &amp; add</GlowBtn>
           <button type="button" disabled={saving} onClick={() => { setDraft(null); setError(""); }} className="rounded-lg px-3 text-sm font-semibold text-[var(--fp-ink)]">Cancel</button>
         </div>
       </section>

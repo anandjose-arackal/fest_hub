@@ -6,9 +6,13 @@ import { ChevronDown, Loader2, UserX, UserPlus, Lock, Pencil, Download } from "l
 import { useFeast, useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
-import { fetchAllIn } from "@/lib/fetch-all";
+import { fetchAll, fetchAllIn } from "@/lib/fetch-all";
 import { getDescendantShakhaIds } from "@/lib/org-hierarchy";
+import { countScopeRegistrations, resolveCapScope } from "@/lib/reg-cap-scope";
+import { addParticipantToCompetition } from "@/actions/feast";
 import { CATEGORY_LABELS, CATEGORY_COLORS, FeastTopBar, theme } from "./feast-shared";
+import { DEFAULT_MAX_PER_SHAKHA } from "./feast-register";
+import { AddMemberPanel, type TeamPerson } from "./feast-team-members";
 
 interface ParticipantRow {
   id: string;
@@ -21,6 +25,20 @@ interface ParticipantRow {
 }
 interface RegRow { id: string; feast_competition_id: string; participant: ParticipantRow | null; }
 interface TeamRow { id: string; feast_competition_id: string; team_name: string; shakhaId: string | null; shakhaName: string | null; members: ParticipantRow[]; memberNames: string[]; }
+/** Someone in the admin's scope who could be entered in another item. */
+interface ScopePerson extends TeamPerson { gender: string | null; catSlug: string | null }
+// Items one participant may enter (the register form's "Maximum 2").
+const MAX_ITEMS_PER_PERSON = 2;
+
+/** Add-participant controls for one individual item: shown while the cap scope has slots left. */
+interface ItemAdd {
+  feast: { id: string; houseLabel: string; requiresDob: boolean };
+  remaining: number;
+  candidates: TeamPerson[];
+  scopeShakhas: { id: string; name: string }[];
+  defaultGender: string | null;
+  onAdd: (person: TeamPerson) => Promise<string | null>;
+}
 
 function normGender(g: string | null | undefined) {
   if (!g) return null;
@@ -43,11 +61,23 @@ const GENDER_STYLE: Record<string, { label: string; color: string }> = {
 };
 const ICON_GRADS = [["#7C3AED", "#A855F7"], ["#EC4899", "#F472B6"], ["#F59E0B", "#FCD34D"], ["#10B981", "#34D399"], ["#3B82F6", "#60A5FA"]];
 
-function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked, lineageLine }: {
+function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked, lineageLine, add }: {
   compName: string; gender: string | null | undefined; catSlug: string | null | undefined; regs: RegRow[]; idx: number; onEdit: (id: string) => void; editLocked: boolean;
   lineageLine: (shakhaId: string | null) => string;
+  /** null = no add (edits locked, fest closed or slots not known yet). */
+  add: ItemAdd | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  async function addPerson(p: TeamPerson) {
+    if (!add || adding) return;
+    setAdding(true);
+    setAddError("");
+    const err = await add.onAdd(p);
+    setAdding(false);
+    if (err) setAddError(`${p.name}: ${err}`);
+  }
   const ng = normGender(gender);
   const gStyle = ng ? GENDER_STYLE[ng] : null;
   const catLabel = catSlug ? CATEGORY_LABELS[catSlug] : null;
@@ -97,6 +127,14 @@ function AccordionRow({ compName, gender, catSlug, regs, idx, onEdit, editLocked
                 </div>
               );
             })
+          )}
+          {add && add.remaining > 0 && (
+            <div className="px-4 pb-3.5">
+              <p className="mt-2 text-[11.5px] font-semibold" style={{ color: theme.faint }}>{add.remaining} slot{add.remaining === 1 ? "" : "s"} left</p>
+              <AddMemberPanel feast={add.feast} candidates={add.candidates} full={false} maxTeam={add.remaining} scopeShakhas={add.scopeShakhas} defaultGender={add.defaultGender} disabled={adding} onAdd={addPerson} />
+              {adding && <p className="mt-2 flex items-center gap-1.5 text-[12px]" style={{ color: theme.sub }}><Loader2 className="h-3.5 w-3.5 animate-spin" /> Adding…</p>}
+              {addError && <p role="alert" className="mt-2 text-xs text-[var(--fp-warn)]">{addError}</p>}
+            </div>
           )}
         </div>
       )}
@@ -187,6 +225,37 @@ export function FeastRegistrations({ slug }: { slug: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   const retry = () => { setLoadError(null); setLoading(true); setRetryTick((t) => t + 1); };
+  // Bumped after an add: reloads the lists in place (no full-page spinner).
+  const [reloadTick, setReloadTick] = useState(0);
+  const [people, setPeople] = useState<ScopePerson[]>([]);
+  // Entries per item in the cap scope (max_per_shakha is checked there); null = not loaded.
+  const [capCounts, setCapCounts] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    if (!feast || !scopeShakhaIds?.length) return;
+    const individualIds = feast.competitions.filter((c) => c.cat !== "Team").map((c) => c.id);
+    if (individualIds.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      // An admin's scope sits at the org's top tier, so its shakhas share one cap scope.
+      const scope = await resolveCapScope(supabase, scopeShakhaIds[0]);
+      const [counts, { data: rows }] = await Promise.all([
+        countScopeRegistrations(supabase, individualIds, scope.shakhaIds),
+        fetchAll((from, to) =>
+          supabase.from("participants").select("id, name, house_name, registration_number, shakha_id, gender, competition_category:competition_categories(slug)").eq("feast_id", feast.id).in("shakha_id", scopeShakhaIds).order("name").order("id").range(from, to),
+        ),
+      ]);
+      if (cancelled) return;
+      setCapCounts(counts);
+      setPeople(
+        (rows as { id: string; name: string; house_name: string | null; registration_number: string | null; shakha_id: string; gender: string | null; competition_category: { slug: string } | { slug: string }[] | null }[]).map((p) => {
+          const cat = Array.isArray(p.competition_category) ? p.competition_category[0] : p.competition_category;
+          return { id: p.id, name: p.name, houseName: p.house_name, regNo: p.registration_number, shakhaId: p.shakha_id, gender: p.gender, catSlug: cat?.slug ?? null };
+        }),
+      );
+    })().catch(() => { if (!cancelled) setCapCounts(null); });
+    return () => { cancelled = true; };
+  }, [feast, scopeShakhaIds, reloadTick]);
 
   useEffect(() => {
     if (!feast || scopeShakhaIds === undefined) return;
@@ -239,7 +308,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
         setLoading(false);
       })
       .catch(() => { setLoading(false); setLoadError("Couldn't load registrations. Check your connection and try again."); });
-  }, [feast, scopeShakhaIds, retryTick]);
+  }, [feast, scopeShakhaIds, retryTick, reloadTick]);
 
   const editLocked = !!feast?.registrationEditDeadline && new Date() >= new Date(feast.registrationEditDeadline);
 
@@ -288,6 +357,36 @@ export function FeastRegistrations({ slug }: { slug: string }) {
   const multiShakha = scopeShakhaIds.length > 1;
 
   const totalRegs = regs.length;
+
+  const scopeIdSet = new Set(scopeShakhaIds);
+  const scopeShakhas = orgHierarchy.shakhas.filter((s) => scopeIdSet.has(s.id)).map((s) => ({ id: s.id, name: s.name }));
+  const entriesOf: Record<string, number> = {};
+  for (const r of regs) if (r.participant) entriesOf[r.participant.id] = (entriesOf[r.participant.id] ?? 0) + 1;
+  const canAdd = !editLocked && feast.status !== "Completed" && capCounts !== null;
+  // Fits the item's gender and age category, isn't in it yet, and has an item to spare.
+  const itemAdd = (c: (typeof feast.competitions)[number]): ItemAdd | null => {
+    if (!canAdd) return null;
+    const inItem = new Set((regsByComp[c.id] ?? []).map((r) => r.participant?.id));
+    const g = c.gender && c.gender !== "common" ? c.gender : null;
+    return {
+      feast: { id: feast.id, houseLabel: feast.houseLabel, requiresDob: feast.requiresDob },
+      remaining: (c.maxPerShakha ?? DEFAULT_MAX_PER_SHAKHA) - (capCounts[c.id] ?? 0),
+      candidates: people.filter((p) =>
+        !inItem.has(p.id) && (entriesOf[p.id] ?? 0) < MAX_ITEMS_PER_PERSON && (!g || p.gender === g) && (!c.competitionCategorySlug || p.catSlug === c.competitionCategorySlug),
+      ),
+      scopeShakhas,
+      defaultGender: g,
+      onAdd: async (p) => {
+        try {
+          const res = await addParticipantToCompetition({ participantId: p.id, feastCompetitionId: c.id });
+          setReloadTick((t) => t + 1);
+          return res.error ?? null;
+        } catch {
+          return "Couldn't add. Check your connection and try again.";
+        }
+      },
+    };
+  };
   const shakhaLabel = adminScope?.name ?? "Your Shakha";
 
   function downloadRegistrationsPDF() {
@@ -409,7 +508,7 @@ export function FeastRegistrations({ slug }: { slug: string }) {
         c.cat === "Team" ? (
           <TeamAccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} teams={teamsByComp[c.id] ?? []} showShakha={multiShakha} idx={i} onEditTeam={(id) => router.push(`/feast/${slug}/registrations/edit-team/${id}`)} onAddTeam={() => router.push(`/feast/${slug}/registrations/new-team/${c.id}`)} editLocked={editLocked} lineageLine={lineageLine} />
         ) : (
-          <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} lineageLine={lineageLine} />
+          <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} lineageLine={lineageLine} add={itemAdd(c)} />
         )
       )}
     </div>
