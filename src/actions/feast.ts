@@ -327,6 +327,8 @@ export interface UpdateInput {
   teamCompetitionIds?: string[];
   // Omitted = keep the current photo; null = remove it.
   photoUrl?: string | null;
+  // Move to another shakha (a meghala/diocese admin's picker). Omitted = keep.
+  shakhaId?: string;
 }
 
 export async function updateParticipant(input: UpdateInput): Promise<{ error?: string }> {
@@ -349,6 +351,25 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
     const denied = await checkShakhaAccess(auth, [existing.shakha_id]);
     if (denied) return { error: denied };
 
+    // Moving shakha: the new one must be in the caller's scope too. Points
+    // already in the ledger belong to the old shakha, so published entries
+    // block a move; teams stay only when both shakhas share a cap scope.
+    const moving = !!input.shakhaId && input.shakhaId !== existing.shakha_id;
+    const shakhaId: string | null = moving ? input.shakhaId! : existing.shakha_id;
+    if (moving) {
+      const deniedNew = await checkShakhaAccess(auth, [shakhaId]);
+      if (deniedNew) return { error: deniedNew };
+      const { data: allRegs, error: allErr } = await admin.from("participant_registrations").select(REG_WITH_RESULT_SELECT).eq("participant_id", input.participantId);
+      if (allErr) return { error: allErr.message };
+      const published = publishedResultError(allRegs ?? [], "moved to another Shakha from");
+      if (published) return { error: published };
+      const { data: teams } = await admin.from("team_registration_members").select("feast_competition_id").eq("participant_id", input.participantId);
+      const staying = (teams ?? []).map((t) => t.feast_competition_id).filter((id) => !input.teamCompetitionIds || input.teamCompetitionIds.includes(id));
+      if (staying.length > 0 && existing.shakha_id && !(await resolveCapScopeShakhaIds(admin, existing.shakha_id)).includes(shakhaId!)) {
+        return { error: "Take this participant off their team events before moving them to that Shakha." };
+      }
+    }
+
     // Diff, don't replace: competition_results and shakha_point_ledger cascade
     // on participant_registrations delete, so dropping and re-inserting every
     // registration wiped this participant's scores on any edit (even a name
@@ -368,11 +389,15 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
     const kept = new Set((currentRegs ?? []).map((r) => r.feast_competition_id));
     const added = requested.filter((id) => !kept.has(id));
 
-    if (requested.length > 0 && existing.shakha_id) {
+    // A move re-checks every entry they keep against the new shakha's cap.
+    const capChecked = moving && !input.feastCompetitionIds
+      ? ((await admin.from("participant_registrations").select("feast_competition_id").eq("participant_id", input.participantId)).data ?? []).map((r) => r.feast_competition_id)
+      : requested;
+    if (capChecked.length > 0 && shakhaId) {
       const full = await findFullCompetitionsForShakha(
         admin,
-        requested,
-        existing.shakha_id,
+        capChecked,
+        shakhaId,
         input.participantId
       );
       if (full.length > 0) {
@@ -394,8 +419,8 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
       teamsToLeave = [...onTeams].filter((id) => !wantedTeams.has(id));
       const teamsToJoin = [...wantedTeams].filter((id) => !onTeams.has(id));
       if (teamsToJoin.length > 0) {
-        if (!existing.shakha_id) return { error: "This participant has no Shakha, so they can't join a team." };
-        const prepared = await prepareTeamJoin(existing.feast_id, existing.shakha_id, teamsToJoin);
+        if (!shakhaId) return { error: "This participant has no Shakha, so they can't join a team." };
+        const prepared = await prepareTeamJoin(existing.feast_id, shakhaId, teamsToJoin);
         if ("error" in prepared) return { error: prepared.error };
         teamJoin = prepared.join;
       }
@@ -419,6 +444,7 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
         competition_category_id: category?.id ?? null,
         phone: input.phone || null,
         ...(photo.value !== undefined ? { photo_url: photo.value } : {}),
+        ...(moving ? { shakha_id: shakhaId } : {}),
       })
       .eq("id", input.participantId);
     if (updateErr) return { error: updateErr.message };
@@ -432,7 +458,7 @@ export async function updateParticipant(input: UpdateInput): Promise<{ error?: s
     }
 
     if (added.length > 0) {
-      const entries = await insertCappedEntries(admin, input.participantId, existing.shakha_id, added);
+      const entries = await insertCappedEntries(admin, input.participantId, shakhaId, added);
       if (entries.error) return { error: entries.error };
     }
 

@@ -10,7 +10,9 @@ import { countScopeRegistrations, loadScopeTeams, resolveCapScope } from "@/lib/
 import { fetchCompetitionCategories, getCategorySlug } from "@/lib/competition-categories";
 import { DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
 import { GlassPanel, GlowBtn, FeastTopBar, ProcessingOverlay, StepDots, theme, CATEGORY_COLORS, CATEGORY_LABELS, useSubmitLock } from "./feast-shared";
-import { TextField, DateField, CategoryPill, GenderPicker, TeamEventList, normGender, DEFAULT_MAX_PER_SHAKHA } from "./feast-register";
+import { TextField, DateField, CategoryPill, GenderPicker, TeamEventList, normGender, DEFAULT_MAX_PER_SHAKHA, PUBLIC_SELECT_CLASS, useScopePickerHierarchy } from "./feast-register";
+import { HierarchyPicker } from "@/components/admin/hierarchy-picker";
+import { useAuth } from "@/lib/auth-context";
 import type { CompetitionCategory } from "@/types";
 import { ParticipantPhotoField } from "./participant-photo-field";
 
@@ -32,6 +34,10 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   const [onTeams, setOnTeams] = useState<string[]>([]);
   const [pickedTeams, setPickedTeams] = useState<string[]>([]);
   const [shakhaId, setShakhaId] = useState<string | null>(null);
+  // Meghala/diocese admins can move the participant to another shakha under their own node.
+  const { adminScope } = useAuth();
+  const pickerHierarchy = useScopePickerHierarchy();
+  const [origShakhaId, setOrigShakhaId] = useState<string | null>(null);
   const [shakhaCounts, setShakhaCounts] = useState<Record<string, number>>({});
   const [teamCounts, setTeamCounts] = useState<Record<string, number>>({});
   const [teamScopeName, setTeamScopeName] = useState("");
@@ -62,6 +68,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
           phone: p.phone ?? "",
         });
         setShakhaId(p.shakha_id);
+        setOrigShakhaId(p.shakha_id);
         setPhotoUrl(p.photo_url ?? null);
       }
       setPicked((regs ?? []).map((r) => r.feast_competition_id));
@@ -106,7 +113,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
   const toggleTeam = (c: FeastCompetitionUI) =>
     setPickedTeams((p) => (p.includes(c.id) ? p.filter((x) => x !== c.id) : (teamCounts[c.id] ?? 0) >= (c.maxTeamSize ?? DEFAULT_MAX_TEAM_MEMBERS) ? p : [...p, c.id]));
 
-  const step1ok = !!(form.name.trim() && (form.dob || feast?.requiresDob === false) && form.gender);
+  const step1ok = !!(form.name.trim() && (form.dob || feast?.requiresDob === false) && form.gender && (shakhaId || !pickerHierarchy));
   const step2ok = picked.length + pickedTeams.length > 0;
 
   function submit() {
@@ -123,6 +130,7 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
         feastCompetitionIds: picked,
         teamCompetitionIds: pickedTeams,
         photoUrl,
+        ...(shakhaId && shakhaId !== origShakhaId ? { shakhaId } : {}),
       });
       if (result.error) {
         setServerError(result.error);
@@ -176,6 +184,14 @@ export function FeastEditRegister({ slug, participantId }: { slug: string; parti
             {feast.requiresDob && <CategoryPill slug={catSlug} />}
             <GenderPicker value={form.gender} onChange={(v) => { set("gender", v); setPicked([]); }} />
             <TextField label="Phone (optional)" value={form.phone} onChange={(v) => set("phone", v.replace(/\D/g, "").slice(0, 10))} placeholder="10-digit mobile" type="tel" />
+            {adminScope && pickerHierarchy && (
+              <div>
+                <label className="fp-cap mb-2 block text-[10.5px]" style={{ color: theme.sub }}>
+                  Shakha (within {adminScope.name})
+                </label>
+                <HierarchyPicker value={shakhaId ?? ""} onChange={(id) => setShakhaId(id || null)} hierarchy={pickerHierarchy} className={PUBLIC_SELECT_CLASS} />
+              </div>
+            )}
           </GlassPanel>
           <GlowBtn variant="primary" size="lg" className="w-full" disabled={!step1ok} onClick={() => setStep(1)}>Continue</GlowBtn>
 

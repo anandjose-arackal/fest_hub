@@ -23,7 +23,7 @@ const STEPS_WITH_PHOTO = ["Details", "Events", "Photo", "Review"];
 
 // Matches TextField/DateField's glass-input look above, for the one place a
 // plain <select> (HierarchyPicker) needs to sit among them.
-const PUBLIC_SELECT_CLASS =
+export const PUBLIC_SELECT_CLASS =
   "h-[52px] w-full rounded-[15px] border bg-[var(--fp-input)] border-[var(--fp-line-2)] px-3.5 text-[15px] font-semibold text-[var(--fp-ink)] outline-none focus:border-[var(--fp-primary-light)]";
 
 export function normGender(g: string | null | undefined): string | null {
@@ -122,20 +122,15 @@ export function GenderPicker({ value, onChange }: { value: string; onChange: (v:
   );
 }
 
-export function FeastRegister({ slug }: { slug: string }) {
-  const router = useRouter();
-  const { feast } = useFeast(slug);
+/**
+ * The shakha chooser under a meghala/diocese-scoped admin's own node (their
+ * top tier is fixed by their account): Meghala → Shakha for a diocese admin,
+ * Shakha for a meghala admin. null for a shakha-scoped admin (no choice).
+ */
+export function useScopePickerHierarchy(): PickerHierarchy | null {
   const { adminScope } = useAuth();
   const orgHierarchy = useOrgHierarchy();
-  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
-  const [categories, setCategories] = useState<CompetitionCategory[]>([]);
-  // When adminScope.level === "shakha" (the default, unchanged case),
-  // adminShakha is fixed to that one shakha — no picker, same read-only
-  // badge as always. When the signed-in admin's own scope is a meghala or
-  // diocese (covers multiple shakhas), adminShakha instead reflects
-  // whichever shakha they've picked below via HierarchyPicker.
-  const [selectedShakhaId, setSelectedShakhaId] = useState("");
-  const pickerHierarchy: PickerHierarchy | null = useMemo(() => {
+  return useMemo(() => {
     if (!adminScope || adminScope.level === "shakha") return null;
     if (adminScope.level === "meghala") {
       return {
@@ -152,6 +147,22 @@ export function FeastRegister({ slug }: { slug: string }) {
       hierarchyLevel: "meghala",
     };
   }, [adminScope, orgHierarchy.meghalas, orgHierarchy.shakhas]);
+}
+
+export function FeastRegister({ slug }: { slug: string }) {
+  const router = useRouter();
+  const { feast } = useFeast(slug);
+  const { adminScope } = useAuth();
+  const orgHierarchy = useOrgHierarchy();
+  const { lineage, lineageCols, lineageLine } = useShakhaLineage();
+  const [categories, setCategories] = useState<CompetitionCategory[]>([]);
+  // When adminScope.level === "shakha" (the default, unchanged case),
+  // adminShakha is fixed to that one shakha — no picker, same read-only
+  // badge as always. When the signed-in admin's own scope is a meghala or
+  // diocese (covers multiple shakhas), adminShakha instead reflects
+  // whichever shakha they've picked below via HierarchyPicker.
+  const [selectedShakhaId, setSelectedShakhaId] = useState("");
+  const pickerHierarchy = useScopePickerHierarchy();
   const adminShakha = useMemo(() => {
     if (!adminScope) return null;
     if (adminScope.level === "shakha") return { id: adminScope.id, name: adminScope.name };
