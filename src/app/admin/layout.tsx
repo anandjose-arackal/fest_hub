@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, UserCheck, ClipboardCheck, Medal, Trophy, Users, CalendarDays,
-  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2, ImageDown,
+  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2, ImageDown, ListOrdered,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
@@ -55,6 +55,7 @@ function buildFullNavSections(hierarchyLevel: HierarchyLevel): NavSection[] {
         { href: "/admin/results", label: "Results", icon: Medal, color: "#D97706" },
         { href: "/admin/posters", label: "Result Posters", icon: ImageDown, color: "#8B1538" },
         { href: "/admin/standings", label: "Standings", icon: Trophy, color: "#7C3AED" },
+        { href: "/admin/summary", label: "Points Summary", icon: ListOrdered, color: "#6B46FF" },
         { href: "/admin/certificates", label: "Certificates", icon: Award, color: "#A16207" },
       ],
     },
@@ -85,7 +86,7 @@ function isTrophyPath(pathname: string) {
   return pathname === TROPHY_HOME || pathname.startsWith(`${TROPHY_HOME}/`);
 }
 
-const ME_ADMIN_ALLOWED_PATHS = ["/admin", "/admin/participants", "/admin/participation", "/admin/standings"];
+const ME_ADMIN_ALLOWED_PATHS = ["/admin", "/admin/participants", "/admin/participation", "/admin/standings", "/admin/summary"];
 const ME_ADMIN_NAV_SECTIONS: NavSection[] = [
   {
     title: null,
@@ -94,6 +95,7 @@ const ME_ADMIN_NAV_SECTIONS: NavSection[] = [
       { href: "/admin/participants", label: "Participants", icon: UserCheck, color: "#0891B2" },
       { href: "/admin/participation", label: "Attendance", icon: ClipboardCheck, color: "#BE185D" },
       { href: "/admin/standings", label: "Standings", icon: Trophy, color: "#7C3AED" },
+      { href: "/admin/summary", label: "Points Summary", icon: ListOrdered, color: "#6B46FF" },
     ],
   },
 ];
