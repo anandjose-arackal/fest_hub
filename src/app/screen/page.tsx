@@ -1516,7 +1516,7 @@ function ScreenPageInner() {
         )}
         </div>
 
-        <Ticker rows={overallRows} />
+        <Ticker rows={(hasDiocese ? overallDioceseRows : hasMeghala ? overallMeghalaRows : overallRows).filter((r) => r.points > 0 && r.shakhaId !== UNASSIGNED_ID)} />
 
         {takeover && <PublishTakeover key={takeover.ev.id} ev={takeover.ev} phase={takeover.phase} winner={takeoverWinner} afterWinner={takeover.afterWinner} />}
       </div>

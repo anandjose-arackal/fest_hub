@@ -11,7 +11,7 @@ import {
   type StandingsRow, type GroupStandingsRow,
 } from "@/actions/results";
 import { useOrgHierarchy, loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
-import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
+import { openPrintWindow, PRINT_FALLBACK_BUTTON, PRINT_PAGE_CSS, PRINT_PAGINATE_SCRIPT, wrapPrintPages } from "@/lib/print-export";
 import { SPLIT_CATEGORIES, type GenderSplit, type SplitCategory, type SplitGender } from "@/lib/standings-split";
 import type { Feast, HierarchyLevel, OrgSettings } from "@/types";
 
@@ -148,46 +148,79 @@ export default function SummaryPage() {
 
   function printSummary() {
     if (!view) return;
-    const listTable = (l: RankList, nameHead: string) =>
-      `<div class="list"><div class="lt">${esc(l.title)}</div><table><thead><tr><th>#</th><th>${nameHead}</th><th class="num">Pts</th></tr></thead><tbody>${l.rows
-        .map((r) => `<tr><td>${r.rank ?? "—"}</td><td>${esc(r.name)}</td><td class="num">${r.pts}</td></tr>`)
-        .join("")}</tbody></table></div>`;
-    const standingsHtml = `<h2>${topLabel} standings</h2><table><thead><tr><th>#</th><th>${topLabel}</th>${SPLIT_CATEGORIES.map((c) => `<th class="num">${CAT_LABEL[c]}</th>`).join("")}<th class="num">Team</th><th class="num">Total</th></tr></thead><tbody>${view.standings
-      .map((s) => `<tr><td>${s.rank ?? "—"}</td><td>${esc(s.name)}</td>${SPLIT_CATEGORIES.map((c) => `<td class="num">${s.row.cats[c]}</td>`).join("")}<td class="num">${s.row.team}</td><td class="num">${s.pts}</td></tr>`)
-      .join("")}</tbody></table>`;
-    const catHtml = `<h2 class="pb">By age category${view.showSplit ? " — Boys and Girls" : ""}</h2>${view.categories
-      .map((b) => `<div class="cat"><h3>${CAT_LABEL[b.cat]}</h3><div class="lists">${b.lists.map((l) => listTable(l, topLabel)).join("")}</div></div>`)
+    const rk = (r: number | null) => (r ? `<span class="rk${r <= 3 ? ` r${r}` : ""}">${r}</span>` : `<span class="rk">—</span>`);
+    const rowCls = (r: number | null) => (r && r <= 3 ? ` class="w${r}"` : "");
+    const listTable = (l: RankList, nameHead: string) => {
+      const max = Math.max(1, ...l.rows.map((r) => r.pts));
+      return `<div class="list">${l.title ? `<div class="lt">${esc(l.title)}</div>` : ""}<div class="tbl"><table><thead><tr><th class="c">#</th><th>${nameHead}</th><th class="num">Pts</th></tr></thead><tbody>${l.rows
+        .map((r) => `<tr${rowCls(r.rank)}><td class="c">${rk(r.rank)}</td><td class="nm">${esc(r.name)}</td><td class="num"><span class="bar" style="width:${Math.round((r.pts / max) * 100)}%"></span><b>${r.pts}</b></td></tr>`)
+        .join("")}</tbody></table></div></div>`;
+    };
+    const maxTotal = Math.max(1, ...view.standings.map((s) => s.pts));
+    const standingsHtml = `<h2><span class="dot"></span>${topLabel} standings</h2><div class="tbl"><table><thead><tr><th class="c">#</th><th>${topLabel}</th>${SPLIT_CATEGORIES.map((c) => `<th class="num">${CAT_LABEL[c]}</th>`).join("")}<th class="num">Team</th><th class="num">Total</th></tr></thead><tbody>${view.standings
+      .map((s) => `<tr${rowCls(s.rank)}><td class="c">${rk(s.rank)}</td><td class="nm">${esc(s.name)}</td>${SPLIT_CATEGORIES.map((c) => `<td class="num">${s.row.cats[c] || "·"}</td>`).join("")}<td class="num">${s.row.team || "·"}</td><td class="num tot"><span class="bar" style="width:${Math.round((s.pts / maxTotal) * 100)}%"></span><b>${s.pts}</b></td></tr>`)
+      .join("")}</tbody></table></div>`;
+    const catHtml = `<h2 class="pb"><span class="dot"></span>By age category${view.showSplit ? " — Boys and Girls" : ""}</h2>${view.categories
+      .map((b) => `<div class="cat"><div class="catname">${CAT_LABEL[b.cat]}</div><div class="lists">${b.lists.map((l) => listTable(l, topLabel)).join("")}</div></div>`)
       .join("")}`;
     const topHtml = [
-      view.meghalaTop && `<h2>Meghala — top ${TOP_N}</h2>${listTable({ title: "", rows: view.meghalaTop }, "Meghala")}`,
-      view.shakhaTop && `<h2>Shakha — top ${TOP_N}</h2>${listTable({ title: "", rows: view.shakhaTop }, "Shakha")}`,
+      view.meghalaTop && `<h2><span class="dot"></span>Meghala — top ${TOP_N}</h2>${listTable({ title: "", rows: view.meghalaTop }, "Meghala")}`,
+      view.shakhaTop && `<h2><span class="dot"></span>Shakha — top ${TOP_N}</h2>${listTable({ title: "", rows: view.shakhaTop }, "Shakha")}`,
     ].filter(Boolean).join("");
     const title = `Points Summary — ${scopeTitle}`;
-    openPrintWindow(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
-      @page { size: A4 portrait; margin: 14mm 12mm; }
-      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-family: Arial, sans-serif; }
-      .hdr { text-align: center; margin-bottom: 14px; }
-      h2 { margin: 18px 0 6px; font-size: 15px; color: #6B46FF; break-after: avoid; page-break-after: avoid; }
-      h2.pb { break-before: page; page-break-before: always; }
-      h3 { margin: 0 0 4px; font-size: 13px; color: #0F766E; }
-      .cat { break-inside: avoid; page-break-inside: avoid; margin-bottom: 12px; }
-      .lists { display: flex; gap: 8px; align-items: flex-start; }
-      .list { flex: 1; min-width: 0; }
-      .lt { font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
-      table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-      thead tr { background: #ede9fe; text-transform: uppercase; }
-      th, td { border: 1px solid #333; padding: 4px 5px; font-size: 10.5px; text-align: left; }
-      .num { text-align: right; }
-      td.num:last-child { font-weight: 700; }
-      tbody tr { break-inside: avoid; page-break-inside: avoid; }
-      tbody tr:nth-child(even) { background: #f8f7ff; }
-      </style></head><body>${PRINT_FALLBACK_BUTTON}
-      <div class="hdr">
-        ${orgLine ? `<div style="font-size:13px;font-weight:700;color:#6B46FF;">${esc(orgLine)}</div>` : ""}
-        <div style="font-size:18px;font-weight:700;margin-top:6px;">${esc(title)}</div>
+    const dateStr = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+    const body = `<div class="hdr">
+        <div>
+          ${orgLine ? `<div class="org">${esc(orgLine)}</div>` : ""}
+          <div class="ttl">Points Summary</div>
+          <div class="chips"><span class="chip dark">${esc(scopeTitle)}</span><span class="chip">${topLabel} rankings</span><span class="chip">${esc(dateStr)}</span></div>
+        </div>
+        <div class="trophy" aria-hidden="true">🏆</div>
       </div>
-      ${standingsHtml}${topHtml}${catHtml}
-      </body></html>`);
+      ${standingsHtml}${topHtml}${catHtml}`;
+    openPrintWindow(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+      <style>
+      @page { size: A4 portrait; }
+      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { font-family: 'Poppins', Arial, sans-serif; color: #1e1b4b; margin: 0; }
+      .hdr { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; margin-bottom: 14px; border-radius: 14px; color: #fff; background: linear-gradient(120deg, #4C1D95 0%, #6B46FF 60%, #9333EA 100%); }
+      .hdr .org { font-size: 10.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; opacity: .85; }
+      .hdr .ttl { font-size: 28px; font-weight: 800; line-height: 1.1; margin-top: 3px; }
+      .hdr .chips { margin-top: 10px; }
+      .hdr .chip { background: rgba(255,255,255,.18); color: #fff; }
+      .hdr .chip.dark { background: #fff; color: #4C1D95; }
+      .trophy { font-size: 46px; line-height: 1; }
+      h2 { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; font-size: 14px; font-weight: 800; color: #4C1D95; break-after: avoid; page-break-after: avoid; }
+      h2 .dot { width: 8px; height: 18px; border-radius: 4px; background: linear-gradient(#6B46FF, #9333EA); }
+      h2.pb { break-before: page; page-break-before: always; }
+      .cat { break-inside: avoid; page-break-inside: avoid; margin-bottom: 14px; }
+      .catname { display: inline-block; margin-bottom: 6px; padding: 3px 12px; border-radius: 999px; background: #0F766E; color: #fff; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+      .lists { display: flex; gap: 10px; align-items: flex-start; }
+      .list { flex: 1; min-width: 0; }
+      .lt { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #6B46FF; margin-bottom: 3px; }
+      table { width: 100%; border-collapse: collapse; }
+      th { background: #4C1D95; color: #fff; padding: 6px 6px; font-size: 9.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; text-align: left; }
+      td { padding: 4.5px 6px; font-size: 10.5px; border-top: 1px solid #E9E5FF; vertical-align: middle; }
+      .c { width: 30px; text-align: center; }
+      .num { text-align: right; }
+      td.nm { font-weight: 600; }
+      td.num { color: #4B5563; }
+      td.num:last-child { position: relative; color: #4C1D95; }
+      td.num:last-child b { position: relative; font-weight: 800; }
+      .bar { position: absolute; left: 0; top: 18%; bottom: 18%; background: #EDE9FE; border-radius: 0 6px 6px 0; max-width: 100%; }
+      tbody tr { break-inside: avoid; page-break-inside: avoid; }
+      tbody tr:nth-child(even) td { background: #FAF8FF; }
+      tr.w1 td { background: #FFF8E1 !important; } tr.w2 td { background: #F3F4F6 !important; } tr.w3 td { background: #FDF1E7 !important; }
+      tr.w1 .bar { background: #FDE68A; } tr.w2 .bar { background: #D5DAE1; } tr.w3 .bar { background: #F3C9A0; }
+      .rk { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 800; color: #6B7280; }
+      .rk.r1 { background: #F5C542; color: #7A4B00; box-shadow: inset 0 0 0 1.5px #B7791F; }
+      .rk.r2 { background: #D5DAE1; color: #4B5563; box-shadow: inset 0 0 0 1.5px #8A94A3; }
+      .rk.r3 { background: #E0A06A; color: #6B2F0D; box-shadow: inset 0 0 0 1.5px #A0522D; }
+      ${PRINT_PAGE_CSS}
+      </style></head><body>${PRINT_FALLBACK_BUTTON}${wrapPrintPages(body)}${PRINT_PAGINATE_SCRIPT}</body></html>`);
   }
 
   const selectCls = "rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-purple-200";
