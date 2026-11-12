@@ -13,13 +13,13 @@ import type { CertificateField, CertificateRosterRow, CertificateTemplate } from
 // resolution via html-to-image (already a dependency, used by the poster
 // generator) and dropped into a jsPDF page at that page's real mm size.
 
-const PX_PER_MM = 6; // ~150 DPI equivalent — sharp enough for print
+const PX_PER_MM = 300 / 25.4; // 300 DPI — print quality; A4 renders at 2480×3508 px
 // JPEG, not PNG: a photo background at PNG's lossless encoding runs into the
 // tens of MB *per certificate* (a 300-certificate roster would be
 // multiple GB and would hang the browser tab generating it). JPEG at this
 // quality is visually indistinguishable for a certificate and keeps a whole
 // roster's PDF in the single-digit MB range.
-const JPEG_QUALITY = 0.85;
+const JPEG_QUALITY = 0.92;
 
 function renderFieldNode(field: CertificateField, row: CertificateRosterRow, pxPerMm: number): HTMLDivElement | null {
   const anchor = document.createElement("div");
