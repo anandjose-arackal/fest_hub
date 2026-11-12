@@ -10,7 +10,7 @@ import { ParticipantPhotoField } from "@/components/feast/participant-photo-fiel
 import { registerTeam, updateTeam, deleteTeam } from "@/actions/team";
 import { fetchCompetitionCategories, getCategorySlug, CATEGORY_LABELS, formatCompetitionOptionLabel } from "@/lib/competition-categories";
 import { DEFAULT_MAX_PER_SHAKHA, DEFAULT_MAX_TEAM_MEMBERS } from "@/lib/feast-data";
-import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
+import { openPrintWindow, PRINT_FALLBACK_BUTTON, PRINT_PAGE_CSS, PRINT_PAGINATE_SCRIPT, wrapPrintPages, escHtml } from "@/lib/print-export";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
 import { useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { EMPTY_HIERARCHY_FILTER, filterShakhaIds, HierarchyFilter, HierarchyPicker, type HierarchyFilterValue } from "@/components/admin/hierarchy-picker";
@@ -342,6 +342,7 @@ export default function ParticipantsPage() {
   const [loading, setLoading] = useState(true);
   const [printLayoutTarget, setPrintLayoutTarget] = useState<"individual" | "team" | null>(null);
   const [cardsDialogOpen, setCardsDialogOpen] = useState(false);
+  const [stages, setStages] = useState<{ id: string; number: number; title: string; venue: string | null }[]>([]);
   const [pdfColumnOverrides, setPdfColumnOverrides] = useState<Partial<ParticipantPdfColumns>>({});
 
   const [panelOpen, setPanelOpen] = useState(false);
@@ -412,6 +413,7 @@ export default function ParticipantsPage() {
     ]);
     const fcRows = (fcs ?? []) as unknown as FCRow[];
     setFeastComps(fcRows);
+    supabase.from("stages").select("id, number, title, venue").eq("feast_id", feastId).order("number").then(({ data }) => setStages(data ?? []));
 
     const regByParticipant: Record<string, string[]> = {};
     for (const p of parts) {
@@ -846,26 +848,56 @@ export default function ParticipantsPage() {
     return `<!DOCTYPE html><html><head><meta charset="utf-8">
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
       <style>
-      @page { size: A4 portrait; margin: 16mm 6mm; }
-      * { box-sizing: border-box; }
-      body { font-family: 'Poppins', Arial, sans-serif; margin: 0; }
-      .sheet { border: 1px solid #D4D4D8; border-radius: 10px; padding: 12px 8px 20px; }
-      ${layout === "per-page" ? ".sheet:not(:last-child) { page-break-before: always; }" : ".sheet:not(:last-child) { margin-bottom: 16px; }"}
-      .hdr { text-align: center; padding-bottom: 12px; margin-bottom: 10px; border-bottom: 2px solid #7C3AED; }
-      .org { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #6B7280; }
-      .comp-name { font-size: 25px; font-weight: 800; color: #1e1b4b; margin-top: 4px; }
-      .comp-sub { font-size: 14px; font-weight: 600; color: #7C3AED; margin-top: 3px; }
+      @page { size: A4 portrait; }
+      * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { font-family: 'Poppins', Arial, sans-serif; margin: 0; color: #1e1b4b; }
+      ${layout === "per-page" ? ".sheet:not(:last-child) { page-break-before: always; }" : ".sheet:not(:last-child) { margin-bottom: 22px; }"}
+      .hdr { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 3px solid #7C3AED; }
+      .org { font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #6B7280; }
+      .comp-name { font-size: 24px; font-weight: 800; line-height: 1.15; color: #1e1b4b; margin-top: 3px; }
+      .chips { margin-top: 8px; }
+      .chip.stage { background: #7C3AED; color: #fff; }
       table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1.5px solid #999; padding: 9px 8px; font-size: 13.5px; text-align: left; }
-      thead tr { background: #EDE9FE; }
-      th { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #4C1D95; }
-      td.name { font-weight: 700; color: #1e1b4b; }
-      td.sign { width: 110px; min-width: 110px; }
-      td.blank { min-width: 55px; }
-      .reg { font-family: monospace; font-weight: 700; color: #4C1D95; }
-      </style></head><body>${PRINT_FALLBACK_BUTTON}${sections.join("")}</body></html>`;
+      thead { display: table-header-group; }
+      tr { page-break-inside: avoid; }
+      th { background: #4C1D95; color: #fff; padding: 8px 8px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; text-align: left; }
+      td { padding: 7px 8px; font-size: 12.5px; text-align: left; vertical-align: middle; border-top: 1px solid #E9E5FF; }
+      tbody tr:nth-child(even) td { background: #FAF8FF; }
+      td.sl { width: 28px; color: #6B7280; font-weight: 600; }
+      td.name { font-weight: 700; color: #1e1b4b; white-space: nowrap; }
+      td.sign { width: 100px; min-width: 100px; border-left: 1px solid #E9E5FF; }
+      td.blank { width: 62px; min-width: 62px; border-left: 1px solid #E9E5FF; border-right: 1px solid #E9E5FF; }
+      .reg { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; color: #4C1D95; white-space: nowrap; }
+      ${PRINT_PAGE_CSS}
+      </style></head><body${layout === "per-page" ? " data-per-page" : ""}>${PRINT_FALLBACK_BUTTON}${wrapPrintPages(sections.join(""))}${PRINT_PAGINATE_SCRIPT}</body></html>`;
+  }
+
+  // The competition's stage number ("2"), if it has one.
+  function stageLabelFor(fc: FCRow): string {
+    const st = fc.stage_id ? stages.find((x) => x.id === fc.stage_id) : undefined;
+    return st ? String(st.number) : "";
+  }
+
+  // Competition heading shared by both exports: org line, name, category /
+  // and stage chips.
+  function sheetHeaderHtml(fc: FCRow, orgLine: string): string {
+    const sub = competitionSubLine(fc);
+    const stage = stageLabelFor(fc);
+    return `<div class="hdr">
+      <div>
+        ${orgLine ? `<div class="org">${escHtml(orgLine)}</div>` : ""}
+        <div class="comp-name">${escHtml(fc.competition.name)}${sub ? ` – ${escHtml(sub)}` : ""}</div>
+        <div class="chips"></div>
+      </div>
+      ${stage ? `<div class="stagebox"><span>Stage</span><b>${escHtml(stage)}</b></div>` : ""}
+    </div>`;
+  }
+
+  // Shakha and Meghala share one two-line cell (Diocese keeps its own column).
+  function locCellHtml(shakha: string, meghala: string): string {
+    return `<td class="loc"><div class="l1">${escHtml(shakha)}</div>${pdfColumns.meghala && meghala ? `<div class="l2">${escHtml(meghala)}</div>` : ""}</td>`;
   }
 
   function competitionSubLine(fc: FCRow): string {
@@ -923,6 +955,7 @@ export default function ParticipantsPage() {
   function exportPDF(layout: PrintLayout) {
     const compsToprint = compFilter ? feastComps.filter((c) => c.id === compFilter) : feastComps;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
+    const locHead = pdfColumns.meghala ? "Shakha / Meghala" : "Shakha";
     const sections = compsToprint
       .map((fc) => {
         const rows = filtered.filter((p) => participantRegs[p.id]?.includes(fc.id));
@@ -930,21 +963,16 @@ export default function ParticipantsPage() {
         const rowsHtml = rows
           .map((p, i) => {
             const { meghalaName, dioceseName } = hierarchyNamesFor(p.shakha_id);
-            return `<tr><td>${i + 1}</td><td class="reg">${p.registration_number}</td><td class="blank"></td><td class="name">${p.name}</td><td>${p.house_name ?? ""}</td><td>${p.shakha?.name ?? ""}</td>${
-              pdfColumns.meghala ? `<td>${meghalaName}</td>` : ""
-            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td class="sign"></td></tr>`;
+            return `<tr><td class="sl">${i + 1}</td><td class="reg">${escHtml(p.registration_number)}</td><td class="blank"></td><td class="name">${escHtml(p.name)}</td><td>${escHtml(p.house_name)}</td>${locCellHtml(p.shakha?.name ?? "", meghalaName)}${
+              pdfColumns.diocese ? `<td>${escHtml(dioceseName)}</td>` : ""
+            }<td class="sign"></td></tr>`;
           })
           .join("");
-        const sub = competitionSubLine(fc);
         return `<div class="sheet">
-          <div class="hdr">
-            ${orgLine ? `<div class="org">${orgLine}</div>` : ""}
-            <div class="comp-name">${fc.competition.name}</div>
-            ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
-          </div>
-          <table><thead><tr><th>SL</th><th>Reg No</th><th>Chance No</th><th>Name</th><th>House Name</th><th>Shakha</th>${
-            pdfColumns.meghala ? "<th>Meghala</th>" : ""
-          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Sign</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          ${sheetHeaderHtml(fc, orgLine)}
+          <div class="tbl"><table><thead><tr><th>SL</th><th>Reg No</th><th>Chance No</th><th>Name</th><th>House Name</th><th>${locHead}</th>${
+            pdfColumns.diocese ? "<th>Diocese</th>" : ""
+          }<th>Sign</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
         </div>`;
       })
       .filter(Boolean);
@@ -955,6 +983,7 @@ export default function ParticipantsPage() {
   function exportTeamPDF(layout: PrintLayout) {
     const compsToprint = teamCompFilter ? teamFeastComps.filter((c) => c.id === teamCompFilter) : teamFeastComps;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
+    const locHead = pdfColumns.meghala ? "Shakha / Meghala" : "Shakha";
     const sections = compsToprint
       .map((fc) => {
         const rows = teams.filter((t) => t.feastCompetitionId === fc.id && (!shakhaFilterIds || (!!t.shakhaId && shakhaFilterIds.has(t.shakhaId))));
@@ -962,21 +991,16 @@ export default function ParticipantsPage() {
         const rowsHtml = rows
           .map((t, i) => {
             const { meghalaName, dioceseName } = hierarchyNamesFor(t.shakhaId);
-            return `<tr><td>${i + 1}</td><td class="blank"></td><td class="name">${t.teamName}</td><td>${t.shakhaName}</td>${
-              pdfColumns.meghala ? `<td>${meghalaName}</td>` : ""
-            }${pdfColumns.diocese ? `<td>${dioceseName}</td>` : ""}<td>${t.members.join(", ") || "—"}</td><td class="sign"></td></tr>`;
+            return `<tr><td class="sl">${i + 1}</td><td class="blank"></td><td class="name">${escHtml(t.teamName)}</td>${locCellHtml(t.shakhaName, meghalaName)}${
+              pdfColumns.diocese ? `<td>${escHtml(dioceseName)}</td>` : ""
+            }<td>${escHtml(t.members.join(", ") || "—")}</td><td class="sign"></td></tr>`;
           })
           .join("");
-        const sub = competitionSubLine(fc);
         return `<div class="sheet">
-          <div class="hdr">
-            ${orgLine ? `<div class="org">${orgLine}</div>` : ""}
-            <div class="comp-name">${fc.competition.name}</div>
-            ${sub ? `<div class="comp-sub">${sub}</div>` : ""}
-          </div>
-          <table><thead><tr><th>SL</th><th>Chance No</th><th>Team</th><th>Shakha</th>${
-            pdfColumns.meghala ? "<th>Meghala</th>" : ""
-          }${pdfColumns.diocese ? "<th>Diocese</th>" : ""}<th>Members</th><th>Sign</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+          ${sheetHeaderHtml(fc, orgLine)}
+          <div class="tbl"><table><thead><tr><th>SL</th><th>Chance No</th><th>Team</th><th>${locHead}</th>${
+            pdfColumns.diocese ? "<th>Diocese</th>" : ""
+          }<th>Members</th><th>Sign</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
         </div>`;
       })
       .filter(Boolean);

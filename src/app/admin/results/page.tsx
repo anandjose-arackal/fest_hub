@@ -14,9 +14,9 @@ import {
   NO_GRADE_POINTS, NO_POSITION_POINTS,
   type Grade,
 } from "@/lib/result-calculator";
-import { openPrintWindow, PRINT_FALLBACK_BUTTON } from "@/lib/print-export";
+import { openPrintWindow, PRINT_FALLBACK_BUTTON, PRINT_PAGE_CSS, PRINT_PAGINATE_SCRIPT, wrapPrintPages, escHtml as pdfEsc } from "@/lib/print-export";
 import { formatCompetitionOptionLabel, genderDisplayWord } from "@/lib/competition-categories";
-import { loadOrgSettingsCached as getOrgSettings, useShakhaLineage } from "@/hooks/use-feast";
+import { loadOrgSettingsCached as getOrgSettings, useOrgHierarchy, useShakhaLineage } from "@/hooks/use-feast";
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import { getCertificateTemplate, getCertificateRosterForCompetition } from "@/actions/certificates";
 import { getPrintedItems, markItemsPrinted, setItemPrinted } from "@/actions/handover";
@@ -135,6 +135,33 @@ export default function ResultsPage() {
   const [shakhas, setShakhas] = useState<Shakha[]>([]);
   const { lineage, lineageCols, lineageLine } = useShakhaLineage();
   const [shakhaFilter, setShakhaFilter] = useState("");
+  // Diocese -> Meghala -> Shakha cascade for the PDF filter: each level narrows
+  // the next, and picking only a diocese or meghala scopes to every shakha under it.
+  const { dioceses, meghalas, hierarchyLevel } = useOrgHierarchy();
+  const [dioceseFilter, setDioceseFilter] = useState("");
+  const [meghalaFilter, setMeghalaFilter] = useState("");
+  const meghalaOptions = useMemo(() => (dioceseFilter ? meghalas.filter((m) => m.diocese_id === dioceseFilter) : meghalas), [meghalas, dioceseFilter]);
+  const shakhaOptions = useMemo(() => {
+    if (meghalaFilter) return shakhas.filter((s) => s.meghala_id === meghalaFilter);
+    if (dioceseFilter) {
+      const ids = new Set(meghalas.filter((m) => m.diocese_id === dioceseFilter).map((m) => m.id));
+      return shakhas.filter((s) => s.meghala_id && ids.has(s.meghala_id));
+    }
+    return shakhas;
+  }, [shakhas, meghalas, dioceseFilter, meghalaFilter]);
+  // null = no scope (everything); otherwise the shakha ids a row must belong to.
+  const scopeIds = useMemo(() => {
+    if (shakhaFilter) return new Set([shakhaFilter]);
+    if (meghalaFilter || dioceseFilter) return new Set(shakhaOptions.map((s) => s.id));
+    return null;
+  }, [shakhaFilter, meghalaFilter, dioceseFilter, shakhaOptions]);
+  const scopeLabel = shakhaFilter
+    ? shakhas.find((s) => s.id === shakhaFilter)?.name
+    : meghalaFilter
+      ? meghalas.find((m) => m.id === meghalaFilter)?.name
+      : dioceseFilter
+        ? dioceses.find((d) => d.id === dioceseFilter)?.name
+        : undefined;
   const [resultColumns, setResultColumns] = useState<ResultColumns>(DEFAULT_RESULT_COLUMNS);
   const [statusFilter, setStatusFilter] = useState<"" | "draft" | "published">("");
   const [entries, setEntries] = useState<EntryRow[]>([]);
@@ -180,6 +207,17 @@ export default function ResultsPage() {
   useEffect(() => {
     if (!feastId) return;
     getPrintedItems(feastId).then((res) => setPrintedAt(res.data ?? {}));
+  }, [feastId]);
+
+  // Stage number per stage id, for the "Stage 3" chip on the PDFs.
+  const [stageLabels, setStageLabels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!feastId) return;
+    supabase
+      .from("stages")
+      .select("id, number, title")
+      .eq("feast_id", feastId)
+      .then(({ data }) => setStageLabels(Object.fromEntries((data ?? []).map((st) => [st.id, String(st.number)]))));
   }, [feastId]);
 
   useEffect(() => {
@@ -367,14 +405,14 @@ export default function ResultsPage() {
   const resultFilteredRows = useMemo(
     () =>
       entries
-        .filter((e) => !shakhaFilter || e.shakhaId === shakhaFilter)
+        .filter((e) => !scopeIds || scopeIds.has(e.shakhaId))
         .map((e) => ({ ...e, ...(preview.get(e.regId) ?? { grade: null, gradePoints: 0, position: null, positionPoints: 0, totalPoints: 0 }) }))
         .filter((r) => {
           const placeMatch = r.position === 1 || r.position === 2 || r.position === 3 ? resultPlaceFilters[r.position] : false;
           const gradeMatch = r.grade != null ? resultGradeFilters[r.grade] : false;
           return placeMatch || gradeMatch;
         }),
-    [entries, shakhaFilter, preview, resultPlaceFilters, resultGradeFilters]
+    [entries, scopeIds, preview, resultPlaceFilters, resultGradeFilters]
   );
   const noResultFiltersSelected = !Object.values(resultPlaceFilters).some(Boolean) && !Object.values(resultGradeFilters).some(Boolean);
 
@@ -672,14 +710,14 @@ export default function ResultsPage() {
     const feast = feasts.find((f) => f.id === feastId);
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(feast?.name ?? "", [
-      { title: selectedFc.competition.name, subtitle: pdfCompetitionSubtitle(selectedFc.competition.competition_category?.name, selectedFc.competition.gender), rows: sorted, isGroup },
+      { title: selectedFc.competition.name, subtitle: pdfCompetitionSubtitle(selectedFc.competition.competition_category?.name, selectedFc.competition.gender), stage: selectedFc.stage_id ? stageLabels[selectedFc.stage_id] : undefined, rows: sorted, isGroup },
     ], orgLine, "continuous", pdfColumns);
     openPrintWindow(html);
   }
 
   async function exportAll(layout: PrintLayout) {
     const feast = feasts.find((f) => f.id === feastId);
-    const sections: { title: string; subtitle: string; isGroup: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[] = [];
+    const sections: { title: string; subtitle: string; stage?: string; isGroup: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[] = [];
     // Every competition's entries and scores in four batched reads (chunked
     // and paged), instead of two sequential round trips per competition.
     const groupIds = feastComps.filter((fc) => fc.competition.type === "group").map((fc) => fc.id);
@@ -740,16 +778,17 @@ export default function ResultsPage() {
         });
       }
       const filteredRows = rows.filter((r) => r.grade !== null || r.position !== null);
-      const scoped = shakhaFilter ? filteredRows.filter((r) => r.shakhaId === shakhaFilter) : filteredRows;
-      if (shakhaFilter && scoped.length === 0) continue;
+      const scoped = scopeIds ? filteredRows.filter((r) => scopeIds.has(r.shakhaId)) : filteredRows;
+      if (scopeIds && scoped.length === 0) continue;
       sections.push({
         title: fc.competition.name,
         subtitle: pdfCompetitionSubtitle(fc.competition.competition_category?.name, fc.competition.gender),
+        stage: fc.stage_id ? stageLabels[fc.stage_id] : undefined,
         isGroup: group,
         rows: sortPdfRows(scoped).map((r) => ({ ...r, ...hierarchyNamesFor(r.shakhaId) })),
       });
     }
-    const feastShakhaName = shakhaFilter ? shakhas.find((s) => s.id === shakhaFilter)?.name : undefined;
+    const feastShakhaName = scopeLabel;
     const orgLine = [org?.org_name_en, org?.area_name_en].filter(Boolean).join(" — ");
     const html = buildResultsHtml(`${feast?.name ?? ""}${feastShakhaName ? ` — ${feastShakhaName}` : ""}`, sections, orgLine, layout, pdfColumns);
     openPrintWindow(html);
@@ -835,9 +874,41 @@ export default function ResultsPage() {
             </option>
           ))}
         </select>
+        {hierarchyLevel === "diocese" && (
+          <select
+            className="input max-w-xs"
+            value={dioceseFilter}
+            onChange={(e) => { setDioceseFilter(e.target.value); setMeghalaFilter(""); setShakhaFilter(""); }}
+            title="Filter exported PDFs to one diocese"
+          >
+            <option value="">All Dioceses (PDF filter)</option>
+            {dioceses.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
+        {hierarchyLevel !== "shakha" && (
+          <select
+            className="input max-w-xs"
+            value={meghalaFilter}
+            onChange={(e) => {
+              const id = e.target.value;
+              setMeghalaFilter(id);
+              setShakhaFilter("");
+              const dId = meghalas.find((m) => m.id === id)?.diocese_id;
+              if (id && dId) setDioceseFilter(dId);
+            }}
+            title="Filter exported PDFs to one meghala"
+          >
+            <option value="">All Meghalas (PDF filter)</option>
+            {meghalaOptions.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        )}
         <select className="input max-w-xs" value={shakhaFilter} onChange={(e) => setShakhaFilter(e.target.value)} title="Filter exported PDFs to one shakha">
           <option value="">All Shakhas (PDF filter)</option>
-          {shakhas.map((s) => (
+          {shakhaOptions.map((s) => (
             <option key={s.id} value={s.id}>{s.name}</option>
           ))}
         </select>
@@ -1414,41 +1485,58 @@ function pdfCompetitionSubtitle(categoryName: string | null | undefined, gender:
   return [categoryName, genderDisplayWord(gender, categoryName, true) ?? "Common"].filter(Boolean).join(" · ");
 }
 
-// Colored "pill" cells, matching cml-mission-hub's admin/results print
-// sheet — same GRADE_SOLID/POS_COLORS/POS_EMOJI as the on-screen
-// GradeCell/PosCell above, so the printed page reads like the live table.
+// Printed results sheet. Position and grade are drawn as small illustrations
+// (a ribbon medal for 1st–3rd, a round seal for A/B/C) instead of coloured
+// text capsules, and the top-3 rows get a soft medal-coloured tint. Shares
+// its palette with the Participants PDF (violet header, chip row, count box).
+const PDF_MEDALS: Record<number, { fill: string; stroke: string; num: string; tint: string }> = {
+  1: { fill: "#F5C542", stroke: "#B7791F", num: "#7A4B00", tint: "#FFF8E1" },
+  2: { fill: "#D5DAE1", stroke: "#8A94A3", num: "#4B5563", tint: "#F3F4F6" },
+  3: { fill: "#E0A06A", stroke: "#A0522D", num: "#6B2F0D", tint: "#FDF1E7" },
+};
+
+function pdfMedalSvg(pos: number): string {
+  const m = PDF_MEDALS[pos];
+  return `<svg class="medal" viewBox="0 0 32 40" width="22" height="28" aria-hidden="true"><path d="M8 0h6l4 15h-8z" fill="#6B46FF"/><path d="M24 0h-6l-4 15h8z" fill="#4C1D95"/><circle cx="16" cy="26" r="12" fill="${m.fill}" stroke="${m.stroke}" stroke-width="2"/><circle cx="16" cy="26" r="8.6" fill="none" stroke="${m.stroke}" stroke-width="1" opacity=".55"/><text x="16" y="31" text-anchor="middle" font-size="13" font-weight="800" fill="${m.num}" font-family="Arial, sans-serif">${pos}</text></svg>`;
+}
+
 function pdfGradeCell(grade: Grade, pts: number): string {
   if (!grade) return `<span class="none">—</span>`;
   const { bg } = GRADE_SOLID[grade];
-  return `<span class="pill" style="background:${bg}">Grade ${grade}${pts > 0 ? `<b>+${pts} pts</b>` : ""}</span>`;
+  return `<span class="gwrap"><span class="gseal" style="--c:${bg}">${grade}</span>${pts > 0 ? `<span class="pts">+${pts}</span>` : ""}</span>`;
 }
 
 function pdfPosCell(pos: number | null, pts: number): string {
-  if (!pos) return `<span class="none">—</span>`;
-  const style = POS_COLORS[pos] ?? { bg: "#374151", pts: "#1F2937" };
-  const emoji = POS_EMOJI[pos] ?? "";
-  return `<span class="pill" style="background:${style.bg}">${emoji} ${positionLabel(pos)}${pts > 0 ? `<b>+${pts} pts</b>` : ""}</span>`;
+  if (!pos || !PDF_MEDALS[pos]) return `<span class="none">—</span>`;
+  return `<span class="pwrap">${pdfMedalSvg(pos)}<span class="ptxt"><b>${positionLabel(pos)}</b>${pts > 0 ? `<span class="pts">+${pts} pts</span>` : ""}</span></span>`;
 }
 
 function buildResultsHtml(
   title: string,
-  sections: { title: string; subtitle: string; isGroup?: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[],
+  sections: { title: string; subtitle: string; stage?: string; isGroup?: boolean; rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[] }[],
   orgLine: string | undefined,
   layout: PrintLayout,
   columns: ResultColumns
 ): string {
   // #, Reg No, Name and Position always print; the rest follow the
-  // "PDF Columns" picker above the table on-screen.
-  const colCount = 5 + [columns.shakha, columns.meghala, columns.diocese, columns.grade, columns.point].filter(Boolean).length;
+  // "PDF Columns" picker above the table on-screen. Shakha and Meghala share
+  // one two-line cell when both are on.
+  const stackLoc = columns.shakha && columns.meghala;
+  const colCount = 4 + [columns.shakha || columns.meghala, columns.meghala && !columns.shakha, columns.diocese, columns.grade, columns.point].filter(Boolean).length;
+  const locHead = stackLoc ? `<th>Shakha / Meghala</th>` : `${columns.shakha ? `<th>Shakha</th>` : ""}${columns.meghala ? `<th>Meghala</th>` : ""}`;
   const headerRow = [
-    `<th>#</th><th>Reg No</th><th>Name</th>`,
-    columns.shakha ? `<th>Shakha</th>` : "",
-    columns.meghala ? `<th>Meghala</th>` : "",
+    `<th class="c-sl">#</th><th>Reg No</th><th>Name</th>`,
+    locHead,
     columns.diocese ? `<th>Diocese</th>` : "",
     columns.grade ? `<th class="c-grade">Grade</th>` : "",
     `<th class="c-pos">Position</th>`,
-    columns.point ? `<th class="c-pos">Total</th>` : "",
+    columns.point ? `<th class="c-total">Total</th>` : "",
   ].join("");
+
+  function locCells(r: { shakhaName: string; meghalaName: string }): string {
+    if (stackLoc) return `<td class="loc"><div class="l1">${pdfEsc(r.shakhaName)}</div>${r.meghalaName ? `<div class="l2">${pdfEsc(r.meghalaName)}</div>` : ""}</td>`;
+    return `${columns.shakha ? `<td class="loc"><div class="l1">${pdfEsc(r.shakhaName)}</div></td>` : ""}${columns.meghala ? `<td class="loc"><div class="l1">${pdfEsc(r.meghalaName)}</div></td>` : ""}`;
+  }
 
   // Team competitions print as a "table of tables": each team gets its own
   // heading bar (name, shakha, grade, position, total) followed by a small
@@ -1457,29 +1545,28 @@ function buildResultsHtml(
   function buildTeamBlocks(rows: (EntryRow & Preview & { meghalaName: string; dioceseName: string })[]): string {
     return rows
       .map((r, i) => {
-        const badges = [
-          columns.shakha ? `<span class="badge">${r.shakhaName}</span>` : "",
-          columns.meghala ? `<span class="badge">${r.meghalaName}</span>` : "",
-          columns.diocese ? `<span class="badge">${r.dioceseName}</span>` : "",
+        const where = [columns.shakha ? r.shakhaName : "", columns.meghala ? r.meghalaName : "", columns.diocese ? r.dioceseName : ""].filter(Boolean).map(pdfEsc).join(" · ");
+        const right = [
           columns.grade ? pdfGradeCell(r.grade, r.gradePoints) : "",
           pdfPosCell(r.position, r.positionPoints),
-          columns.point ? `<span class="badge total">${r.totalPoints} pts</span>` : "",
+          columns.point ? `<span class="tot">${r.totalPoints}<small>pts</small></span>` : "",
         ]
           .filter(Boolean)
           .join("");
         const members = r.members ?? [];
+        const tint = r.position && PDF_MEDALS[r.position] ? ` style="background:${PDF_MEDALS[r.position].tint}"` : "";
         return `<div class="team-block">
-          <div class="team-head">
+          <div class="team-head"${tint}>
             <span class="team-no">${i + 1}</span>
-            <span class="team-name">${r.name}</span>
-            <span class="badges">${badges}</span>
+            <span class="team-id"><span class="team-name">${pdfEsc(r.name)}</span>${where ? `<span class="team-where">${where}</span>` : ""}</span>
+            <span class="badges">${right}</span>
           </div>
           ${
             members.length
               ? `<table class="member-table">
-                  <thead><tr><th>#</th><th>Participant</th><th>House Name</th></tr></thead>
+                  <thead><tr><th class="c-sl">#</th><th>Participant</th><th>House Name</th></tr></thead>
                   <tbody>${members
-                    .map((m, mi) => `<tr><td class="sl">${mi + 1}</td><td class="name">${m.name}</td><td class="shakha">${m.houseName || "—"}</td></tr>`)
+                    .map((m, mi) => `<tr><td class="sl">${mi + 1}</td><td class="name">${pdfEsc(m.name)}</td><td class="house">${pdfEsc(m.houseName || "—")}</td></tr>`)
                     .join("")}</tbody>
                 </table>`
               : `<p class="empty">No participants listed</p>`
@@ -1493,79 +1580,95 @@ function buildResultsHtml(
     .map(
       (s) => `<div class="sheet">
         <div class="hdr">
-          ${orgLine ? `<p class="org1">${orgLine}</p>` : ""}
-          <p class="comp">${s.title}</p>
-          ${s.subtitle ? `<p class="cat">${s.subtitle}</p>` : ""}
+          <div>
+            ${orgLine ? `<p class="org1">${pdfEsc(orgLine)}</p>` : ""}
+            <p class="comp">${pdfEsc(s.title)}${s.subtitle ? ` – ${pdfEsc(s.subtitle)}` : ""}</p>
+            <div class="chips"><span class="chip result">Results</span></div>
+          </div>
+          ${s.stage ? `<div class="stagebox"><span>Stage</span><b>${pdfEsc(s.stage)}</b></div>` : ""}
         </div>
         ${
           s.isGroup
             ? s.rows.length
               ? buildTeamBlocks(s.rows)
               : `<p class="empty">No graded results yet</p>`
-            : `<table>
+            : `<div class="tbl"><table>
           <thead><tr>${headerRow}</tr></thead>
           <tbody>${
             s.rows.length
               ? s.rows
-                  .map(
-                    (r, i) =>
-                      `<tr><td class="sl">${i + 1}</td><td class="reg">${r.regNo}</td><td class="name">${r.name}</td>${
-                        columns.shakha ? `<td class="shakha">${r.shakhaName}</td>` : ""
-                      }${columns.meghala ? `<td class="shakha">${r.meghalaName}</td>` : ""}${
-                        columns.diocese ? `<td class="shakha">${r.dioceseName}</td>` : ""
-                      }${columns.grade ? `<td class="grade">${pdfGradeCell(r.grade, r.gradePoints)}</td>` : ""}<td class="pos">${pdfPosCell(
-                        r.position,
-                        r.positionPoints
-                      )}</td>${columns.point ? `<td class="total">${r.totalPoints}</td>` : ""}</tr>`
-                  )
+                  .map((r, i) => {
+                    const cls = r.position && PDF_MEDALS[r.position] ? ` class="w${r.position}"` : "";
+                    return `<tr${cls}><td class="sl">${i + 1}</td><td class="reg">${pdfEsc(r.regNo)}</td><td class="name">${pdfEsc(r.name)}</td>${locCells(r)}${
+                      columns.diocese ? `<td class="loc"><div class="l1">${pdfEsc(r.dioceseName)}</div></td>` : ""
+                    }${columns.grade ? `<td class="grade">${pdfGradeCell(r.grade, r.gradePoints)}</td>` : ""}<td class="pos">${pdfPosCell(r.position, r.positionPoints)}</td>${
+                      columns.point ? `<td class="total">${r.totalPoints}</td>` : ""
+                    }</tr>`;
+                  })
                   .join("")
               : `<tr><td colspan="${colCount}" class="empty">No graded results yet</td></tr>`
           }</tbody>
-        </table>`
+        </table></div>`
         }
       </div>`
     )
     .join("");
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Results — ${title}</title><style>
-    @page { size: A4 portrait; margin: 16mm 14mm; }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Results — ${pdfEsc(title)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+    @page { size: A4 portrait; }
     * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    body { font-family: Arial, Helvetica, sans-serif; color: #1e1b4b; margin: 0; }
-    .sheet { border-left: 6px solid #6B46FF; border-right: 6px solid #6B46FF; padding: 0 16px 18px; margin-bottom: 18px; }
+    body { font-family: 'Poppins', Arial, sans-serif; color: #1e1b4b; margin: 0; }
+    .sheet { margin-bottom: 22px; }
     ${layout === "per-page" ? ".sheet:not(:first-child) { page-break-before: always; }" : ""}
-    .hdr { text-align: center; margin-bottom: 14px; break-after: avoid; page-break-after: avoid; }
-    .hdr .org1 { font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: #6B46FF; margin: 0 0 10px; }
-    .hdr .comp { font-size: 18px; font-weight: 800; margin: 4px 0 2px; }
-    .hdr .cat { font-size: 12.5px; font-weight: 600; color: #4B5563; margin: 0; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    .hdr { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 3px solid #7C3AED; break-after: avoid; page-break-after: avoid; }
+    .hdr p { margin: 0; }
+    .hdr .org1 { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: #6B7280; }
+    .hdr .comp { font-size: 24px; font-weight: 800; line-height: 1.15; margin: 3px 0 8px; }
+    .chip.result { background: #7C3AED; color: #fff; }
+    table { width: 100%; border-collapse: collapse; }
     thead { display: table-header-group; }
-    thead tr { background: linear-gradient(90deg,#ede9fe,#f5f3ff); }
-    th { border: 1px solid #c4b5fd; padding: 7px 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; color: #1e1b4b; text-align: left; }
-    th.c-pos, th.c-grade { text-align: center; }
-    td { border: 1px solid #e5e7eb; padding: 7px 6px; font-size: 12.5px; vertical-align: middle; }
+    th { background: #4C1D95; color: #fff; padding: 8px 8px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-align: left; }
+    th.c-pos, th.c-grade, th.c-total, th.c-sl { text-align: center; }
+    td { padding: 6px 8px; font-size: 12.5px; vertical-align: middle; border-top: 1px solid #E9E5FF; }
     tbody tr { break-inside: avoid; page-break-inside: avoid; }
-    tbody tr:nth-child(even) { background: #f8f7ff; }
-    td.sl { font-weight: 700; color: #4C1D95; }
+    tbody tr:nth-child(even) td { background: #FAF8FF; }
+    tbody tr.w1 td { background: ${PDF_MEDALS[1].tint}; }
+    tbody tr.w2 td { background: ${PDF_MEDALS[2].tint}; }
+    tbody tr.w3 td { background: ${PDF_MEDALS[3].tint}; }
+    tbody tr.w1 td:first-child { box-shadow: inset 4px 0 0 ${PDF_MEDALS[1].stroke}; }
+    tbody tr.w2 td:first-child { box-shadow: inset 4px 0 0 ${PDF_MEDALS[2].stroke}; }
+    tbody tr.w3 td:first-child { box-shadow: inset 4px 0 0 ${PDF_MEDALS[3].stroke}; }
+    td.sl { width: 30px; text-align: center; font-weight: 700; color: #6B7280; }
     td.pos, td.grade, td.total { text-align: center; }
-    td.name { font-weight: 700; }
-    td.shakha { color: #4B5563; font-weight: 600; }
-    td.reg { font-family: "Courier New", monospace; font-weight: 700; letter-spacing: .02em; color: #4C1D95; }
-    .pill { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; color: #fff; font-weight: 800; font-size: 10.5px; padding: 4px 8px; border-radius: 6px; line-height: 1.3; }
-    .pill b { font-size: 9px; font-weight: 800; }
-    .none { color: #9CA3AF; font-weight: 700; }
+    td.name { font-weight: 700; white-space: nowrap; }
+    td.total { font-size: 15px; font-weight: 800; color: #4C1D95; }
+    td.reg { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 700; color: #4C1D95; white-space: nowrap; }
+    .pwrap, .gwrap { display: inline-flex; align-items: center; gap: 6px; }
+    .medal { display: block; flex-shrink: 0; }
+    .ptxt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; text-align: left; }
+    .ptxt b { font-size: 12.5px; font-weight: 800; }
+    .pts { font-size: 10px; font-weight: 700; color: #6B7280; white-space: nowrap; }
+    .gseal { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--c); color: #fff; font-size: 13px; font-weight: 800; box-shadow: inset 0 0 0 2px rgba(255,255,255,.55), 0 0 0 1.5px var(--c); }
+    .none { color: #C4C4CC; font-weight: 700; }
     .empty { text-align: center; color: #9CA3AF; padding: 22px; font-size: 13px; }
-    .team-block { border: 1.5px solid #c4b5fd; border-radius: 10px; margin-bottom: 14px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-    .team-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; background: linear-gradient(90deg,#ede9fe,#f5f3ff); border-bottom: 1.5px solid #c4b5fd; }
-    .team-no { font-weight: 800; color: #4C1D95; font-size: 12.5px; }
-    .team-name { font-weight: 800; font-size: 14px; color: #1e1b4b; margin-right: auto; }
-    .badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-    .badge { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 6px; background: #ede9fe; color: #4C1D95; font-weight: 700; font-size: 10.5px; }
-    .badge.total { background: #4C1D95; color: #fff; }
-    table.member-table { margin-top: 0; }
-    table.member-table th { border: none; border-bottom: 1px solid #e5e7eb; font-size: 9.5px; padding: 5px 10px; }
-    table.member-table td { border: none; border-bottom: 1px solid #f1f0fb; padding: 5px 10px; }
+    .team-block { border: 1px solid #C4B5FD; border-radius: 10px; margin-bottom: 12px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+    .team-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #F5F3FF; border-bottom: 1px solid #C4B5FD; }
+    .team-no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #4C1D95; color: #fff; font-weight: 800; font-size: 12px; flex-shrink: 0; }
+    .team-id { display: flex; flex-direction: column; margin-right: auto; min-width: 0; }
+    .team-name { font-weight: 800; font-size: 14px; color: #1e1b4b; }
+    .team-where { font-size: 10.5px; font-weight: 600; color: #6B7280; margin-top: 1px; }
+    .badges { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+    .tot { font-size: 18px; font-weight: 800; color: #4C1D95; line-height: 1; }
+    .tot small { font-size: 9px; font-weight: 700; color: #6B7280; margin-left: 2px; text-transform: uppercase; }
+    table.member-table th { background: transparent; color: #6B7280; border-bottom: 1px solid #E9E5FF; font-size: 9.5px; padding: 5px 12px; }
+    table.member-table td { border-top: none; border-bottom: 1px solid #F1F0FB; padding: 5px 12px; font-size: 12px; }
+    table.member-table td.house { color: #4B5563; }
     table.member-table tbody tr:last-child td { border-bottom: none; }
-    table.member-table tbody tr:nth-child(even) { background: #faf9ff; }
     .team-block .empty { padding: 10px; }
-    </style></head><body>${PRINT_FALLBACK_BUTTON}${sheets}</body></html>`;
+    ${PRINT_PAGE_CSS}
+    </style></head><body${layout === "per-page" ? " data-per-page" : ""}>${PRINT_FALLBACK_BUTTON}${wrapPrintPages(sheets)}${PRINT_PAGINATE_SCRIPT}</body></html>`;
 }

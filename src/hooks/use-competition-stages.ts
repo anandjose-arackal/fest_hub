@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { CATEGORY_COLORS, CATEGORY_LABELS } from "@/lib/competition-categories";
+import { fetchAll } from "@/lib/fetch-all";
 import { venueFor } from "@/lib/venue-config";
 import { MAIN, buildingName, stagePlacement, stageRoomText, type VenuePlan } from "@/lib/venue-plan";
 
@@ -143,25 +144,41 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
     if (!isSupabaseConfigured) { setLoading(false); return; }
     if (!silent) setLoading(true);
     try {
-      // One request per poll: the fest is matched by slug through an inner
-      // join and the category slug is embedded, instead of a slug→id lookup
-      // plus a separate competition_categories read on every tick.
-      const { data: fcs, error: fcErr } = await supabase
-        .from("feast_competitions")
-        .select("id, stage_id, scheduled_time, comp_status, progress_pct, display_order, feast:feasts!inner(slug), stage:stages(id, number, title, venue), competition:competitions(name, gender, competition_category:competition_categories(slug))")
-        .eq("feast.slug", slug)
-        .not("stage_id", "is", null)
-        .order("display_order");
-      if (fcErr) { console.error("[useCompetitionStages]", fcErr.message); setLoading(false); return; }
+      // The fest's own staged items, then other fests' items on a stage with
+      // the same number (e.g. Hrudaya Lilli's Speech on the arts fest's
+      // Stage 3), which join that stage's schedule. Both are paged: PostgREST
+      // silently cuts a response at 1000 rows. The category slug is embedded
+      // rather than read separately on every tick.
+      const cols = "id, stage_id, scheduled_time, comp_status, progress_pct, display_order, feast:feasts!inner(slug, name), stage:stages!inner(id, number, title, venue), competition:competitions(name, gender, competition_category:competition_categories(slug))";
+      const ownRes = await fetchAll((from, to) =>
+        supabase.from("feast_competitions").select(cols).eq("feast.slug", slug).not("stage_id", "is", null).order("display_order").order("id").range(from, to));
+      if (ownRes.error) { console.error("[useCompetitionStages]", ownRes.error); setLoading(false); return; }
+
+      const one = <T,>(x: T | T[] | null): T | null => (Array.isArray(x) ? x[0] ?? null : x);
+      const stageKey = (s: { number: number; title: string }) => `${s.number}|${s.title.trim().toLowerCase()}`;
+      const own = ownRes.data;
+      const ownStageIds = new Map<string, string>();
+      for (const fc of own) { const st = one(fc.stage); if (st) ownStageIds.set(stageKey(st), st.id); }
+      const numbers = [...new Set(own.map((fc) => one(fc.stage)?.number).filter((n): n is number => n != null))];
+      const guestRes = numbers.length
+        ? await fetchAll((from, to) =>
+            supabase.from("feast_competitions").select(cols).neq("feast.slug", slug).in("stage.number", numbers).not("stage_id", "is", null).order("display_order").order("id").range(from, to))
+        : { data: [] as typeof own, error: null };
+      if (guestRes.error) console.error("[useCompetitionStages] guests", guestRes.error);
+      const guests = guestRes.data.filter((fc) => { const st = one(fc.stage); return st && ownStageIds.has(stageKey(st)); });
 
       const groups = new Map<string, { number: number; title: string; venue: string | null; place: StagePlace; items: StageCompetition[] }>();
-      for (const fc of fcs ?? []) {
-        const stage = Array.isArray(fc.stage) ? fc.stage[0] : fc.stage;
+      for (const fc of [...own, ...guests]) {
+        const guestFeast = one(fc.feast)?.slug !== slug ? one(fc.feast)?.name ?? null : null;
+        const rawStage = one(fc.stage);
+        // A guest item files under the host fest's stage of the same number and title.
+        const stage = rawStage && guestFeast ? { ...rawStage, id: ownStageIds.get(stageKey(rawStage))! } : rawStage;
         if (!stage) continue;
         const comp = Array.isArray(fc.competition) ? fc.competition[0] : fc.competition;
         const cat = Array.isArray(comp?.competition_category) ? comp?.competition_category[0] : comp?.competition_category;
         const categorySlug = cat?.slug ?? null;
-        const compName = comp?.name ?? "Competition";
+        // A guest fest's item is named with its fest, e.g. "ഹൃദയ ലില്ലി പ്രസംഗം".
+        const compName = guestFeast ? `${guestFeast} ${comp?.name ?? ""}`.trim() : comp?.name ?? "Competition";
         const item: StageCompetition = {
           id: fc.id,
           label: compName,

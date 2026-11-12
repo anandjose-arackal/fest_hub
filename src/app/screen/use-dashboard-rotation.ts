@@ -21,7 +21,9 @@ export function useDashboardRotation(
   paused = false,
   enabledSectionKeys: Set<string> | null = null,
   rankingScreens = 1,
-  stagePages = 1
+  stagePages = 1,
+  /** A competition sub-step stays up at least this long (a long grade list needs its full scroll). */
+  holdMs = 0
 ) {
   const [sectionIdx, setSectionIdxRaw] = useState(0);
   const [screenIdx, setScreenIdxRaw] = useState(0);
@@ -61,7 +63,7 @@ export function useDashboardRotation(
 
   useEffect(() => {
     if (sections.length === 0 || paused) return;
-    const delay = isStages ? STAGE_PAGE_MS : isRankingsScreen ? ROTATE_MS : SUB_MS;
+    const delay = isStages ? Math.max(STAGE_PAGE_MS, holdMs) : isRankingsScreen ? ROTATE_MS : Math.max(SUB_MS, holdMs);
     const id = setTimeout(() => {
       if (isRankingsScreen) {
         if (safeScreenIdx < lastScreenIdx) {
@@ -85,7 +87,7 @@ export function useDashboardRotation(
     }, delay);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sectionsKey, safeSectionIdx, safeScreenIdx, subIdx, isRankingsScreen, isStages, lastScreenIdx, paused, enabledSectionKeys]);
+  }, [sectionsKey, safeSectionIdx, safeScreenIdx, subIdx, isRankingsScreen, isStages, lastScreenIdx, paused, enabledSectionKeys, holdMs]);
 
   return { sectionIdx: safeSectionIdx, screenIdx: safeScreenIdx, subIdx, activeSection, isRankingsScreen, goToSection, goToScreen };
 }

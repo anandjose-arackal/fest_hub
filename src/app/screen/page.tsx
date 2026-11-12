@@ -1,15 +1,16 @@
 "use client";
 
-import { Fragment, Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Award, Check, ChevronLeft, ChevronRight, Church, Pause, Play, Settings, Trophy } from "lucide-react";
+import { Award, Check, ChevronLeft, ChevronRight, Church, MapPin, Pause, Play, Settings, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useFeasts, useOrgHierarchy } from "@/hooks/use-feast";
 import { useCompetitionStages, type CompetitionStage } from "@/hooks/use-competition-stages";
 import { VenueMap, hasVenueMap } from "@/components/feast/venue-map";
 import { floorName, groupByFloor } from "@/lib/venue-floors";
+import { routeSteps, type VenuePlan } from "@/lib/venue-plan";
 import {
-  getLeaderboard, getMeghalaLeaderboard, getOverallLeaderboard, getOverallMeghalaLeaderboard, getScreenData,
+  getDioceseLeaderboard, getLeaderboard, getMeghalaLeaderboard, getOverallDioceseLeaderboard, getOverallLeaderboard, getOverallMeghalaLeaderboard, getScreenData,
   type LeaderboardRow, type ScreenAchiever, type ScreenCompetitionResult, type ScreenData, type ScreenPosition,
 } from "@/actions/results";
 import { ParticipantPhoto } from "@/components/screen/participant-photo";
@@ -68,7 +69,8 @@ const CLAMP2: React.CSSProperties = { display: "-webkit-box", WebkitLineClamp: 2
 const MINI_BADGE: React.CSSProperties = { height: 26, padding: "0 10px", display: "inline-flex", alignItems: "center", borderRadius: 8, fontSize: 12, letterSpacing: ".08em", color: "var(--fp-on-cat)" };
 const GOLD_CHIP: React.CSSProperties ={ ...CHIP, color: "var(--fp-gold-ink)", background: "var(--fp-note-bg)", border: "1px solid var(--fp-note-line)" };
 
-type Tier = "meghala" | "shakha";
+type Tier = "diocese" | "meghala" | "shakha";
+const TIER_LABEL: Record<Tier, string> = { diocese: "Diocese", meghala: "Meghala", shakha: "Shakha" };
 
 interface RankRow {
   id: string;
@@ -184,10 +186,10 @@ function Podium({ rows, tier, caption }: { rows: RankRow[]; tier: Tier; caption:
     { h: 160, medal: 60, pts: 56 },
   ];
   return (
-    <section className="fp-glass-edge" aria-label={tier === "meghala" ? "Top three meghalas" : "Top three shakhas"} style={{ ...PANEL, background: PANEL_TINT, position: "relative", overflow: "hidden", padding: "28px 24px", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
+    <section className="fp-glass-edge" aria-label={`Top three ${TIER_LABEL[tier].toLowerCase()}s`} style={{ ...PANEL, background: PANEL_TINT, position: "relative", overflow: "hidden", padding: "28px 24px", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
       <div className="fp-rays" aria-hidden="true" style={{ position: "absolute", left: "50%", top: 250, width: 900, height: 900, marginLeft: -450, marginTop: -450, borderRadius: "50%" }} />
       <div style={{ position: "relative", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-        <p className="sc-label" style={{ margin: 0, fontSize: 14, color: "var(--fp-gold-ink)" }}>{tier === "meghala" ? "Meghala podium" : "Shakha podium"}</p>
+        <p className="sc-label" style={{ margin: 0, fontSize: 14, color: "var(--fp-gold-ink)" }}>{`${TIER_LABEL[tier]} podium`}</p>
         <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "var(--fp-meta)" }}>{caption}</p>
       </div>
       <div style={{ position: "relative", flex: 1, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, alignItems: "end" }}>
@@ -228,7 +230,7 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
   const viewportRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const [overflow, setOverflow] = useState(false);
-  const cols = tier === "meghala"
+  const cols = tier !== "shakha"
     ? "56px minmax(0, 1fr) repeat(5, 70px) 150px 200px 104px"
     : "56px minmax(0, 1fr) repeat(5, 70px) 150px 150px 96px";
 
@@ -249,7 +251,7 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
   }, [rows.length]);
 
   const shown = overflow ? [...rows, ...rows] : rows;
-  const label = tier === "meghala" ? "Meghala" : "Shakha";
+  const label = TIER_LABEL[tier];
 
   return (
     <section className="fp-glass-edge" aria-label={`${label} leaderboard`} style={{ ...PANEL, padding: 28, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 14, minWidth: 0, minHeight: 0 }}>
@@ -261,7 +263,7 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
             <div role="group" aria-label="Ranking level" style={{ display: "flex", gap: 4, padding: 4, borderRadius: 9999, background: "var(--fp-surface)", border: "1px solid var(--fp-line-2)" }}>
               {tiers.map((t) => (
                 <button key={t} type="button" aria-pressed={t === tier} onClick={() => onTier(t)} style={t === tier ? PILL_ON : { ...PILL, border: 0, background: "transparent", color: "var(--fp-sub)" }}>
-                  {t === "meghala" ? "Meghala" : "Shakha"}
+                  {TIER_LABEL[t]}
                 </button>
               ))}
             </div>
@@ -270,14 +272,14 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
       </div>
       <div className="sc-label" style={{ display: "grid", gridTemplateColumns: cols, gap: 8, alignItems: "center", padding: "0 16px", fontSize: 12, color: "var(--fp-meta)" }}>
         <span>Rank</span>
-        <span>{tier === "meghala" ? "Meghala" : tiers.length > 1 ? "Shakha · Meghala" : "Shakha"}</span>
+        <span>{tier !== "shakha" ? TIER_LABEL[tier] : tiers.length > 1 ? "Shakha · Meghala" : "Shakha"}</span>
         {CATS.map((c) => (
           <span key={c.key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: catStyle(c.slug).color }} />{c.label}
           </span>
         ))}
         <span>Medals</span>
-        <span>{tier === "meghala" ? "Top shakha" : "Grades A·B·C"}</span>
+        <span>{tier !== "shakha" ? "Top shakha" : "Grades A·B·C"}</span>
         <span style={{ textAlign: "right" }}>Total</span>
       </div>
       <div ref={viewportRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -315,7 +317,7 @@ function RankTable({ rows, tier, tiers, onTier, meta }: { rows: RankRow[]; tier:
                       <span key={ci} className="fp-num" style={{ fontSize: 22, color: v ? "var(--fp-ink)" : "var(--fp-faint)" }}>{v || "—"}</span>
                     ))}
                     <MedalCounts g={row.first} s={row.second} b={row.third} size={16} className="gap-2.5 text-[16px]" />
-                    {tier === "meghala" ? (
+                    {tier !== "shakha" ? (
                       <span style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
                         <span className="fp-ml" style={{ fontSize: 17, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.topShakha?.name ?? "—"}</span>
                         {row.topShakha && <span className="fp-num" style={{ fontSize: 17, color: "var(--fp-gold-ink)" }}>{row.topShakha.points}</span>}
@@ -354,20 +356,27 @@ function findGrade(comp: ScreenCompetitionResult, p: { name: string; shakha: str
   return GRADE_KEYS.find((g) => comp.grades[g].some((a) => a.name === p.name && a.shakha === p.shakha)) ?? null;
 }
 
-function GradeList({ achievers }: { achievers: ScreenAchiever[] }) {
+// Long grade lists glide at a readable speed; the rotation waits for the
+// read pause + full scroll + a beat at the bottom before the next item.
+const GRADE_SCROLL_PX_S = 45;
+const GRADE_READ_MS = 2000;
+const GRADE_END_HOLD_MS = 2500;
+
+function GradeList({ achievers, onNeedMs }: { achievers: ScreenAchiever[]; onNeedMs: (ms: number) => void }) {
   const listRef = useRef<HTMLUListElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [scrollY, setScrollY] = useState(0);
+  const [scroll, setScroll] = useState({ y: 0, s: 0 });
 
   // Mounted fresh per competition + grade (keyed by the caller), so it
   // always starts at the top; a long list then glides to its end.
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (!listRef.current || !viewportRef.current) return;
-      const over = listRef.current.scrollHeight - viewportRef.current.clientHeight;
-      if (over > 0) setScrollY(-over);
-    }, 900);
+    const over = listRef.current && viewportRef.current ? listRef.current.scrollHeight - viewportRef.current.clientHeight : 0;
+    if (over <= 0) { onNeedMs(0); return; }
+    const secs = over / GRADE_SCROLL_PX_S;
+    onNeedMs(GRADE_READ_MS + secs * 1000 + GRADE_END_HOLD_MS);
+    const t = setTimeout(() => setScroll({ y: -over, s: secs }), GRADE_READ_MS);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (achievers.length === 0) {
@@ -375,9 +384,9 @@ function GradeList({ achievers }: { achievers: ScreenAchiever[] }) {
   }
   return (
     <div ref={viewportRef} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-      <ul ref={listRef} style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8, transform: `translateY(${scrollY}px)`, transition: "transform 6s linear" }}>
+      <ul ref={listRef} style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8, transform: `translateY(${scroll.y}px)`, transition: `transform ${scroll.s}s linear` }}>
         {achievers.map((a, i) => (
-          <li key={`${a.name}-${a.shakha}-${i}`} className="fp-fade-up" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderRadius: 14, background: "var(--fp-row-bg)", border: "1px solid var(--fp-line)", animationDelay: `${Math.min(i, 10) * 0.06}s` }}>
+          <li key={`${a.name}-${a.shakha}-${i}`} className="sc-row-in" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", borderRadius: 14, background: "var(--fp-row-bg)", border: "1px solid var(--fp-line)", animationDelay: `${Math.min(i, 10) * 0.06}s` }}>
             <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flex: 1 }}>
               <span className="fp-ml" style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15 }}>{a.name}</span>
               {a.houseName && <span className="fp-ml" style={{ fontSize: 15, fontWeight: 600, color: "var(--fp-meta)", ...CLAMP2 }}>{a.houseName}</span>}
@@ -390,7 +399,7 @@ function GradeList({ achievers }: { achievers: ScreenAchiever[] }) {
   );
 }
 
-function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; subIdx: number }) {
+function CompetitionScreen({ comp, subIdx, onHoldMs }: { comp: ScreenCompetitionResult; subIdx: number; onHoldMs: (ms: number) => void }) {
   const cs = catStyle(comp.categorySlug || null);
   const place = (subIdx + 1) as MedalPos;
   const winner = comp.positions.find((p) => p.place === place) ?? null;
@@ -471,6 +480,10 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
         </article>
 
         <section key={subIdx} aria-label={`Spotlight — ${PLACE_WORDS[subIdx].toLowerCase()} place`} style={{ ...PANEL, background: PANEL_TINT, border: "1px solid var(--fp-tone-gold-line)", boxShadow: "0 0 60px var(--fp-glow), inset 0 1px 0 rgba(255,255,255,.12)", position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", padding: 28 }}>
+          {winner && place === 1 && CONFETTI.map((c, i) => (
+            <span key={i} aria-hidden="true" className="pt-confetti" style={{ left: `${c.left}%`, width: c.w, height: c.h, background: c.color, animationDelay: `${c.delay}s`, animationDuration: `${c.dur}s`, zIndex: 3 }} />
+          ))}
+          {winner && <div aria-hidden="true" className="sc-beams" />}
           <div className="fp-rays" aria-hidden="true" style={{ position: "absolute", left: "50%", top: "42%", width: 1100, height: 1100, marginLeft: -550, marginTop: -550, borderRadius: "50%" }} />
           {/* The winner's registration photo leads the spotlight (individual
               items); without one, the big medal stands in. */}
@@ -479,11 +492,11 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
           <span className="fp-rise" style={{ position: "relative", display: "inline-block", opacity: winner ? 1 : 0.35 }}>
             {winner && <span aria-hidden="true" className="sc-orbit back" />}
             <span style={{ position: "relative", zIndex: 1, display: "block" }}>
-              {spotPhoto ? <ParticipantPhoto src={spotPhoto} place={place} name={winner!.name} width={268} /> : <Medal pos={place} size={168} />}
+              {spotPhoto ? <span className="sc-photo-ring"><ParticipantPhoto src={spotPhoto} place={place} name={winner!.name} width={268} /></span> : <Medal pos={place} size={168} />}
             </span>
             {winner && <span aria-hidden="true" className="sc-orbit front" />}
           </span>
-          <span className={`fp-disp fp-t-${TONE[subIdx]}`} style={{ position: "relative", fontSize: spotPhoto ? 64 : 84, marginTop: spotPhoto ? 22 : 8 }}>{PLACE_WORDS[subIdx]} place</span>
+          <span className={`fp-disp fp-t-${TONE[subIdx]} sc-shine`} style={{ position: "relative", fontSize: spotPhoto ? 64 : 84, marginTop: spotPhoto ? 22 : 8 }}>{PLACE_WORDS[subIdx]} place</span>
           {winner ? (
             <div className="fp-fade-up" style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: spotPhoto ? 10 : 14, animationDelay: ".2s" }}>
               <div className="fp-ml" style={{ fontSize: spotPhoto ? 58 : 68, fontWeight: 800, lineHeight: 1.05, marginTop: spotPhoto ? 4 : 10 }}>{winner.name}</div>
@@ -512,7 +525,7 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
               </span>
             ))}
           </div>
-          <GradeList key={`${comp.competitionId}-${activeGrade}`} achievers={comp.grades[activeGrade]} />
+          <GradeList key={`${comp.competitionId}-${activeGrade}`} achievers={comp.grades[activeGrade]} onNeedMs={onHoldMs} />
         </section>
       </main>
     </>
@@ -525,23 +538,47 @@ function CompetitionScreen({ comp, subIdx }: { comp: ScreenCompetitionResult; su
 // rows than fit, the list pages (the rotation advances the page) while the
 // map keeps showing every stage. Without any floors set, the rows fill the
 // board in two columns.
-const STAGE_ROWS_PER_PAGE = 10;
+const STAGE_ROWS_PER_PAGE = 8;
 
-function StageBoardScreen({ feastSlug, page, onPageCount }: { feastSlug: string; page: number; onPageCount: (n: number) => void }) {
+function StageBoardScreen({ feastSlug, page, onPageCount, onHoldMs }: { feastSlug: string; page: number; onPageCount: (n: number) => void; onHoldMs: (ms: number) => void }) {
   const { stages, plan, loading, totalCount, completedCount } = useCompetitionStages(feastSlug, { alwaysPoll: true, intervalMs: REFRESH_MS });
   const withMap = hasVenueMap(stages);
-  const ordered = withMap ? groupByFloor(stages).flatMap((g) => g.stages) : stages;
+  // Lowest floor first on the big screen; annexes and unplaced stages stay last.
+  const ordered = withMap ? groupByFloor(stages).sort((a, b) => (a.floor == null ? 1 : b.floor == null ? -1 : a.floor - b.floor)).flatMap((g) => g.stages) : stages;
   const perPage = withMap ? STAGE_ROWS_PER_PAGE : STAGE_ROWS_PER_PAGE * 2;
-  const pageCount = Math.max(1, Math.ceil(ordered.length / perPage));
+  const overviewPages = Math.max(1, Math.ceil(ordered.length / perPage));
+  // After the overview pages, the stages' schedules follow, two per page.
+  const pageCount = overviewPages + Math.ceil(ordered.length / STAGES_PER_SCHEDULE);
   const safePage = Math.min(page, pageCount - 1);
 
   useEffect(() => { onPageCount(pageCount); }, [pageCount, onPageCount]);
+
+  // A schedule page stays up until its longer column has scrolled to the end.
+  // Columns report from their mount effects, which run before this
+  // component's own effects — so the per-page reset happens during render.
+  const needsRef = useRef<{ page: number; ms: Record<string, number> }>({ page: -1, ms: {} });
+  if (needsRef.current.page !== safePage) needsRef.current = { page: safePage, ms: {} };
+  const reportNeed = useCallback((key: string, ms: number) => {
+    needsRef.current.ms[key] = ms;
+    onHoldMs(Math.max(0, ...Object.values(needsRef.current.ms)));
+  }, [onHoldMs]);
+  const isOverviewPage = safePage < overviewPages;
+  useEffect(() => { if (isOverviewPage) onHoldMs(0); }, [isOverviewPage, safePage, onHoldMs]);
 
   if (loading && stages.length === 0) return <Spinner />;
   if (stages.length === 0) return <EmptyState lead="No schedule" message="The stage schedule hasn't been published yet." />;
 
   const liveCount = stages.filter((s) => s.status === "running").length;
   const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  if (safePage >= overviewPages) {
+    const from = (safePage - overviewPages) * STAGES_PER_SCHEDULE;
+    const pair = ordered.slice(from, from + STAGES_PER_SCHEDULE);
+    return (
+      <main key={pair.map((p) => p.key).join()} aria-label="Stage schedules" style={{ position: "absolute", top: 150, left: 56, right: 56, bottom: TICKER_H + 28, display: "grid", gridTemplateColumns: `repeat(${STAGES_PER_SCHEDULE}, minmax(0, 1fr))`, gap: 28 }}>
+        {pair.map((st, i) => <StageSchedule key={st.key} stage={st} plan={plan} delay={i * 0.25} onNeedMs={reportNeed} />)}
+      </main>
+    );
+  }
   const rows = ordered.slice(safePage * perPage, (safePage + 1) * perPage);
   const facilities = plan?.groundLabels ?? [];
 
@@ -587,7 +624,7 @@ function StageBoardScreen({ feastSlug, page, onPageCount }: { feastSlug: string;
               {withMap && (i === 0 || rows[i - 1].floor !== stage.floor) && (
                 <div className="sc-label" style={{ flex: "none", fontSize: 14, color: "var(--fp-gold-ink)", padding: i === 0 ? "0 6px" : "6px 6px 0" }}>{stage.floor == null ? stage.buildingName ?? "Other venues" : floorName(stage.floor)}</div>
               )}
-              <StageRow stage={stage} />
+              <StageRow stage={stage} plan={plan} />
             </Fragment>
           ))}
         </section>
@@ -596,42 +633,163 @@ function StageBoardScreen({ feastSlug, page, onPageCount }: { feastSlug: string;
   );
 }
 
-function StageRow({ stage }: { stage: CompetitionStage }) {
+// One stage's running order: where it is, what's on now, and the rest of
+// the day's items with their times. Two stages share a page; a schedule
+// longer than its box scrolls through once, and the page waits for it.
+const STAGES_PER_SCHEDULE = 2;
+const SCHEDULE_ROW_H = 60;
+const SCHEDULE_FADE = "linear-gradient(to bottom, #000 88%, transparent)";
+
+function StageSchedule({ stage, plan, delay, onNeedMs }: { stage: CompetitionStage; plan?: VenuePlan | null; delay: number; onNeedMs: (key: string, ms: number) => void }) {
+  const steps = plan ? routeSteps(plan, stage.stageNumber, floorName) : [];
+  const where = [stage.venue, stage.floor != null ? floorName(stage.floor) : stage.buildingName].filter(Boolean).join(" · ");
+  const comps = stage.competitions;
+  const isLive = stage.status === "running";
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [scroll, setScroll] = useState({ y: 0, s: 0 });
+
+  // Same read-pause / steady-speed / end-hold rhythm as the grade list.
+  useEffect(() => {
+    const over = listRef.current && viewportRef.current ? listRef.current.scrollHeight - viewportRef.current.clientHeight : 0;
+    if (over <= 0) { onNeedMs(stage.key, 0); return; }
+    const secs = over / GRADE_SCROLL_PX_S;
+    onNeedMs(stage.key, GRADE_READ_MS + secs * 1000 + GRADE_END_HOLD_MS);
+    const t = setTimeout(() => setScroll({ y: -over, s: secs }), GRADE_READ_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <section className="fp-glass-edge sc-row-in" aria-label={`Stage ${stage.stageNumber} schedule`} style={{ ...PANEL, animationDelay: `${delay}s`, minHeight: 0, boxSizing: "border-box", padding: "24px 26px", display: "flex", flexDirection: "column", gap: 16, ...(isLive ? { border: "1.5px solid var(--fp-tone-gold-line)", boxShadow: "0 0 40px var(--fp-glow)" } : {}) }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+        <span className={`fp-medal ${isLive ? "fp-m-gold" : ""}`} style={{ width: 84, height: 84, fontSize: 42, flex: "none", ...(isLive ? {} : { color: "var(--fp-sub)", border: "3px solid var(--fp-line-2)" }) }}>{stage.stageNumber}</span>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+          <span className="sc-label" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 15, color: isLive ? "var(--fp-live)" : "var(--fp-gold-ink)" }}>
+            {isLive && <span className="fp-livedot" style={{ width: 9, height: 9 }} />}Stage {stage.stageNumber}{isLive ? " · live" : stage.status === "completed" ? " · completed" : ""}
+          </span>
+          <h2 className="fp-ml" style={{ margin: 0, fontSize: 40, fontWeight: 800, lineHeight: 1.08, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{stage.title}</h2>
+          {where && <span className="fp-ml" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 20, fontWeight: 700, color: "var(--fp-link)" }}><MapPin size={19} strokeWidth={2.2} aria-hidden="true" />{where}</span>}
+        </div>
+        <div style={{ flex: "none", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+          <span className="fp-num" style={{ fontSize: 34 }}>{stage.completedCount}<span style={{ color: "var(--fp-meta)" }}>/{stage.totalCount}</span></span>
+          <div style={{ width: 140, height: 8, borderRadius: 9999, background: "var(--fp-track)", overflow: "hidden" }}>
+            <div style={{ width: `${stage.progressPct}%`, height: "100%", background: GOLD_BAR }} />
+          </div>
+        </div>
+      </div>
+      {steps.length > 0 && (
+        <div aria-label="How to get there" style={{ flex: "none", borderRadius: 16, padding: "14px 18px", background: "color-mix(in srgb, var(--fp-cyan) 12%, rgba(8,6,24,.78))", border: "1.5px solid color-mix(in srgb, var(--fp-cyan) 45%, transparent)", display: "flex", flexDirection: "column", gap: 8 }}>
+          <span className="sc-label" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, letterSpacing: ".08em", color: "var(--fp-cyan)" }}><MapPin size={16} strokeWidth={2.4} aria-hidden="true" />HOW TO GET THERE</span>
+          <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+            {steps.map((s, i) => (
+              <li key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: s.kind === "helper" ? 17 : 20, fontWeight: s.kind === "helper" ? 600 : 800, color: s.kind === "helper" ? "rgba(236,232,255,.72)" : "#FFFFFF" }}>
+                {s.kind === "helper" ? (
+                  <span aria-hidden="true" style={{ flex: "none", width: 26, textAlign: "center", color: "var(--fp-cyan)" }}>•</span>
+                ) : (
+                  <span className="fp-num" style={{ flex: "none", width: 26, height: 26, borderRadius: 9999, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 14, background: "var(--fp-cyan)", color: "#06121f" }}>{i + 1}</span>
+                )}
+                <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.text}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+      <div ref={viewportRef} style={{ flex: 1, minHeight: 0, overflow: "hidden", WebkitMaskImage: scroll.s ? SCHEDULE_FADE : undefined, maskImage: scroll.s ? SCHEDULE_FADE : undefined }}>
+      <div ref={listRef} style={{ display: "flex", flexDirection: "column", gap: 8, transform: `translateY(${scroll.y}px)`, transition: `transform ${scroll.s}s linear` }}>
+        {comps.length === 0 && <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "var(--fp-meta)" }}>Nothing scheduled on this stage.</p>}
+        {comps.map((c, i) => {
+          const live = c.status === "running";
+          const done = c.status === "completed";
+          return (
+            <article key={c.id} className="sc-row-in" style={{ animationDelay: `${delay + 0.2 + Math.min(i, 8) * 0.07}s`, position: "relative", overflow: "hidden", flex: "none", height: SCHEDULE_ROW_H, boxSizing: "border-box", display: "flex", alignItems: "center", gap: 14, padding: "0 18px", borderRadius: 14, opacity: done ? 0.6 : 1,
+              ...(live ? { background: "var(--fp-tone-gold-bg)", border: "1.5px solid var(--fp-tone-gold-line)", boxShadow: "0 0 24px var(--fp-glow)" } : { background: "var(--fp-row-bg)", border: "1px solid var(--fp-line)" }) }}>
+              <span className="fp-num" style={{ flex: "none", width: 86, fontSize: 20, color: live ? "var(--fp-gold-ink)" : "var(--fp-meta)" }}>{c.scheduledTime ?? "—"}</span>
+              <span aria-hidden="true" style={{ flex: "none", width: 6, alignSelf: "stretch", margin: "12px 0", borderRadius: 3, background: c.categoryColor }} />
+              <span className="fp-ml" style={{ flex: 1, minWidth: 0, fontSize: live ? 25 : 22, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: done ? "var(--fp-meta)" : "var(--fp-ink)" }}>{c.label}</span>
+              {live ? (
+                <span className="sc-label" style={{ ...LIVE_CHIP, gap: 8, height: 28, padding: "0 12px", fontSize: 12, flex: "none" }}><span className="fp-livedot" style={{ width: 8, height: 8 }} />{c.itemProgressPct != null ? `${c.itemProgressPct}%` : "Live"}</span>
+              ) : done ? (
+                <Check size={22} strokeWidth={2.6} aria-label="Completed" style={{ color: "var(--fp-ok)", flex: "none" }} />
+              ) : null}
+              {live && c.itemProgressPct != null && <span aria-hidden="true" style={{ position: "absolute", left: 0, bottom: 0, height: 4, width: `${c.itemProgressPct}%`, background: GOLD_BAR }} />}
+            </article>
+          );
+        })}
+      </div>
+      </div>
+    </section>
+  );
+}
+
+// Status drives the colour so a row reads from the back of the hall:
+// live = live red/gold, up next = cyan, done = green. The item's age
+// category colour runs down the left edge.
+const STAGE_STATUS = {
+  live: { accent: "var(--fp-live)", chipBg: "var(--fp-live)", chipFg: "#fff", label: "LIVE" },
+  next: { accent: "var(--fp-cyan)", chipBg: "color-mix(in srgb, var(--fp-cyan) 22%, transparent)", chipFg: "var(--fp-cyan)", label: "NEXT" },
+  done: { accent: "var(--fp-ok)", chipBg: "color-mix(in srgb, var(--fp-ok) 22%, transparent)", chipFg: "var(--fp-ok)", label: "DONE" },
+} as const;
+
+// The way to a stage in one short line, from the venue plan's step-by-step
+// route: building › floor › room (helper rooms left out).
+function shortRoute(plan: VenuePlan | null | undefined, stage: number): string | null {
+  if (!plan) return null;
+  const parts = routeSteps(plan, stage, floorName).flatMap((st) => {
+    if (st.kind === "building") return [st.text.startsWith("Walk to ") ? st.text.slice(8).split(",")[0] : "Main entrance"];
+    if (st.kind === "floor") return [st.text.replace(/^Take the /, "").replace(" to the ", " to ")];
+    if (st.kind === "room") return [st.text.includes(" is room ") ? `Room ${st.text.split(" is room ")[1]}` : (st.text.match(/\(([^)]+)\)/)?.slice(1) ?? [])];
+    return [];
+  });
+  return parts.length ? parts.join("  ›  ") : null;
+}
+
+function StageRow({ stage, plan }: { stage: CompetitionStage; plan?: VenuePlan | null }) {
+  const route = shortRoute(plan, stage.stageNumber);
   const isLive = stage.status === "running";
   const isDone = stage.status === "completed";
-  const next = stage.nextCompetition;
-  const title = `Stage ${stage.stageNumber} · ${stage.title}${stage.venue ? ` · ${stage.venue}` : ""}`;
-  const label = isLive ? stage.runningCompetition?.label ?? "—" : isDone ? `All ${stage.totalCount} competitions completed` : next?.label ?? "Nothing scheduled";
-  const itemPct = isLive ? stage.runningCompetition?.itemProgressPct ?? null : null;
+  const comp = isLive ? stage.runningCompetition : isDone ? null : stage.nextCompetition;
+  const st = STAGE_STATUS[isLive ? "live" : isDone ? "done" : "next"];
+  const where = [stage.title, stage.venue].filter(Boolean).join(" · ");
+  const label = comp?.label ?? (isDone ? `All ${stage.totalCount} done` : "Nothing scheduled");
+  const itemPct = isLive ? comp?.itemProgressPct ?? null : null;
+  const time = !isLive && !isDone ? comp?.scheduledTime ?? stage.scheduledTime : null;
+  const stagePct = stage.totalCount > 0 ? Math.round((stage.completedCount / stage.totalCount) * 100) : 0;
 
   return (
     <article
-      aria-label={`${title}: ${isLive ? "on stage now" : isDone ? "completed" : "up next"}, ${label}`}
-      className={isLive ? undefined : "fp-glass-edge"}
+      aria-label={`Stage ${stage.stageNumber}, ${where}: ${st.label.toLowerCase()}, ${label}`}
       style={{
         position: "relative", flex: "1 1 0", minHeight: 0, maxHeight: 104, overflow: "hidden", boxSizing: "border-box",
-        display: "flex", alignItems: "center", gap: 18, padding: "0 22px 0 16px", borderRadius: 18,
-        ...(isLive ? { background: "var(--fp-tone-gold-bg)", border: "1.5px solid var(--fp-tone-gold-line)", boxShadow: "0 0 30px var(--fp-glow)" } : { background: "var(--fp-panel-bg, var(--fp-surface))", border: "1px solid var(--fp-panel-line, var(--fp-line-2))", ...GLASS }),
-        opacity: isDone ? 0.7 : 1, transition: "opacity .5s",
+        display: "flex", alignItems: "center", gap: 18, padding: "0 22px 0 0", borderRadius: 16,
+        background: isLive ? "color-mix(in srgb, var(--fp-live) 16%, rgba(8,6,24,.82))" : "rgba(8,6,24,.72)",
+        border: `1.5px solid color-mix(in srgb, ${st.accent} ${isLive ? 75 : 35}%, transparent)`,
+        boxShadow: isLive ? `0 0 28px color-mix(in srgb, var(--fp-live) 45%, transparent)` : undefined,
+        opacity: isDone ? 0.62 : 1, transition: "opacity .5s",
       }}
     >
-      {isLive ? (
-        <span className="fp-medal fp-m-gold" style={{ width: 52, height: 52, fontSize: 26, flex: "none" }}>{stage.stageNumber}</span>
-      ) : isDone ? (
-        <span className="fp-medal" style={{ width: 52, height: 52, flex: "none", background: "var(--fp-ok-bg)", border: "2px solid var(--fp-ok)", color: "var(--fp-ok)" }}><Check size={26} strokeWidth={2.6} aria-hidden="true" /></span>
-      ) : (
-        <span className="fp-medal" style={{ width: 52, height: 52, fontSize: 26, flex: "none", color: "var(--fp-sub)", border: "2px solid var(--fp-line-2)" }}>{stage.stageNumber}</span>
-      )}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-        <span className="sc-label" style={{ fontSize: 13, color: "var(--fp-sub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
-        <span className="fp-ml" style={{ fontSize: isLive ? 28 : 24, fontWeight: 800, lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: isLive ? "var(--fp-ink)" : isDone ? "var(--fp-meta)" : "var(--fp-sub)" }}>{label}</span>
+      <span aria-hidden="true" style={{ alignSelf: "stretch", width: 8, flex: "none", background: comp?.categoryColor ?? st.accent }} />
+      <span className="fp-num" style={{ flex: "none", width: 60, height: 60, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, background: isLive ? "var(--fp-live)" : "rgba(255,255,255,.08)", color: isLive ? "#fff" : "#F4F1FF", border: isLive ? "none" : "1.5px solid rgba(255,255,255,.18)" }}>
+        {isDone ? <Check size={30} strokeWidth={3} aria-hidden="true" style={{ color: "var(--fp-ok)" }} /> : stage.stageNumber}
+      </span>
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+        <span className="fp-ml" style={{ fontSize: 32, fontWeight: 800, lineHeight: 1.1, color: "#FFFFFF", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+        {route && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 700, color: "rgba(236,232,255,.62)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <MapPin size={13} strokeWidth={2.4} aria-hidden="true" style={{ flex: "none", color: st.accent }} />{route}
+          </span>
+        )}
       </div>
-      {isLive ? (
-        <span className="sc-label" style={{ ...LIVE_CHIP, gap: 8, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}><span className="fp-livedot" style={{ width: 8, height: 8 }} />{itemPct != null ? `${itemPct}%` : "Live"}</span>
-      ) : !isDone && stage.scheduledTime ? (
-        <span className="sc-label" style={{ ...GOLD_CHIP, height: 30, padding: "0 12px", fontSize: 12, flex: "none" }}>{stage.scheduledTime}</span>
-      ) : null}
-      <span className="fp-num" style={{ flex: "none", fontSize: 20, color: "var(--fp-meta)" }}>{stage.completedCount}/{stage.totalCount}</span>
+      <span className="sc-label" style={{ flex: "none", display: "inline-flex", alignItems: "center", gap: 8, height: 34, padding: "0 14px", borderRadius: 10, fontSize: 15, fontWeight: 800, letterSpacing: ".06em", background: st.chipBg, color: st.chipFg }}>
+        {isLive && <span className="fp-livedot" style={{ width: 9, height: 9, background: "#fff" }} />}
+        {isLive && itemPct != null ? `LIVE ${itemPct}%` : time ? `NEXT ${time}` : st.label}
+      </span>
+      <div style={{ flex: "none", width: 74, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+        <span className="fp-num" style={{ fontSize: 24, color: "#FFFFFF" }}>{stage.completedCount}<span style={{ color: "rgba(236,232,255,.55)" }}>/{stage.totalCount}</span></span>
+        <span aria-hidden="true" style={{ width: "100%", height: 5, borderRadius: 9999, background: "rgba(255,255,255,.14)", overflow: "hidden" }}>
+          <span style={{ display: "block", width: `${stagePct}%`, height: "100%", background: "var(--fp-ok)" }} />
+        </span>
+      </div>
       {itemPct != null && (
         <span aria-hidden="true" style={{ position: "absolute", left: 0, bottom: 0, height: 4, width: `${itemPct}%`, background: GOLD_BAR, transition: "width .8s cubic-bezier(.22,1,.36,1)" }} />
       )}
@@ -880,6 +1038,32 @@ function ScreenHeader({
 
 const NAV_BTN: React.CSSProperties = { width: 36, height: 36, borderRadius: 9999, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--fp-line-2)", background: "var(--fp-surface-2)", color: "var(--fp-ink)", cursor: "pointer" };
 
+const TICKER_FADE = "linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)";
+
+// ── Ambient backdrop ───────────────────────────────────────────────
+// Slow aurora blobs + twinkling stars behind every screen. Positions are
+// derived from the index (no Math.random) so server and client render alike.
+const STARS = Array.from({ length: 70 }, (_, i) => ({
+  left: (i * 37.3) % 100,
+  top: (i * 61.7) % 100,
+  size: 1 + (i % 3),
+  delay: (i % 11) * 0.45,
+  dur: 2.6 + (i % 5) * 0.7,
+}));
+
+function ScreenBackdrop() {
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+      <div className="sc-aurora a1" />
+      <div className="sc-aurora a2" />
+      <div className="sc-aurora a3" />
+      {STARS.map((st, i) => (
+        <span key={i} className="sc-star" style={{ left: `${st.left}%`, top: `${st.top}%`, width: st.size, height: st.size, animationDelay: `${st.delay}s`, animationDuration: `${st.dur}s` }} />
+      ))}
+    </div>
+  );
+}
+
 // ── Ticker ─────────────────────────────────────────────────────────────
 function Ticker({ rows }: { rows: LeaderboardRow[] }) {
   if (rows.length === 0) return null;
@@ -888,7 +1072,7 @@ function Ticker({ rows }: { rows: LeaderboardRow[] }) {
       <span className="sc-label" style={{ flex: "none", height: "100%", display: "flex", alignItems: "center", padding: "0 34px 0 56px", fontSize: 15, background: "var(--fp-cta-gold)", color: "var(--fp-cta-gold-fg)", clipPath: "polygon(0 0, 100% 0, calc(100% - 22px) 100%, 0 100%)", position: "relative", zIndex: 1 }}>
         Live standings
       </span>
-      <div style={{ flex: 1, overflow: "hidden" }}>
+      <div style={{ flex: 1, overflow: "hidden", WebkitMaskImage: TICKER_FADE, maskImage: TICKER_FADE }}>
         <div style={{ display: "flex", whiteSpace: "nowrap", width: "max-content", animation: `tickerScroll ${Math.max(24, rows.length * 4)}s linear infinite` }}>
           {[...rows, ...rows].map((r, i) => (
             <span key={i} aria-hidden={i >= rows.length || undefined} style={{ display: "inline-flex", alignItems: "center", gap: 12, padding: "0 22px 0 32px", fontSize: 22, fontWeight: 800 }}>
@@ -909,9 +1093,10 @@ function ScreenPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { feasts, loading: feastsLoading } = useFeasts({ pollIntervalMs: FEASTS_POLL_MS });
-  const { meghalas, shakhas, hierarchyLevel } = useOrgHierarchy();
+  const { dioceses, meghalas, shakhas, hierarchyLevel } = useOrgHierarchy();
   const hasMeghala = hierarchyLevel !== "shakha";
-  const tiers: Tier[] = useMemo(() => (hasMeghala ? ["meghala", "shakha"] : ["shakha"]), [hasMeghala]);
+  const hasDiocese = hierarchyLevel === "diocese";
+  const tiers: Tier[] = useMemo(() => (hasDiocese ? ["diocese", "meghala", "shakha"] : hasMeghala ? ["meghala", "shakha"] : ["shakha"]), [hasDiocese, hasMeghala]);
 
   const [orgLogo, setOrgLogo] = useState("/logo.png");
   const [orgTagline, setOrgTagline] = useState("");
@@ -987,23 +1172,30 @@ function ScreenPageInner() {
 
   const [overallRows, setOverallRows] = useState<LeaderboardRow[]>([]);
   const [overallMeghalaRows, setOverallMeghalaRows] = useState<LeaderboardRow[]>([]);
+  const [overallDioceseRows, setOverallDioceseRows] = useState<LeaderboardRow[]>([]);
   const [overallLoading, setOverallLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     const load = () =>
-      Promise.all([getOverallLeaderboard(), hasMeghala ? getOverallMeghalaLeaderboard() : Promise.resolve({ data: [] as LeaderboardRow[] })]).then(([lb, mg]) => {
+      Promise.all([
+        getOverallLeaderboard(),
+        hasMeghala ? getOverallMeghalaLeaderboard() : Promise.resolve({ data: [] as LeaderboardRow[] }),
+        hasDiocese ? getOverallDioceseLeaderboard() : Promise.resolve({ data: [] as LeaderboardRow[] }),
+      ]).then(([lb, mg, dc]) => {
         if (cancelled) return;
         setOverallRows(lb.data ?? []);
         setOverallMeghalaRows(mg.data ?? []);
+        setOverallDioceseRows(dc.data ?? []);
         setOverallLoading(false);
       });
     load();
     const id = setInterval(load, REFRESH_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [hasMeghala]);
+  }, [hasMeghala, hasDiocese]);
 
   const [feastRows, setFeastRows] = useState<LeaderboardRow[]>([]);
   const [feastMeghalaRows, setFeastMeghalaRows] = useState<LeaderboardRow[]>([]);
+  const [feastDioceseRows, setFeastDioceseRows] = useState<LeaderboardRow[]>([]);
   const [screenData, setScreenData] = useState<ScreenData>({ competitions: [] });
   // Which fest's data the feast states currently hold — the active fest is
   // still loading until this catches up with it.
@@ -1044,7 +1236,8 @@ function ScreenPageInner() {
   // A publish overrides pause: rotation holds while the takeover plays and
   // resumes from the new result afterwards.
   const [stagePageCount, setStagePageCount] = useState(1);
-  const rotation = useDashboardRotation(sections, screenData.competitions.length, paused || takeover !== null, enabledSectionKeys, tiers.length, stagePageCount);
+  const [gradeHoldMs, setGradeHoldMs] = useState(0);
+  const rotation = useDashboardRotation(sections, screenData.competitions.length, paused || takeover !== null, enabledSectionKeys, tiers.length, stagePageCount, gradeHoldMs);
   const { activeSection, screenIdx, subIdx, isRankingsScreen, goToSection, goToScreen } = rotation;
 
   // Keyed on the plain slug string (or null), not the activeSection object —
@@ -1074,12 +1267,14 @@ function ScreenPageInner() {
         getLeaderboard(slug),
         getScreenData(slug),
         hasMeghala ? getMeghalaLeaderboard(slug) : Promise.resolve({ data: [] as LeaderboardRow[] }),
-      ]).then(([lb, sd, mg]) => {
+        hasDiocese ? getDioceseLeaderboard(slug) : Promise.resolve({ data: [] as LeaderboardRow[] }),
+      ]).then(([lb, sd, mg, dc]) => {
         if (cancelled) return;
         const comps = sd.data?.competitions ?? [];
         setFeastRows(lb.data ?? []);
         setScreenData(sd.data ?? { competitions: [] });
         setFeastMeghalaRows(mg.data ?? []);
+        setFeastDioceseRows(dc.data ?? []);
         setLoadedFeastSlug(slug);
         const pending = pendingFocusRef.current;
         if (pending && pending.feastSlug === slug) {
@@ -1186,8 +1381,9 @@ function ScreenPageInner() {
   const isOverall = activeSection.kind === "overall";
   const shakhaLb = isOverall ? overallRows : feastRows;
   const meghalaLb = isOverall ? overallMeghalaRows : feastMeghalaRows;
+  const dioceseLb = isOverall ? overallDioceseRows : feastDioceseRows;
 
-  const shakhaRankRows: RankRow[] = useMemo(() => shakhaLb.map((r) => {
+  const shakhaRankRows: RankRow[] = useMemo(() => shakhaLb.filter((r) => r.points > 0).map((r) => {
     const s = shakhaById.get(r.shakhaId);
     const meghala = s?.meghala_id ? meghalaById.get(s.meghala_id) : null;
     return {
@@ -1198,7 +1394,7 @@ function ScreenPageInner() {
     };
   }), [shakhaLb, shakhaById, meghalaById, hasMeghala]);
 
-  const meghalaRankRows: RankRow[] = useMemo(() => meghalaLb.map((r) => {
+  const meghalaRankRows: RankRow[] = useMemo(() => meghalaLb.filter((r) => r.points > 0).map((r) => {
     const unassigned = r.shakhaId === UNASSIGNED_ID;
     const members = shakhas.filter((s) => (unassigned ? !s.meghala_id : s.meghala_id === r.shakhaId));
     const memberIds = new Set(members.map((s) => s.id));
@@ -1213,6 +1409,21 @@ function ScreenPageInner() {
     };
   }), [meghalaLb, shakhas, shakhaLb, meghalaById]);
 
+  const dioceseRankRows: RankRow[] = useMemo(() => dioceseLb.map((r) => {
+    const unassigned = r.shakhaId === UNASSIGNED_ID;
+    const megs = meghalas.filter((m) => (unassigned ? !m.diocese_id : m.diocese_id === r.shakhaId));
+    const megIds = new Set(megs.map((m) => m.id));
+    const memberIds = new Set(shakhas.filter((s) => (s.meghala_id ? megIds.has(s.meghala_id) : unassigned)).map((s) => s.id));
+    const best = shakhaLb.find((x) => memberIds.has(x.shakhaId) && x.points > 0);
+    return {
+      id: r.shakhaId, name: r.name, sub: `${megs.length} meghala${megs.length === 1 ? "" : "s"} · ${memberIds.size} shakhas${unassigned ? " · not ranked" : ""}`,
+      dot: null,
+      rank: r.rank, points: r.points, cats: [r.subJunior, r.junior, r.senior, r.superSenior, r.elder],
+      first: r.firstCount, second: r.secondCount, third: r.thirdCount, a: r.aGrade, b: r.bGrade, c: r.cGrade,
+      topShakha: best ? { name: best.name, points: best.points } : null, unassigned,
+    };
+  }), [dioceseLb, meghalas, shakhas, shakhaLb]);
+
   const tier: Tier | null = isRankingsScreen ? tiers[screenIdx] ?? "shakha" : null;
   const activeComp = activeSection.kind === "feast" && !isRankingsScreen ? screenData.competitions[screenIdx - tiers.length] ?? null : null;
 
@@ -1221,7 +1432,7 @@ function ScreenPageInner() {
 
   let eyebrow = isOverall ? "Live standings, all fests" : "Live standings";
   let eyebrowTone: "live" | "gold" = "live";
-  let titleLead = tier === "meghala" ? "Meghala" : "Shakha";
+  let titleLead = tier ? TIER_LABEL[tier] : "Shakha";
   let titleGold = "Rankings";
   if (activeSection.kind === "stages") { eyebrow = "Live competition board"; titleLead = "Stage"; titleGold = "Board"; }
   else if (activeComp) { eyebrow = "Results declared"; eyebrowTone = "gold"; titleLead = "Competition"; titleGold = "Results"; }
@@ -1259,15 +1470,16 @@ function ScreenPageInner() {
     </>
   );
 
-  const rankRows = tier === "meghala" ? meghalaRankRows : shakhaRankRows;
+  const rankRows = tier === "diocese" ? dioceseRankRows : tier === "meghala" ? meghalaRankRows : shakhaRankRows;
   const rankedMeghalas = meghalaRankRows.filter((r) => !r.unassigned).length;
-  const caption = tier === "meghala" ? "Sum of every shakha's points" : `${shakhaRankRows.length} shakhas ranked`;
-  const meta = tier === "meghala" ? `${rankedMeghalas} meghalas · ${shakhas.length} shakhas` : `${shakhaRankRows.length} shakhas`;
+  const caption = tier === "diocese" || tier === "meghala" ? "Sum of every shakha's points" : `${shakhaRankRows.length} shakhas ranked`;
+  const meta = tier === "diocese" ? `${dioceseRankRows.filter((r) => !r.unassigned).length} dioceses · ${dioceses.length} total` : tier === "meghala" ? `${rankedMeghalas} meghalas with points` : `${shakhaRankRows.length} shakhas with points`;
 
   return (
     <div className="fp-shell sc-root" style={{ position: "fixed", inset: 0, overflow: "hidden", background: "var(--fp-page-bg)", color: "var(--fp-ink)", fontFamily: "var(--font-manrope), var(--font-anek), sans-serif" }}>
       <style>{CSS}</style>
       <div style={{ position: "absolute", top: 0, left: 0, width: DESIGN_W, height: designH, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+        <ScreenBackdrop />
         {/* The org's logo as a watermark over the middle column behind the
             glass — the spotlight's frost picks up its colours. Only themes
             that set --fp-logo-backdrop (Nebula Glass) show it. */}
@@ -1290,17 +1502,19 @@ function ScreenPageInner() {
           settings={settingsPanel}
         />
 
+        <div key={activeSection.kind === "stages" ? activeKey : `${activeKey}-${screenIdx}`} className="sc-screen-in" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
         {busy ? (
           <Spinner />
         ) : activeSection.kind === "stages" ? (
-          <StageBoardScreen feastSlug={activeSection.feastSlug} page={screenIdx} onPageCount={setStagePageCount} />
+          <StageBoardScreen feastSlug={activeSection.feastSlug} page={screenIdx} onPageCount={setStagePageCount} onHoldMs={setGradeHoldMs} />
         ) : tier ? (
           <RankingsScreen rows={rankRows} tier={tier} tiers={tiers} onTier={(t) => goToScreen(tiers.indexOf(t))} caption={caption} meta={meta} />
         ) : activeComp ? (
-          <CompetitionScreen comp={activeComp} subIdx={subIdx} />
+          <CompetitionScreen comp={activeComp} subIdx={subIdx} onHoldMs={setGradeHoldMs} />
         ) : (
           <EmptyState message="No results published yet." />
         )}
+        </div>
 
         <Ticker rows={overallRows} />
 
@@ -1346,7 +1560,35 @@ const CSS = `
 @keyframes ptSlide { from { transform: translateX(70%) skewX(-8deg); opacity: 0; filter: blur(10px); } to { transform: none; opacity: 1; filter: blur(0); } }
 @keyframes ptSweep { 0% { transform: scaleX(0); } 55% { transform: scaleX(1); opacity: .6; } 100% { transform: scaleX(1); opacity: 0; } }
 @keyframes ptExit { to { opacity: 0; transform: scale(1.03); } }
+/* LED extras: backdrop, spotlight beams, shine, row + screen entrances */
+.sc-aurora { position: absolute; width: 1100px; height: 1100px; border-radius: 50%; filter: blur(120px); opacity: .32; mix-blend-mode: screen; animation: scDrift 38s ease-in-out infinite alternate; }
+.sc-aurora.a1 { left: -260px; top: -320px; background: var(--fp-primary-light); }
+.sc-aurora.a2 { right: -300px; top: 120px; background: var(--fp-accent); animation-duration: 46s; animation-delay: -12s; }
+.sc-aurora.a3 { left: 30%; bottom: -520px; background: var(--fp-cyan); animation-duration: 54s; animation-delay: -24s; }
+.sc-star { position: absolute; border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(255,255,255,.9); opacity: .15; animation: scTwinkle 3s ease-in-out infinite; }
+.sc-beams { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.sc-beams::before, .sc-beams::after { content: ""; position: absolute; bottom: -10%; width: 220px; height: 130%; background: linear-gradient(to top, rgba(255,236,170,.32), transparent 80%); clip-path: polygon(0 0, 100% 0, 58% 100%, 42% 100%); filter: blur(10px); transform-origin: bottom center; }
+.sc-beams::before { left: 18%; animation: scBeamL 7s ease-in-out infinite alternate; }
+.sc-beams::after { right: 18%; animation: scBeamR 7s ease-in-out infinite alternate; }
+.sc-shine { background-size: 250% 100%, 100% 100%; background-repeat: no-repeat; animation: scShine 3.2s linear infinite; }
+.sc-shine.fp-t-gold { background-image: linear-gradient(100deg, transparent 40%, rgba(255,255,255,.85) 50%, transparent 60%), var(--fp-num-gold); }
+.sc-shine.fp-t-silver { background-image: linear-gradient(100deg, transparent 40%, rgba(255,255,255,.85) 50%, transparent 60%), var(--fp-num-silver); }
+.sc-shine.fp-t-bronze { background-image: linear-gradient(100deg, transparent 40%, rgba(255,255,255,.85) 50%, transparent 60%), var(--fp-num-bronze); }
+.sc-photo-ring { position: relative; display: inline-block; padding: 6px; border-radius: 26px; overflow: hidden; box-shadow: 0 0 34px rgba(245,197,66,.45); }
+.sc-photo-ring::before { content: ""; position: absolute; inset: -60%; background: conic-gradient(#F5C542, #ff4fd8, #38bdf8, #fff3c4, #F5C542); animation: scSpin 3s linear infinite; }
+.sc-photo-ring > * { position: relative; }
+.sc-row-in { animation: scRowIn .55s cubic-bezier(.16,1,.3,1) both; }
+.sc-screen-in > * { pointer-events: auto; }
+.sc-screen-in { animation: scScreenIn .7s cubic-bezier(.16,1,.3,1) both; }
+@keyframes scDrift { 0% { transform: translate(0,0) scale(1); } 50% { transform: translate(180px,120px) scale(1.15); } 100% { transform: translate(-120px,200px) scale(.95); } }
+@keyframes scTwinkle { 0%,100% { opacity: .12; transform: scale(.8); } 50% { opacity: .85; transform: scale(1.3); } }
+@keyframes scBeamL { from { transform: rotate(-24deg); } to { transform: rotate(6deg); } }
+@keyframes scBeamR { from { transform: rotate(24deg); } to { transform: rotate(-6deg); } }
+@keyframes scShine { from { background-position: 150% 0, 0 0; } to { background-position: -100% 0, 0 0; } }
+@keyframes scRowIn { from { opacity: 0; transform: translateX(60px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes scScreenIn { from { opacity: 0; transform: scale(.985); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
 @media (prefers-reduced-motion: reduce) {
+  .sc-aurora, .sc-star, .sc-beams::before, .sc-beams::after, .sc-shine, .sc-row-in, .sc-screen-in, .sc-photo-ring::before { animation: none; }
   .sc-sheen, .pt-rays-in, .pt-ring, .pt-confetti, .pt-sweep, .pt-sheen::after { animation: none; }
   .pt-ring, .pt-confetti, .pt-sweep { display: none; }
   .pt-up, .pt-slam, .pt-slide { animation: ptFade .3s both; }

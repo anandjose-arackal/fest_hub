@@ -27,6 +27,12 @@ if (!SUPABASE_URL || !SERVICE_KEY) {
 }
 
 const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
+// .in() puts every id in the URL; chunk so a big fest does not exceed the URL limit.
+async function allIn(ids, make) {
+  const rows = [];
+  for (let i = 0; i < ids.length; i += 60) rows.push(...(await all(() => make(ids.slice(i, i + 60)))));
+  return rows;
+}
 const one = (x) => (Array.isArray(x) ? x[0] : x);
 
 async function all(query) {
@@ -114,10 +120,98 @@ async function dump(feast) {
     registration_number: p.registration_number,
   }));
 
+  // Registrations with their chance numbers — build-score-import.mjs matches a
+  // score sheet's chance number to one of these (individual or team).
+  const fcIds = feast_competitions.map((fc) => fc.id);
+  const regRows = fcIds.length
+    ? await allIn(fcIds, (ids) =>
+        db
+          .from("participant_registrations")
+          .select("id, feast_competition_id, chance_no, participant:participants(id, name, house_name, registration_number, shakha_id)")
+          .in("feast_competition_id", ids)
+          .order("chance_no")
+      )
+    : [];
+  const registrations = regRows.map((r) => {
+    const p = one(r.participant) ?? {};
+    return {
+      id: r.id,
+      feast_competition_id: r.feast_competition_id,
+      chance_no: r.chance_no,
+      participant_id: p.id ?? null,
+      name: p.name ?? null,
+      house_name: p.house_name ?? null,
+      registration_number: p.registration_number ?? null,
+      shakha_id: p.shakha_id ?? null,
+    };
+  });
+
+  const teamRows = fcIds.length
+    ? await allIn(fcIds, (ids) =>
+        db
+          .from("team_registrations")
+          .select("id, feast_competition_id, chance_no, team_name, shakha_id")
+          .in("feast_competition_id", ids)
+          .order("chance_no")
+      )
+    : [];
+  const team_registrations = teamRows.map((t) => ({
+    id: t.id,
+    feast_competition_id: t.feast_competition_id,
+    chance_no: t.chance_no,
+    team_name: t.team_name,
+    shakha_id: t.shakha_id,
+  }));
+
+  // Existing scores, so a score import can flag drafts it doesn't overwrite.
+  const resRows = fcIds.length
+    ? await allIn(fcIds, (ids) =>
+        db
+          .from("competition_results")
+          .select("feast_competition_id, participant_registration_id, score, published_at")
+          .in("feast_competition_id", ids)
+      )
+    : [];
+  const results = resRows.map((r) => ({
+    feast_competition_id: r.feast_competition_id,
+    participant_registration_id: r.participant_registration_id,
+    score: r.score,
+    published_at: r.published_at,
+  }));
+
+  const teamResRows = fcIds.length
+    ? await allIn(fcIds, (ids) =>
+        db
+          .from("team_results")
+          .select("feast_competition_id, team_registration_id, score, published_at")
+          .in("feast_competition_id", ids)
+      )
+    : [];
+  const team_results = teamResRows.map((r) => ({
+    feast_competition_id: r.feast_competition_id,
+    team_registration_id: r.team_registration_id,
+    score: r.score,
+    published_at: r.published_at,
+  }));
+
   fs.writeFileSync(
     outPath,
     JSON.stringify(
-      { fetched_at: new Date().toISOString(), feast, hierarchy_level, categories, dioceses, meghalas, shakhas, feast_competitions, participants },
+      {
+        fetched_at: new Date().toISOString(),
+        feast,
+        hierarchy_level,
+        categories,
+        dioceses,
+        meghalas,
+        shakhas,
+        feast_competitions,
+        participants,
+        registrations,
+        team_registrations,
+        results,
+        team_results,
+      },
       null,
       2
     )
@@ -146,6 +240,9 @@ async function dump(feast) {
     if (unassigned.length) console.log(`  (shakhas not in any meghala): ${unassigned.map((s) => s.name).join(", ")}`);
   }
   console.log(`Existing participants in this feast: ${participants.length}`);
+  console.log(
+    `Registrations with chance numbers: ${registrations.filter((r) => r.chance_no != null).length} individual, ${team_registrations.filter((t) => t.chance_no != null).length} team`
+  );
   console.log(`Competitions (${feast_competitions.length}):`);
   for (const fc of feast_competitions) {
     console.log(

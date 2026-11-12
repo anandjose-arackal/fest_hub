@@ -19,6 +19,9 @@ const CAT_TABS = [
   { slug: "elder", label: "Elder" },
 ] as const;
 const TEAM_TAB = { slug: "team", label: "Team" } as const;
+// Items with no age category (e.g. an arts-and-literature fest) would otherwise have no tab.
+const OPEN_TAB = { slug: "open", label: "Open" } as const;
+const isOpen = (c: { cat: string; competitionCategorySlug: string | null }) => c.cat !== "Team" && !c.competitionCategorySlug;
 
 // ── Hero ring: published / total ────────────────────────────────────────
 function ResultsRing({ done, total, size = 88 }: { done: number; total: number; size?: number }) {
@@ -133,12 +136,13 @@ function FeastContent({ slug, festChips, onGeneratePoster }: { slug: string; fes
   const hasTeam = comps.some((c) => c.cat === "Team");
   const tabs = [
     ...CAT_TABS.filter((cat) => comps.some((c) => c.competitionCategorySlug === cat.slug && c.cat !== "Team")),
+    ...(comps.some(isOpen) ? [OPEN_TAB] : []),
     ...(hasTeam ? [TEAM_TAB] : []),
   ];
   const resolved = tabs.some((c) => c.slug === activeTab) ? activeTab : tabs[0]?.slug ?? "";
-  const inTab = (slugKey: string) => (slugKey === "team" ? comps.filter((c) => c.cat === "Team") : comps.filter((c) => c.competitionCategorySlug === slugKey && c.cat !== "Team"));
+  const inTab = (slugKey: string) => (slugKey === "team" ? comps.filter((c) => c.cat === "Team") : slugKey === "open" ? comps.filter(isOpen) : comps.filter((c) => c.competitionCategorySlug === slugKey && c.cat !== "Team"));
   const filtered = inTab(resolved);
-  const accent = catStyle(resolved === "team" ? null : resolved);
+  const accent = catStyle(resolved === "team" || resolved === "open" ? null : resolved);
   const doneAll = comps.filter((c) => c.compStatus === "published").length;
 
   function load(comp: FeastCompetitionUI) {
@@ -230,7 +234,7 @@ function FeastContent({ slug, festChips, onGeneratePoster }: { slug: string; fes
           <div role="group" aria-label="Category" className="fp-scroll -mx-4 flex gap-2.5 overflow-x-auto px-4 pb-2 pt-4 sm:mx-0 sm:grid sm:grid-cols-[repeat(auto-fit,minmax(150px,1fr))] sm:overflow-visible sm:px-0">
             {tabs.map((t) => {
               const on = t.slug === resolved;
-              const cs = catStyle(t.slug === "team" ? null : t.slug);
+              const cs = catStyle(t.slug === "team" || t.slug === "open" ? null : t.slug);
               const list = inTab(t.slug);
               const done = list.filter((c) => c.compStatus === "published").length;
               const pct = list.length ? Math.round((done / list.length) * 100) : 0;

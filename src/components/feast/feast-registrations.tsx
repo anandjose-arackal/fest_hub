@@ -234,7 +234,6 @@ export function FeastRegistrations({ slug }: { slug: string }) {
   useEffect(() => {
     if (!feast || !scopeShakhaIds?.length) return;
     const individualIds = feast.competitions.filter((c) => c.cat !== "Team").map((c) => c.id);
-    if (individualIds.length === 0) return;
     let cancelled = false;
     (async () => {
       // An admin's scope sits at the org's top tier, so its shakhas share one cap scope.
@@ -362,6 +361,10 @@ export function FeastRegistrations({ slug }: { slug: string }) {
   const scopeShakhas = orgHierarchy.shakhas.filter((s) => scopeIdSet.has(s.id)).map((s) => ({ id: s.id, name: s.name }));
   const entriesOf: Record<string, number> = {};
   for (const r of regs) if (r.participant) entriesOf[r.participant.id] = (entriesOf[r.participant.id] ?? 0) + 1;
+  // Registered in the fest but in no item or team (e.g. every entry was
+  // removed later) — listed on their own so they can be fixed or deleted.
+  const onTeam = new Set(teamRegs.flatMap((t) => t.members.map((m) => m.id)));
+  const unentered = people.filter((p) => !entriesOf[p.id] && !onTeam.has(p.id));
   const canAdd = !editLocked && feast.status !== "Completed" && capCounts !== null;
   // Fits the item's gender and age category, isn't in it yet, and has an item to spare.
   const itemAdd = (c: (typeof feast.competitions)[number]): ItemAdd | null => {
@@ -510,6 +513,31 @@ export function FeastRegistrations({ slug }: { slug: string }) {
         ) : (
           <AccordionRow key={c.id} compName={c.name} gender={c.gender} catSlug={c.competitionCategorySlug} regs={regsByComp[c.id] ?? []} idx={i} onEdit={(id) => router.push(`/feast/${slug}/registrations/edit/${id}`)} editLocked={editLocked} lineageLine={lineageLine} add={itemAdd(c)} />
         )
+      )}
+
+      {unentered.length > 0 && (
+        <div className="mb-3 overflow-hidden rounded-2xl" style={{ background: theme.glassStrong.background, border: "1px solid var(--fp-warn)" }}>
+          <div className="px-4 pb-2 pt-3.5">
+            <div className="text-[15px] font-bold" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>Not in any item ({unentered.length})</div>
+            <p className="mt-0.5 text-[12px]" style={{ color: theme.sub }}>Registered for this fest but not entered in any competition.{editLocked ? "" : " Edit to pick items, or remove the registration."}</p>
+          </div>
+          {unentered.map((p, i) => (
+            <div key={p.id} className="flex items-center gap-3 px-4 py-3" style={{ borderTop: `1px solid ${theme.hairline}`, background: i % 2 === 1 ? "rgba(var(--fp-primary-rgb),0.05)" : undefined }}>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14.5px] font-extrabold leading-snug" style={{ color: theme.text, fontFamily: "var(--font-anek), sans-serif" }}>{p.name}</div>
+                <div className="mt-0.5 truncate text-[12.5px] font-bold" style={{ color: theme.sub, fontFamily: "var(--font-anek), sans-serif" }}>
+                  {[p.houseName, scopeShakhas.find((s) => s.id === p.shakhaId)?.name, lineageLine(p.shakhaId)].filter(Boolean).join(" · ")}
+                </div>
+              </div>
+              {p.regNo && <span className="fp-num shrink-0 rounded-lg px-[9px] py-1.5 text-[14px]" style={{ border: "1.5px dashed var(--fp-note-line)", background: "var(--fp-note-bg)", color: "var(--fp-gold-ink)" }}>{p.regNo}</span>}
+              {!editLocked && (
+                <button onClick={() => router.push(`/feast/${slug}/registrations/edit/${p.id}`)} aria-label={`Edit ${p.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: theme.fillStrong }}>
+                  <Pencil className="h-[13px] w-[13px]" style={{ color: theme.purple }} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
