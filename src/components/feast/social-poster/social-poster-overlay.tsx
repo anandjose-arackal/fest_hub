@@ -22,6 +22,7 @@ export interface SocialPosterWinner {
   houseName: string | null;
   shakhaName: string;
   meghalaName: string | null;
+  dioceseName?: string | null;
   competitionName: string;
   categoryLabel: string;
   feastName: string;
@@ -40,7 +41,7 @@ const PLACE_WORD: Record<1 | 2 | 3, string> = { 1: "First", 2: "Second", 3: "Thi
 // The message that travels with the poster image: who, what, where, and a
 // link back to the results.
 function shareText(w: SocialPosterWinner): string {
-  const where = [w.shakhaName, w.meghalaName].filter(Boolean).join(", ");
+  const where = [w.shakhaName, w.meghalaName, w.dioceseName].filter(Boolean).join(", ");
   const lines = [
     w.rank ? `🏆 ${w.winnerName} won ${PLACE_WORD[w.rank]} place${w.grade ? ` with Grade ${w.grade}` : ""}` : `🏆 ${w.winnerName} won Grade ${w.grade}`,
     `${w.competitionName}${w.categoryLabel ? ` (${w.categoryLabel})` : ""}`,
@@ -212,6 +213,7 @@ export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterW
                     houseName={winner.houseName}
                     shakhaName={winner.shakhaName}
                     meghalaName={winner.meghalaName}
+                    dioceseName={winner.dioceseName}
                     competitionName={winner.competitionName}
                     categoryLabel={winner.categoryLabel}
                     feastName={winner.feastName}
@@ -226,6 +228,7 @@ export function SocialPosterOverlay({ winner, onClose }: { winner: SocialPosterW
                   winnerName={winner.winnerName}
                   shakhaName={winner.shakhaName}
                   meghalaName={winner.meghalaName}
+                  dioceseName={winner.dioceseName}
                   competitionName={winner.competitionName}
                   categoryLabel={winner.categoryLabel}
                   feastName={winner.feastName}

@@ -48,6 +48,7 @@ export interface StoryPosterProps {
   houseName: string | null;
   shakhaName: string;
   meghalaName: string | null;
+  dioceseName?: string | null;
   competitionName: string;
   categoryLabel: string;
   feastName: string;
@@ -74,7 +75,7 @@ function Art({ src, fallback, style, videoLayer }: { src: string; fallback?: str
   );
 }
 
-export function StoryPoster({ org, rank, grade, winnerName, houseName, shakhaName, meghalaName, competitionName, categoryLabel, photoSrc }: StoryPosterProps) {
+export function StoryPoster({ org, rank, grade, winnerName, houseName, shakhaName, meghalaName, dioceseName, competitionName, categoryLabel, photoSrc }: StoryPosterProps) {
   const tier: Tier = rank ? RANK_TIER[rank] : grade ? GRADE_TIER[grade] : "gold";
   const [ribbonArt, setRibbonArt] = useState(true);
   // With a medal the header sits in the right-hand column; grade-only
@@ -174,12 +175,15 @@ export function StoryPoster({ org, rank, grade, winnerName, houseName, shakhaNam
         )}
       </div>
 
-      {/* Shakha | Meghala chip */}
+      {/* Shakha | Meghala chip, diocese on the next line */}
       <div style={{ position: "absolute", left: 0, top: 1735, width: STORY_POSTER_WIDTH, display: "flex", justifyContent: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 34, padding: "18px 48px", borderRadius: 60, background: "rgba(253,240,222,0.95)", fontFamily: SANS, fontWeight: 800, fontSize: 40, lineHeight: 1.1, color: NAVY, whiteSpace: "nowrap" }}>
-          <span>{withSuffix(shakhaName, "Shakha")}</span>
-          {meghalaName && <span style={{ width: 3, height: 64, background: GOLD }} />}
-          {meghalaName && <span>{meghalaName}</span>}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "18px 48px", borderRadius: dioceseName ? 44 : 60, background: "rgba(253,240,222,0.95)", fontFamily: SANS, fontWeight: 800, fontSize: 40, lineHeight: 1.1, color: NAVY, whiteSpace: "nowrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 34 }}>
+            <span>{withSuffix(shakhaName, "Shakha")}</span>
+            {meghalaName && <span style={{ width: 3, height: 64, background: GOLD }} />}
+            {meghalaName && <span>{meghalaName}</span>}
+          </div>
+          {dioceseName && <span style={{ fontSize: 34, fontWeight: 700 }}>{withSuffix(dioceseName, "Diocese")}</span>}
         </div>
       </div>
     </div>

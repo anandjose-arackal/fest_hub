@@ -64,6 +64,7 @@ export function LatestResultWidget() {
               houseName: row.houseName,
               shakhaName: row.shakha,
               meghalaName: row.meghalaName ?? null,
+              dioceseName: row.dioceseName ?? null,
               competitionName: data.competitionName,
               categoryLabel: posterCategoryLabel({ cat: data.isTeam ? "Team" : "Individual", competitionCategorySlug: data.categorySlug, gender: data.gender }),
               feastName: feastPosterHeading({ type: data.feastType, name: data.feastName }),

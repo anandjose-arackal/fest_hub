@@ -343,6 +343,7 @@ export function FeastDetails({ slug }: { slug: string }) {
                     houseName: row.houseName,
                     shakhaName: row.shakha,
                     meghalaName: row.meghalaName ?? null,
+                    dioceseName: row.dioceseName ?? null,
                     competitionName: c.name,
                     categoryLabel: posterCategoryLabel(c),
                     feastName: feastPosterHeading(feast),

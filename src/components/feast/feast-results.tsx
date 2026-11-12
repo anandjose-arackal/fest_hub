@@ -164,6 +164,7 @@ function FeastContent({ slug, festChips, onGeneratePoster }: { slug: string; fes
       houseName: row.houseName,
       shakhaName: row.shakha,
       meghalaName: row.meghalaName ?? null,
+      dioceseName: row.dioceseName ?? null,
       competitionName: comp.name,
       categoryLabel: posterCategoryLabel(comp),
       feastName: feast ? feastPosterHeading(feast) : "",

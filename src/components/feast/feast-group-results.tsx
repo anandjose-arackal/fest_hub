@@ -164,6 +164,7 @@ export function GroupResults({ feast, level, group }: {
                               houseName: row.houseName,
                               shakhaName: row.shakha,
                               meghalaName: row.meghalaName ?? null,
+                              dioceseName: row.dioceseName ?? null,
                               competitionName: c.name,
                               categoryLabel: posterCategoryLabel({ cat: c.isTeam ? "Team" : "Individual", competitionCategorySlug: c.categorySlug, gender: c.gender }),
                               feastName: feastPosterHeading(feast),

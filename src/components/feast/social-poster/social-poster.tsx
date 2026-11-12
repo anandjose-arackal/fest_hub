@@ -60,6 +60,7 @@ export interface SocialPosterProps {
   winnerName: string;
   shakhaName: string;
   meghalaName: string | null;
+  dioceseName?: string | null;
   competitionName: string;
   categoryLabel: string;
   feastName: string;
@@ -122,7 +123,7 @@ function splitOrgName(name: string): [string, string] {
 
 const fill: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" };
 
-export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghalaName, competitionName, categoryLabel, feastName, feastSubtitle, photoSrc }: SocialPosterProps) {
+export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghalaName, dioceseName, competitionName, categoryLabel, feastName, feastSubtitle, photoSrc }: SocialPosterProps) {
   const [orgLine1, orgLine2] = splitOrgName(org.org_name_local || org.org_name_en || "");
   const org1Size = useFitFontSize(orgLine1, 430, ANEK_CONDENSED, 800, 36, 72, "75%");
   const org2Size = useFitFontSize(orgLine2, 430, ANEK_CONDENSED, 800, 36, 72, "75%");
@@ -191,6 +192,7 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
             </div>
             <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(shakhaName, "Shakha")}</span>
             {meghalaName && <span style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(meghalaName, "Meghala")}</span>}
+            {dioceseName && <span style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(dioceseName, "Diocese")}</span>}
           </div>
         </div>
 
