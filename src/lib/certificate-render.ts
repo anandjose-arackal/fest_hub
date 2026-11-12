@@ -25,6 +25,7 @@ export const PARAGRAPH_TOKENS: { token: string; label: string; source: Certifica
   { token: "shakha", label: "Shakha", source: "shakha" },
   { token: "meghala", label: "Meghala", source: "meghala" },
   { token: "shakha_meghala", label: "Shakha - Meghala", source: "shakha_meghala" },
+  { token: "diocese", label: "Diocese", source: "diocese" },
   { token: "place", label: "Place", source: "place" },
   { token: "grade", label: "Grade", source: "grade_text" },
   { token: "place_grade", label: "Place with Grade", source: "place_grade" },
@@ -151,6 +152,7 @@ export function fieldContentForRow(field: CertificateField, row: CertificateRost
   }
   if (field.type === "shakha") return row.shakhaName;
   if (field.type === "meghala") return row.meghalaName;
+  if (field.type === "diocese") return row.dioceseName;
   // "Shakha - Meghala" — just the shakha when it isn't placed in a meghala.
   if (field.type === "shakha_meghala") return [row.shakhaName, row.meghalaName].filter(Boolean).join(" - ");
   if (field.type === "competition") return row.competitionLabel;

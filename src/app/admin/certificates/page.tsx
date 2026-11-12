@@ -30,6 +30,7 @@ const FIELD_LABELS: Record<CertificateFieldType, string> = {
   shakha: "Shakha",
   meghala: "Meghala",
   shakha_meghala: "Shakha - Meghala",
+  diocese: "Diocese",
   competition: "Competition Name",
   competition_en: "Competition Name (English)",
   grade_text: "Grade",
@@ -52,6 +53,7 @@ const FIELD_TOOLBAR: { type: CertificateFieldType; label: string; emoji: string;
   { type: "shakha", label: "Shakha", emoji: "🏫", color: "#0D9488" },
   { type: "meghala", label: "Meghala", emoji: "🗺️", color: "#0F766E" },
   { type: "shakha_meghala", label: "Shakha - Meghala", emoji: "📍", color: "#115E59" },
+  { type: "diocese", label: "Diocese", emoji: "⛪", color: "#134E4A" },
   { type: "competition", label: "Competition", emoji: "🎭", color: "#7C3AED" },
   { type: "competition_en", label: "Competition (EN)", emoji: "🌐", color: "#9333EA" },
   { type: "grade_text", label: "Grade", emoji: "🔤", color: "#16A34A" },
@@ -141,6 +143,7 @@ function fieldPreviewContent(field: CertificateField): string {
   if (field.type === "shakha") return "Shakha";
   if (field.type === "meghala") return "Meghala";
   if (field.type === "shakha_meghala") return "Shakha - Meghala";
+  if (field.type === "diocese") return "Diocese";
   if (field.type === "competition") return "Sub Junior Boys Elocution";
   if (field.type === "competition_en") return "Sub Junior Boys Essay";
   if (field.type === "grade_text") return "A";
@@ -446,6 +449,7 @@ export default function CertificatesPage() {
   // default 'shakha' level every certificate's meghala would print blank.
   const { hierarchyLevel } = useOrgHierarchy();
   const hasMeghala = hierarchyLevel !== "shakha";
+  const hasDiocese = hierarchyLevel === "diocese";
   const [feastId, setFeastId] = useState("");
   const [template, setTemplate] = useState<CertificateTemplate | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
@@ -838,7 +842,7 @@ export default function CertificatesPage() {
 
       <StepCard step={3} emoji="🏷️" title="Add fields — drag them onto your certificate">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9">
-          {FIELD_TOOLBAR.filter((f) => (f.type !== "meghala" && f.type !== "shakha_meghala") || hasMeghala).map((f) => (
+          {FIELD_TOOLBAR.filter((f) => (f.type === "diocese" ? hasDiocese : (f.type !== "meghala" && f.type !== "shakha_meghala") || hasMeghala)).map((f) => (
             <button
               key={f.type}
               onClick={() => addField(f.type)}
@@ -939,7 +943,7 @@ export default function CertificatesPage() {
                           />
                           <p className="mb-1 mt-1.5 text-[10px] font-medium text-neutral-500">Tap to insert data at the cursor:</p>
                           <div className="flex flex-wrap gap-1">
-                            {PARAGRAPH_TOKENS.filter((t) => (t.token !== "meghala" && t.token !== "shakha_meghala") || hasMeghala).map((t) => (
+                            {PARAGRAPH_TOKENS.filter((t) => (t.token === "diocese" ? hasDiocese : (t.token !== "meghala" && t.token !== "shakha_meghala") || hasMeghala)).map((t) => (
                               <button
                                 key={t.token}
                                 onClick={() => insertParagraphToken(selectedField, t.token)}
