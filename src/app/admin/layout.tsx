@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, UserCheck, ClipboardCheck, Medal, Trophy, Users, CalendarDays,
-  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2, ImageDown, ListOrdered,
+  Layers, Landmark, Settings, Menu, X, LogOut, Award, Church, Building2, ImageDown, ListOrdered, MonitorPlay,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { loadOrgSettingsCached as getOrgSettings } from "@/hooks/use-feast";
@@ -64,6 +64,7 @@ function buildFullNavSections(hierarchyLevel: HierarchyLevel): NavSection[] {
       items: [
         { href: "/admin/trophies", label: "Trophies", icon: Trophy, color: "#B45309" },
         { href: "/admin/trophies/certificates", label: "Certificate Handover", icon: Award, color: "#0F766E" },
+        { href: "/admin/trophies/podium", label: "Podium Screen", icon: MonitorPlay, color: "#B45309" },
       ],
     },
     { title: "Fest Util", items: utilItems },
@@ -79,6 +80,7 @@ const TROPHY_MANAGER_NAV_SECTIONS: NavSection[] = [
     items: [
       { href: TROPHY_HOME, label: "Trophy Dashboard", icon: Trophy, color: "#B45309" },
       { href: "/admin/trophies/certificates", label: "Certificate Handover", icon: Award, color: "#0F766E" },
+      { href: "/admin/trophies/podium", label: "Podium Screen", icon: MonitorPlay, color: "#B45309" },
     ],
   },
 ];

@@ -703,3 +703,23 @@ export async function setItemPrinted(feastCompetitionId: string, printed: boolea
   if (fc?.result_status !== "published") return { error: "Publish the result before marking it printed." };
   return markPrinted(admin, [feastCompetitionId], auth.userId);
 }
+
+// ── podium LED screen ────────────────────────────────────────────────────
+
+// What the podium LED screen (/podium) shows: one item's winners (null →
+// idle backdrop + badge animation) or a fest's top-3 standings. Lives here
+// because the trophy manager runs it from the stage during handover.
+// Table: podium_display (026_podium_display.sql).
+export type PodiumCommand = { mode: "item"; feastCompetitionId: string | null } | { mode: "standings"; feastId: string };
+
+export async function setPodiumDisplay(cmd: PodiumCommand): Promise<{ error?: string }> {
+  const auth = await requireRole("handover.write");
+  if ("error" in auth) return { error: auth.error };
+  const row = cmd.mode === "standings"
+    ? { mode: "standings", feast_id: cmd.feastId, feast_competition_id: null }
+    : { mode: "item", feast_id: null, feast_competition_id: cmd.feastCompetitionId };
+  const { error } = await getSupabaseAdmin()
+    .from("podium_display")
+    .upsert({ id: true, ...row, updated_at: new Date().toISOString() });
+  return error ? { error: error.message } : {};
+}
