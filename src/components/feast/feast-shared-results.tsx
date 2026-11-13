@@ -44,11 +44,29 @@ export function sortResults(rows: PublicResultRow[]): PublicResultRow[] {
   });
 }
 
-export function ShakhaTag({ shakha, meghalaName, dioceseName, className }: { shakha: string; meghalaName?: string | null; dioceseName?: string | null; className?: string }) {
+// Location badges: three equal-width capsules, left-aligned, stacked diocese → meghala → shakha. Missing tiers are skipped.
+// The column is as wide as its longest capsule (w-fit) and every capsule stretches to it, so short names match long ones.
+// Text is always `color` on a tint of itself (never white on `color`): --fp-link flips light in dark themes.
+export function ShakhaTag({ shakha, meghalaName, dioceseName, className, color = "var(--fp-link)" }: { shakha: string; meghalaName?: string | null; dioceseName?: string | null; className?: string; color?: string }) {
+  const tint = (pct: number) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+  const pill = "flex w-full items-center justify-center gap-1.5 rounded-full px-3 py-1 text-center text-[12px] leading-tight break-words";
   return (
-    <span className={`inline-flex min-w-0 items-center gap-1 font-extrabold ${className ?? ""}`} style={{ color: "var(--fp-link)" }}>
-      <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
-      <span className="truncate">{[shakha, meghalaName, dioceseName].filter(Boolean).join(" · ")}</span>
+    <span className={`flex w-fit min-w-0 max-w-full flex-col items-stretch gap-1 ${className ?? ""}`}>
+      {dioceseName && (
+        <span className={`${pill} font-extrabold`} style={{ color, background: tint(18), border: `1px solid ${tint(55)}` }}>
+          <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
+          {dioceseName}
+        </span>
+      )}
+      {meghalaName && (
+        <span className={`${pill} font-bold`} style={{ color, background: tint(12), border: "1px solid transparent" }}>
+          {meghalaName}
+        </span>
+      )}
+      <span className={`${pill} font-semibold`} style={{ color, border: `1px solid ${tint(45)}` }}>
+        {!dioceseName && !meghalaName && <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />}
+        {shakha}
+      </span>
     </span>
   );
 }
@@ -73,8 +91,8 @@ export function ResultRow({ row, onGeneratePoster, delay }: { row: PublicResultR
         </span>
       )}
       <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-        <span className="fp-ml text-[15.5px] font-extrabold leading-tight" style={{ color: theme.text }}>{row.name}</span>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] font-semibold" style={{ color: theme.sub }}>
+        <span className="fp-ml text-[17px] font-black leading-tight" style={{ color: theme.text }}>{row.name}</span>
+        <span className="flex min-w-0 flex-col items-start gap-1.5 text-[12.5px] font-semibold" style={{ color: theme.sub }}>
           {row.houseName && !row.isTeam && <span className="fp-ml">{row.houseName}</span>}
           <ShakhaTag shakha={row.shakha} meghalaName={row.meghalaName} dioceseName={row.dioceseName} />
         </span>
@@ -270,10 +288,7 @@ export function AwardCard({ rows, accentColor, onPoster, header, footer }: {
                 <span className="fp-ml font-extrabold leading-tight" style={{ fontSize: first ? 19 : 16.5, color: AWARD.ink }}>{w.name}</span>
                 {w.houseName && !w.isTeam && <span className="fp-ml text-[13px] font-semibold" style={{ color: AWARD.sub }}>{w.houseName}</span>}
                 {w.isTeam && w.houseName && <span className="fp-ml line-clamp-2 text-[12.5px] font-semibold" style={{ color: AWARD.sub }}>{w.houseName}</span>}
-                <span className="mt-[3px] inline-flex min-w-0 items-center gap-1 text-[12.5px] font-extrabold" style={{ color: AWARD.link }}>
-                  <Church className="h-[13px] w-[13px] shrink-0" aria-hidden="true" />
-                  <span className="truncate">{[w.shakha, w.meghalaName, w.dioceseName].filter(Boolean).join(" · ")}</span>
-                </span>
+                <ShakhaTag className="mt-1 self-start" color={AWARD.link} shakha={w.shakha} meghalaName={w.meghalaName} dioceseName={w.dioceseName} />
               </span>
               {pos && !w.isTeam && onPoster && (
                 <button
