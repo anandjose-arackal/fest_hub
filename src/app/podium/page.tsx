@@ -10,7 +10,9 @@ import {
 import { readPodiumPick, type PodiumPick } from "@/lib/podium";
 import { ParticipantPhoto } from "@/components/screen/participant-photo";
 import { BadgeShow, BADGE_SHOW_MS } from "@/components/screen/badge-show";
+import { DioceseSpiral, DIOCESE_SPIRAL_MS } from "@/components/screen/diocese-spiral";
 import { CmlFlag } from "@/components/screen/cml-flag";
+import { SargaBackdrop, SargaSky } from "@/components/screen/sarga-backdrop";
 import { catStyle, theme } from "@/components/feast/feast-shared";
 
 // The 16:9 LED wall behind the winner podium, driven from
@@ -23,6 +25,7 @@ const H = 1080;
 const PICK_POLL_MS = 2_000;
 const DATA_REFRESH_MS = 20_000;
 const BACKDROP_MS = 15_000;
+const SARGA_MS = 20_000;
 const TIER_MS = 14_000; // includes the title intro
 // Stage order: 2nd on the left, 1st in the middle, 3rd on the right.
 const STAGE_ORDER = [2, 1, 3] as const;
@@ -43,6 +46,11 @@ const TITLE_ART = "/podium/title.webp";
 const TITLE_W = 1300;
 const TITLE_H = Math.round((TITLE_W * 735) / 1189);
 const INTRO_MS = 4_800;
+// The title spin plays between every idle scene; its slot ends just before
+// WithIntro's own timer so the stage never shows an empty frame.
+const IDLE_ORDER = ["sarga", "title", "backdrop", "title", "dioceses", "title", "badge", "title"] as const;
+const IDLE_MS = { sarga: SARGA_MS, title: INTRO_MS - 100, backdrop: BACKDROP_MS, dioceses: DIOCESE_SPIRAL_MS, badge: BADGE_SHOW_MS };
+const CML_LOGO = "/podium/cml-logo.webp";
 
 const KEYFRAMES = `
 @keyframes pdIn{from{opacity:0;transform:translateY(60px) scale(.94)}to{opacity:1;transform:none}}
@@ -60,7 +68,7 @@ const KEYFRAMES = `
 `;
 
 export default function PodiumPage() {
-  const { hierarchyLevel } = useOrgHierarchy();
+  const { hierarchyLevel, dioceses } = useOrgHierarchy();
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const fit = () => {
@@ -72,14 +80,23 @@ export default function PodiumPage() {
     return () => window.removeEventListener("resize", fit);
   }, []);
 
-  const [org, setOrg] = useState<{ logo: string; name: string; tagline: string }>({ logo: "/logo.png", name: "", tagline: "" });
+  const [org, setOrg] = useState<{ logo: string; name: string }>({ logo: "/logo.png", name: "" });
   useEffect(() => {
-    supabase.from("org_settings").select("logo_url, org_name_en, org_name_local, tagline").eq("id", true).single().then(({ data }) => {
-      if (data) setOrg({ logo: data.logo_url || "/logo.png", name: data.org_name_local || data.org_name_en || "", tagline: data.tagline || "" });
+    supabase.from("org_settings").select("logo_url, org_name_en, org_name_local").eq("id", true).single().then(({ data }) => {
+      if (data) setOrg({ logo: data.logo_url || "/logo.png", name: data.org_name_local || data.org_name_en || "" });
     });
   }, []);
 
   const [pick, setPick] = useState<PodiumPick | null>(null);
+  // Fest date + venue for the Sargaprabha backdrop: the picked fest, else the live one.
+  const [fests, setFests] = useState<{ slug: string; status: string; venue: string | null; start_date: string | null }[]>([]);
+  useEffect(() => {
+    // Re-read so a venue/date edited in /admin/feasts reaches a screen that stays open all fest.
+    const load = () => supabase.from("feasts").select("slug, status, venue, start_date").order("start_date", { ascending: false, nullsFirst: false }).then(({ data }) => { if (data) setFests(data); });
+    load();
+    const id = setInterval(load, DATA_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const poll = () => readPodiumPick().then((p) => { if (!cancelled && p) setPick((old) => (old?.updatedAt === p.updatedAt ? old : p)); });
@@ -130,14 +147,23 @@ export default function PodiumPage() {
   }, [showStandings]);
   const tier = tiers[tierIdx % tiers.length];
 
-  // ── idle: flag backdrop ↔ badge animation ──
+  // ── idle: Sargaprabha backdrop → flag backdrop → diocese spiral → badge animation, title spin between each ──
   const idle = !comp && !showStandings;
-  const [idleScene, setIdleScene] = useState<"backdrop" | "badge">("backdrop");
+  // The diocese spiral only plays for orgs that use the diocese tier and have dioceses.
+  const dioceseNames = hierarchyLevel === "diocese" ? dioceses.map((d) => d.name) : [];
+  const [idleIdx, setIdleIdx] = useState(0);
+  const idleScene = IDLE_ORDER[idleIdx];
   useEffect(() => {
     if (!idle) return;
-    const t = setTimeout(() => setIdleScene((s) => (s === "backdrop" ? "badge" : "backdrop")), idleScene === "backdrop" ? BACKDROP_MS : BADGE_SHOW_MS);
+    const t = setTimeout(() => setIdleIdx((i) => {
+      const next = (i + 1) % IDLE_ORDER.length;
+      // No dioceses: skip the spiral and the title spin after it.
+      return IDLE_ORDER[next] === "dioceses" && dioceseNames.length === 0 ? (next + 2) % IDLE_ORDER.length : next;
+    }), IDLE_MS[idleScene]);
     return () => clearTimeout(t);
-  }, [idle, idleScene]);
+  }, [idle, idleScene, idleIdx, dioceseNames.length]);
+
+  const fest = fests.find((f) => f.slug === slug) ?? fests.find((f) => f.status.toLowerCase() !== "completed") ?? fests[0];
 
   const lineage = (p: ScreenPosition) =>
     [p.shakha, hierarchyLevel === "diocese" ? p.dioceseName : hierarchyLevel === "meghala" ? p.meghalaName : null].filter(Boolean).join(" · ");
@@ -157,10 +183,16 @@ export default function PodiumPage() {
           <WithIntro key={comp.competitionId}><Winners comp={comp} logo={org.logo} feastName={pick?.feastName ?? ""} lineage={lineage} /></WithIntro>
         ) : showStandings ? (
           <WithIntro key={`${tier}-${tierIdx}`}><Standings tier={tier} rows={standings.rows[tier]} logo={org.logo} feastName={pick?.feastName ?? ""} /></WithIntro>
+        ) : idleScene === "sarga" ? (
+          <SargaBackdrop key="sarga" title={org.name} date={fest?.start_date ? new Date(fest.start_date + "T00:00").toLocaleDateString("ml-IN", { month: "long", day: "numeric" }) : null} venue={fest?.venue ?? null} />
+        ) : idleScene === "title" ? (
+          <WithIntro key={`title-${idleIdx}`}>{null}</WithIntro>
+        ) : idleScene === "dioceses" && dioceseNames.length > 0 ? (
+          <DioceseSpiral key="dioceses" names={dioceseNames} />
         ) : idleScene === "badge" ? (
           <BadgeShow key="badge" />
         ) : (
-          <Backdrop key="idle" logo={org.logo} name={org.name} tagline={org.tagline} feastName={pick?.feastName ?? null} />
+          <Backdrop key="idle" logo={CML_LOGO} name={org.name} feastName={pick?.feastName ?? null} />
         )}
       </div>
     </div>
@@ -301,20 +333,21 @@ function WithIntro({ children }: { children: React.ReactNode }) {
 
 // ── scenes ───────────────────────────────────────────────────────────────
 
-function Backdrop({ logo, name, tagline, feastName }: { logo: string; name: string; tagline: string; feastName: string | null }) {
+function Backdrop({ logo, name, feastName }: { logo: string; name: string; feastName: string | null }) {
   return (
     <div style={{ position: "absolute", inset: 0, animation: "pdFade 1.2s ease both" }}>
+      <SargaSky />
       <Sparkles />
-      <Rays size={1500} x={1240} y={470} />
       <div style={{ position: "absolute", left: 120, top: 150 }}>
         <CmlFlag width={660} />
       </div>
       <div style={{ position: "absolute", left: 860, right: 80, top: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 30, textAlign: "center" }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logo} alt="" style={{ width: 340, height: 340, objectFit: "contain", filter: "drop-shadow(0 0 60px rgba(255,214,107,.7))", animation: "pdIn 1.2s cubic-bezier(.2,.8,.2,1) .2s both" }} />
-        {name && <div className="fp-disp fp-ml" style={{ fontSize: 88, lineHeight: 1.08, textShadow: "0 8px 40px rgba(0,0,0,.6)", animation: "pdIn 1s ease .5s both" }}>{name}</div>}
-        {feastName && <div className="fp-ml" style={{ fontSize: 54, fontWeight: 800, color: "#FFDD1F", animation: "pdIn 1s ease .8s both" }}>{feastName}</div>}
-        {tagline && <div className="fp-ml" style={{ fontSize: 32, fontWeight: 600, color: "rgba(255,243,176,.85)", animation: "pdIn 1s ease 1.1s both" }}>{tagline}</div>}
+        <div style={{ animation: "sbIn 1.1s cubic-bezier(.2,.8,.2,1) .4s both" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logo} alt="" style={{ width: 340, height: 340, objectFit: "contain", filter: "drop-shadow(0 0 60px rgba(255,214,107,.7))", animation: "sbFloat 6s ease-in-out 1.5s infinite" }} />
+        </div>
+        {name && <div className="sb-gold fp-ml" style={{ fontSize: 96, fontWeight: 800, lineHeight: 1.15, animation: "sbIn 1.1s cubic-bezier(.2,.8,.2,1) .8s both" }}>{name}</div>}
+        {feastName && <div className="fp-ml" style={{ fontSize: 54, fontWeight: 800, color: "#ffe9a8", animation: "sbIn 1s ease 1.2s both" }}>{feastName}</div>}
       </div>
       <FlagBand />
     </div>
