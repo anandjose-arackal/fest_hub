@@ -183,7 +183,7 @@ export function StoryPoster({ org, rank, grade, winnerName, houseName, shakhaNam
             {meghalaName && <span style={{ width: 3, height: 64, background: GOLD }} />}
             {meghalaName && <span>{meghalaName}</span>}
           </div>
-          {dioceseName && <span style={{ fontSize: 34, fontWeight: 700 }}>{withSuffix(dioceseName, "Diocese")}</span>}
+          {dioceseName && <span style={{ fontSize: 44, fontWeight: 800 }}>{withSuffix(dioceseName, "Diocese")}</span>}
         </div>
       </div>
     </div>

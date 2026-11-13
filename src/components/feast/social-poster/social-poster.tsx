@@ -192,7 +192,7 @@ export function SocialPoster({ org, rank, grade, winnerName, shakhaName, meghala
             </div>
             <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(shakhaName, "Shakha")}</span>
             {meghalaName && <span style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(meghalaName, "Meghala")}</span>}
-            {dioceseName && <span style={{ fontSize: 25, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(dioceseName, "Diocese")}</span>}
+            {dioceseName && <span style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25, color: INK }}>{withSuffix(dioceseName, "Diocese")}</span>}
           </div>
         </div>
 
