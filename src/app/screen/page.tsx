@@ -9,6 +9,7 @@ import { useCompetitionStages, type CompetitionStage } from "@/hooks/use-competi
 import { VenueMap, hasVenueMap } from "@/components/feast/venue-map";
 import { floorName, groupByFloor } from "@/lib/venue-floors";
 import { routeSteps, type VenuePlan } from "@/lib/venue-plan";
+import { ownsVenue } from "@/lib/venue-config";
 import {
   getDioceseLeaderboard, getLeaderboard, getMeghalaLeaderboard, getOverallDioceseLeaderboard, getOverallLeaderboard, getOverallMeghalaLeaderboard, getScreenData,
   type LeaderboardRow, type ScreenAchiever, type ScreenCompetitionResult, type ScreenData, type ScreenPosition,
@@ -540,8 +541,8 @@ function CompetitionScreen({ comp, subIdx, onHoldMs }: { comp: ScreenCompetition
 // board in two columns.
 const STAGE_ROWS_PER_PAGE = 8;
 
-function StageBoardScreen({ feastSlug, page, onPageCount, onHoldMs }: { feastSlug: string; page: number; onPageCount: (n: number) => void; onHoldMs: (ms: number) => void }) {
-  const { stages, plan, loading, totalCount, completedCount } = useCompetitionStages(feastSlug, { alwaysPoll: true, intervalMs: REFRESH_MS });
+function StageBoardScreen({ feastSlug, mergeSlugs, page, onPageCount, onHoldMs }: { feastSlug: string; mergeSlugs: string[]; page: number; onPageCount: (n: number) => void; onHoldMs: (ms: number) => void }) {
+  const { stages, plan, loading, totalCount, completedCount } = useCompetitionStages(feastSlug, { alwaysPoll: true, intervalMs: REFRESH_MS, mergeSlugs });
   const withMap = hasVenueMap(stages);
   // Lowest floor first on the big screen; annexes and unplaced stages stay last.
   const ordered = withMap ? groupByFloor(stages).sort((a, b) => (a.floor == null ? 1 : b.floor == null ? -1 : a.floor - b.floor)).flatMap((g) => g.stages) : stages;
@@ -1126,7 +1127,10 @@ function ScreenPageInner() {
     return () => window.removeEventListener("resize", fit);
   }, []);
 
-  const liveFeast = feasts.find((f) => f.status !== "Completed");
+  // One stage board for every fest still running; the fest owning the venue plan hosts it.
+  const liveFeasts = feasts.filter((f) => f.status !== "Completed");
+  const liveFeast = liveFeasts.find((f) => ownsVenue(f.slug)) ?? liveFeasts[0];
+  const liveSlugs = liveFeasts.map((f) => f.slug);
   const sections: DashboardSection[] = [
     { kind: "overall" },
     ...feasts.map((f) => ({ kind: "feast" as const, feastSlug: f.slug, feastName: f.name })),
@@ -1506,7 +1510,7 @@ function ScreenPageInner() {
         {busy ? (
           <Spinner />
         ) : activeSection.kind === "stages" ? (
-          <StageBoardScreen feastSlug={activeSection.feastSlug} page={screenIdx} onPageCount={setStagePageCount} onHoldMs={setGradeHoldMs} />
+          <StageBoardScreen feastSlug={activeSection.feastSlug} mergeSlugs={liveSlugs} page={screenIdx} onPageCount={setStagePageCount} onHoldMs={setGradeHoldMs} />
         ) : tier ? (
           <RankingsScreen rows={rankRows} tier={tier} tiers={tiers} onTier={(t) => goToScreen(tiers.indexOf(t))} caption={caption} meta={meta} />
         ) : activeComp ? (

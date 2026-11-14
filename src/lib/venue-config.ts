@@ -6,6 +6,11 @@ import type { VenuePlan } from "./venue-plan";
 // A string value names another slug whose plan this fest shares.
 const VENUES = venues as Record<string, VenuePlan | string>;
 
+/** True when the fest owns its plan rather than sharing another fest's. */
+export function ownsVenue(slug: string): boolean {
+  return typeof VENUES[slug] === "object" && VENUES[slug] !== null;
+}
+
 export function venueFor(slug: string): VenuePlan | null {
   const v = VENUES[slug];
   return (typeof v === "string" ? VENUES[v] : v) as VenuePlan ?? null;

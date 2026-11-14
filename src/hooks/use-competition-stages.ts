@@ -130,11 +130,15 @@ function deriveStage(key: string, number: number, title: string, venue: string |
 export interface UseCompetitionStagesOptions {
   alwaysPoll?: boolean;
   intervalMs?: number;
+  /** Other fests whose whole schedule joins this board (a merged stage board). */
+  mergeSlugs?: string[];
 }
 
 export function useCompetitionStages(slug: string, options?: UseCompetitionStagesOptions) {
   const alwaysPoll = options?.alwaysPoll ?? false;
   const pollIntervalMs = options?.intervalMs ?? POLL_MS;
+  // Joined to a string so a fresh array each render doesn't restart the poll.
+  const mergeKey = (options?.mergeSlugs ?? []).filter((s) => s !== slug).join(",");
   const [stages, setStages] = useState<CompetitionStage[]>([]);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   // Same object per slug (module-level JSON), so it's a stable dependency.
@@ -166,6 +170,20 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
         : { data: [] as typeof own, error: null };
       if (guestRes.error) console.error("[useCompetitionStages] guests", guestRes.error);
       const guests = guestRes.data.filter((fc) => { const st = one(fc.stage); return st && ownStageIds.has(stageKey(st)); });
+      // A merged fest brings every staged item; a stage the host doesn't have
+      // becomes its own row (same number+title across merged fests share one).
+      if (mergeKey) {
+        const seen = new Set(guests.map((fc) => fc.id));
+        const mergeRes = await fetchAll((from, to) =>
+          supabase.from("feast_competitions").select(cols).in("feast.slug", mergeKey.split(",")).not("stage_id", "is", null).order("display_order").order("id").range(from, to));
+        if (mergeRes.error) console.error("[useCompetitionStages] merge", mergeRes.error);
+        for (const fc of mergeRes.data ?? []) {
+          const st = one(fc.stage);
+          if (!st || seen.has(fc.id)) continue;
+          if (!ownStageIds.has(stageKey(st))) ownStageIds.set(stageKey(st), st.id);
+          guests.push(fc);
+        }
+      }
 
       const groups = new Map<string, { number: number; title: string; venue: string | null; place: StagePlace; items: StageCompetition[] }>();
       for (const fc of [...own, ...guests]) {
@@ -206,7 +224,7 @@ export function useCompetitionStages(slug: string, options?: UseCompetitionStage
     } finally {
       setLoading(false);
     }
-  }, [slug, plan]);
+  }, [slug, plan, mergeKey]);
 
   useEffect(() => {
     load(false);
