@@ -19,6 +19,20 @@ async function getMaxTeamSize(feastCompetitionId: string): Promise<number> {
   return competition?.max_team_size ?? DEFAULT_MAX_TEAM_MEMBERS;
 }
 
+// Deleting/editing a team drops or changes its team_results and ledger rows,
+// but standings are only rebuilt on publish — so, like individual entries
+// (feast.ts publishedResultError), a published item's teams are locked.
+async function publishedTeamError(feastCompetitionId: string, verb: string): Promise<string | null> {
+  const { data } = await getSupabaseAdmin()
+    .from("feast_competitions")
+    .select("result_status, competition:competitions(name)")
+    .eq("id", feastCompetitionId)
+    .maybeSingle();
+  if (data?.result_status !== "published") return null;
+  const competition = Array.isArray(data.competition) ? data.competition[0] : data.competition;
+  return `Results for ${competition?.name ?? "this item"} are already published. Unpublish them first — this team can't be ${verb}.`;
+}
+
 export interface RegisterTeamInput {
   feastId: string;
   feastCompetitionId: string;
@@ -140,6 +154,8 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
   if (!team) return { error: "Team not found." };
   const denied = await checkShakhaAccess(auth, [team.shakha_id]);
   if (denied) return { error: denied };
+  const locked = await publishedTeamError(team.feast_competition_id, "edited");
+  if (locked) return { error: locked };
 
   const maxTeamMembers = await getMaxTeamSize(team.feast_competition_id);
   if (participantIds.length > maxTeamMembers) return { error: `Maximum ${maxTeamMembers} members allowed.` };
@@ -170,16 +186,27 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
     .eq("id", team.id);
   if (updateErr) return { error: updateErr.message };
 
-  // "Replace" semantics: matches the individual-registration edit flow.
-  await admin.from("team_registration_members").delete().eq("team_registration_id", team.id);
-  const { error: memberErr } = await admin.from("team_registration_members").insert(
-    participantIds.map((pid) => ({
-      team_registration_id: team.id,
-      participant_id: pid,
-      feast_competition_id: team.feast_competition_id,
-    }))
-  );
-  if (memberErr) return { error: memberErr.message };
+  // Apply only the difference, so a failed insert (e.g. a member taken by
+  // another team meanwhile) can't leave the team with no members.
+  const { data: current, error: currentErr } = await admin
+    .from("team_registration_members")
+    .select("id, participant_id")
+    .eq("team_registration_id", team.id);
+  if (currentErr) return { error: currentErr.message };
+  const wanted = new Set(participantIds);
+  const had = new Set((current ?? []).map((m) => m.participant_id));
+  const toRemove = (current ?? []).filter((m) => !wanted.has(m.participant_id)).map((m) => m.id);
+  const toAdd = participantIds.filter((pid) => !had.has(pid));
+  if (toAdd.length > 0) {
+    const { error: memberErr } = await admin.from("team_registration_members").insert(
+      toAdd.map((pid) => ({ team_registration_id: team.id, participant_id: pid, feast_competition_id: team.feast_competition_id }))
+    );
+    if (memberErr) return { error: memberErr.message };
+  }
+  if (toRemove.length > 0) {
+    const { error: delErr } = await admin.from("team_registration_members").delete().in("id", toRemove);
+    if (delErr) return { error: delErr.message };
+  }
 
   // Team names and members show on published team results.
   expireTags(TAG.results);
@@ -189,12 +216,12 @@ export async function updateTeam(input: UpdateTeamInput): Promise<{ error?: stri
 export async function deleteTeam(teamId: string): Promise<{ error?: string }> {
   const auth = await requireRole("registration.write");
   if ("error" in auth) return { error: auth.error };
-  if (auth.role === "sa_admin") {
-    const { data: team } = await getSupabaseAdmin().from("team_registrations").select("shakha_id").eq("id", teamId).maybeSingle();
-    if (!team) return { error: "Team not found." };
-    const denied = await checkShakhaAccess(auth, [team.shakha_id]);
-    if (denied) return { error: denied };
-  }
+  const { data: team } = await getSupabaseAdmin().from("team_registrations").select("shakha_id, feast_competition_id").eq("id", teamId).maybeSingle();
+  if (!team) return { error: "Team not found." };
+  const denied = await checkShakhaAccess(auth, [team.shakha_id]);
+  if (denied) return { error: denied };
+  const locked = await publishedTeamError(team.feast_competition_id, "deleted");
+  if (locked) return { error: locked };
   const { error } = await getSupabaseAdmin().from("team_registrations").delete().eq("id", teamId);
   if (error) return { error: error.message };
   return {};

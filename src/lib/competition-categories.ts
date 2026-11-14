@@ -51,7 +51,10 @@ export function fetchCompetitionCategories(): Promise<CompetitionCategory[]> {
       .from("competition_categories")
       .select("*")
       .order("sort_order", { ascending: true });
-    if (error || !data || data.length === 0) return FALLBACK_CATEGORIES;
+    if (error || !data || data.length === 0) {
+      cached = null; // don't keep a failed read — the next call retries the DB
+      return FALLBACK_CATEGORIES;
+    }
     return data as CompetitionCategory[];
   })();
   return cached;

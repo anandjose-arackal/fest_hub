@@ -91,7 +91,11 @@ export async function POST(req: NextRequest) {
           // trophy_manager is never tied to a node (see /admin/users).
           [scopeColumn]: role === "trophy_manager" ? null : scope_id || null,
         });
-      if (profileError) return NextResponse.json({ error: profileError.message }, { status: 400 });
+      if (profileError) {
+        // Undo the login too, so the same email can be retried.
+        await getSupabaseAdmin().auth.admin.deleteUser(newUser.user.id);
+        return NextResponse.json({ error: profileError.message }, { status: 400 });
+      }
     }
 
     return NextResponse.json({
