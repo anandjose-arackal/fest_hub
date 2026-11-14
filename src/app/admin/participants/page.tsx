@@ -17,7 +17,7 @@ import { EMPTY_HIERARCHY_FILTER, filterShakhaIds, HierarchyFilter, HierarchyPick
 import { PrintLayoutDialog, type PrintLayout } from "@/components/admin/print-layout-dialog";
 import type { Competition, CompetitionCategory, Diocese, Feast, FeastCompetition, HierarchyLevel, Meghala, OrgSettings, Participant, Shakha } from "@/types";
 
-type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null } };
+type FCRow = FeastCompetition & { competition: Competition & { competition_category?: CompetitionCategory | null }; stage?: { number: number | null; title: string | null } | null };
 // `events` = individual registrations + teams the participant is a member of.
 type ParticipantRow = Participant & { shakha: Shakha | null; events: number; teamEvents: number };
 
@@ -163,7 +163,12 @@ function buildRegistrationCardsHtml(
   categories: CompetitionCategory[],
   variant: CardVariant = "full"
 ): string {
-  const compNameById = new Map(individualFeastComps.map((c) => [c.id, c.competition.name]));
+  // "Item · Stage 2" so the participant knows where to go.
+  const stageLabel = (c: FCRow) => {
+    const st = Array.isArray(c.stage) ? c.stage[0] : c.stage;
+    return st?.number != null ? `Stage ${st.number}` : st?.title ?? "";
+  };
+  const compNameById = new Map(individualFeastComps.map((c) => { const st = stageLabel(c); return [c.id, esc(c.competition.name) + (st ? ` · <span class="stg">${esc(st)}</span>` : "")]; }));
   const shakhaById = new Map(hierarchy.shakhas.map((s) => [s.id, s]));
   const meghalaById = new Map(hierarchy.meghalas.map((m) => [m.id, m]));
   const dioceseNameById = new Map(hierarchy.dioceses.map((d) => [d.id, d.name]));
@@ -200,7 +205,8 @@ function buildRegistrationCardsHtml(
     return [catName, genderLabel].filter(Boolean).join(" ") || "—";
   }
 
-  const sorted = [...rows].sort((a, b) => {
+  // Team-only participants get no card: they compete under their team.
+  const sorted = rows.filter((p) => !(p.teamEvents > 0 && p.events === p.teamEvents)).sort((a, b) => {
     const ka = groupInfo(a.shakha_id).sortKey;
     const kb = groupInfo(b.shakha_id).sortKey;
     for (let i = 0; i < 3; i++) {
@@ -219,7 +225,7 @@ function buildRegistrationCardsHtml(
     const { line1, line2 } = groupInfo(p.shakha_id);
     const compsHtml =
       compNames.length > 0
-        ? compNames.map((c) => `<span class="comp">${COMP_SVG}${esc(c)}</span>`).join("")
+        ? compNames.map((c) => `<span class="comp">${COMP_SVG}${c}</span>`).join("")
         : `<span class="comp muted">No individual events</span>`;
     return `<div class="card">
       <div class="hdr">
@@ -289,6 +295,7 @@ function buildRegistrationCardsHtml(
     .row-comps { display: flex; flex: 1; flex-direction: column; align-items: flex-start; justify-content: center; gap: 7px; margin-top: 10px; padding-top: 7px; border-top: 1px solid #E5E7EB; }
     .comp { display: flex; align-items: center; gap: 5px; font-size: 13.5px; font-weight: 700; color: #1E1B4B; }
     .comp.muted { color: #9CA3AF; font-weight: 500; font-style: italic; }
+    .stg { font-size: 16px; font-weight: 900; color: #4C1D95; white-space: nowrap; }
     .hdiv { width: 1px; height: 12px; background: #D1D5DB; flex-shrink: 0; }
     .card.rn { position: relative; align-items: center; justify-content: center; padding: 2mm; container-type: size; }
     .rn-num { font-weight: 700; color: #1E1B4B; line-height: 1; white-space: nowrap; letter-spacing: -0.01em; }
@@ -392,7 +399,7 @@ export default function ParticipantsPage() {
     // old standalone read pulled every fest's registrations) — and both the
     // roster and the team list are paged past PostgREST's 1000-row cap.
     const [{ data: fcs }, { data: parts }, { data: teamRows }] = await Promise.all([
-      supabase.from("feast_competitions").select("*, competition:competitions(*, competition_category:competition_categories(*))").eq("feast_id", feastId).order("display_order"),
+      supabase.from("feast_competitions").select("*, competition:competitions(*, competition_category:competition_categories(*)), stage:stages(number, title)").eq("feast_id", feastId).order("display_order"),
       fetchAll((from, to) =>
         supabase
           .from("participants")
